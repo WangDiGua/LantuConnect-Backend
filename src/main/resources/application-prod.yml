@@ -1,0 +1,16 @@
+server:
+  ssl:
+    enabled: ${SSL_ENABLED:false}
+    key-store: ${SSL_KEY_STORE:classpath:keystore.p12}
+    key-store-password: ${SSL_KEY_STORE_PASSWORD:changeit}
+    key-store-type: ${SSL_KEY_STORE_TYPE:PKCS12}
+
+lantu:
+  security:
+    allow-header-user-id-fallback: false
+    require-https: ${REQUIRE_HTTPS:true}
+
+logging:
+  level:
+    com.lantu.connect: info
+    org.springframework.web: warn

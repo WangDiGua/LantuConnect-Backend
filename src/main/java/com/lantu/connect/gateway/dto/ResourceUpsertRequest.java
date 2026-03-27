@@ -1,0 +1,84 @@
+package com.lantu.connect.gateway.dto;
+
+import com.lantu.connect.common.validation.ResourceCode;
+import jakarta.validation.constraints.NotBlank;
+import lombok.Data;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 统一资源注册/更新请求。
+ */
+@Data
+public class ResourceUpsertRequest {
+
+    @NotBlank(message = "resourceType 不能为空")
+    private String resourceType;
+
+    @ResourceCode
+    private String resourceCode;
+
+    @NotBlank(message = "displayName 不能为空")
+    private String displayName;
+
+    private String description;
+
+    private String sourceType;
+
+    private Long providerId;
+
+    private Long categoryId;
+
+    /**
+     * 仅 agent 使用。
+     */
+    private String agentType;
+    private String mode;
+    private Map<String, Object> spec;
+    private Boolean isPublic;
+    private Boolean hidden;
+    private Integer maxConcurrency;
+    private Integer maxSteps;
+    private Double temperature;
+    private String systemPrompt;
+
+    /**
+     * 仅 skill 使用。
+     */
+    private String skillType;
+    private Long parentResourceId;
+    private String displayTemplate;
+    private Map<String, Object> parametersSchema;
+
+    /**
+     * 仅 mcp 使用。
+     */
+    private String endpoint;
+    private String protocol;
+    private String authType;
+    private Map<String, Object> authConfig;
+
+    /**
+     * 仅 app 使用。
+     */
+    private String appUrl;
+    private String embedType;
+    private String icon;
+    private List<String> screenshots;
+
+    /**
+     * 仅 dataset 使用。
+     */
+    private String dataType;
+    private String format;
+    private Long recordCount;
+    private Long fileSize;
+    private List<String> tags;
+
+    /**
+     * 关联资源 ID 列表（Agent 依赖的 Skills、App 依赖的 Agent/Skills 等）。
+     */
+    private List<Long> relatedResourceIds;
+}
+

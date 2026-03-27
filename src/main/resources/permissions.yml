@@ -1,0 +1,84 @@
+lantu:
+  permissions:
+    roles:
+      user:
+        - agent:read
+        - skill:read
+        - app:view
+        - dataset:read
+        - dataset:apply
+      developer:
+        - agent:read
+        - agent:create
+        - agent:update
+        - agent:publish
+        - skill:read
+        - skill:create
+        - skill:update
+        - skill:publish
+        - app:view
+        - dataset:read
+        - dataset:apply
+      dept_admin:
+        - agent:read
+        - agent:create
+        - agent:update
+        - agent:audit
+        - skill:read
+        - skill:create
+        - skill:update
+        - skill:audit
+        - app:view
+        - dataset:read
+        - dataset:create
+        - dataset:update
+        - dataset:apply
+        - user:manage
+        - user:read
+        - user:create
+        - user:update
+        - role:read
+        - org:read
+        - monitor:view
+      platform_admin:
+        - agent:read
+        - agent:create
+        - agent:update
+        - agent:delete
+        - agent:publish
+        - agent:audit
+        - skill:read
+        - skill:create
+        - skill:update
+        - skill:delete
+        - skill:publish
+        - skill:audit
+        - app:view
+        - app:create
+        - app:update
+        - app:delete
+        - dataset:read
+        - dataset:create
+        - dataset:update
+        - dataset:delete
+        - dataset:apply
+        - provider:manage
+        - user:manage
+        - user:read
+        - user:create
+        - user:update
+        - user:delete
+        - role:read
+        - role:create
+        - role:update
+        - role:delete
+        - apikey:read
+        - apikey:create
+        - apikey:delete
+        - org:read
+        - org:create
+        - org:update
+        - org:delete
+        - system:config
+        - monitor:view
+        - audit:manage

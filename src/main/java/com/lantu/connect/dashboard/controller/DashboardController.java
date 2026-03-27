@@ -1,0 +1,74 @@
+package com.lantu.connect.dashboard.controller;
+
+import com.lantu.connect.common.result.R;
+import com.lantu.connect.common.security.RequirePermission;
+import com.lantu.connect.dashboard.dto.AdminOverviewVO;
+import com.lantu.connect.dashboard.dto.AdminRealtimeData;
+import com.lantu.connect.dashboard.dto.ExploreHubData;
+import com.lantu.connect.dashboard.dto.UsageStatsVO;
+import com.lantu.connect.dashboard.dto.UserDashboardData;
+import com.lantu.connect.dashboard.dto.UserWorkspaceVO;
+import com.lantu.connect.dashboard.service.DashboardService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
+
+@RestController
+@RequestMapping("/dashboard")
+@RequiredArgsConstructor
+public class DashboardController {
+
+    private final DashboardService dashboardService;
+
+    @GetMapping("/admin-overview")
+    @RequirePermission({"monitor:view"})
+    public R<AdminOverviewVO> adminOverview(@RequestHeader("X-User-Id") Long userId) {
+        return R.ok(dashboardService.adminOverview(userId));
+    }
+
+    @GetMapping("/user-workspace")
+    public R<UserWorkspaceVO> userWorkspace(@RequestHeader("X-User-Id") Long userId) {
+        return R.ok(dashboardService.userWorkspace(userId));
+    }
+
+    @GetMapping("/health-summary")
+    @RequirePermission({"monitor:view"})
+    public R<Map<String, Object>> healthSummary() {
+        return R.ok(dashboardService.healthSummary());
+    }
+
+    @GetMapping("/usage-stats")
+    @RequirePermission({"monitor:view"})
+    public R<UsageStatsVO> usageStats(@RequestParam(required = false) String range) {
+        return R.ok(dashboardService.usageStats(range));
+    }
+
+    @GetMapping("/data-reports")
+    @RequirePermission({"monitor:view"})
+    public R<Map<String, Object>> dataReports(@RequestParam(required = false) String range,
+                                              @RequestParam(required = false) String startDate,
+                                              @RequestParam(required = false) String endDate) {
+        if (startDate != null && endDate != null) {
+            return R.ok(dashboardService.dataReports(range, startDate, endDate));
+        }
+        return R.ok(dashboardService.dataReports(range));
+    }
+
+    @GetMapping("/explore-hub")
+    public R<ExploreHubData> exploreHub(
+            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+        return R.ok(dashboardService.exploreHub(userId));
+    }
+
+    @GetMapping("/admin-realtime")
+    @RequirePermission({"monitor:view"})
+    public R<AdminRealtimeData> adminRealtime() {
+        return R.ok(dashboardService.adminRealtime());
+    }
+
+    @GetMapping("/user-dashboard")
+    public R<UserDashboardData> userDashboard(@RequestHeader("X-User-Id") Long userId) {
+        return R.ok(dashboardService.userDashboard(userId));
+    }
+}

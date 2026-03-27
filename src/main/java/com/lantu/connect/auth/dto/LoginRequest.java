@@ -1,0 +1,24 @@
+package com.lantu.connect.auth.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import lombok.Data;
+
+/**
+ * 认证 LoginRequest 数据传输对象
+ *
+ * @author 王帝
+ * @date 2026-03-21
+ */
+@Data
+public class LoginRequest {
+
+    @NotBlank
+    private String username;
+
+    @NotBlank
+    private String password;
+
+    private String captchaId;
+    private String captchaCode;
+    private Boolean remember;
+}

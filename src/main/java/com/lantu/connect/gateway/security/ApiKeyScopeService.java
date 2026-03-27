@@ -1,0 +1,123 @@
+package com.lantu.connect.gateway.security;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.lantu.connect.common.exception.BusinessException;
+import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.usermgmt.entity.ApiKey;
+import com.lantu.connect.usermgmt.mapper.ApiKeyMapper;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.LocalDateTime;
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+public class ApiKeyScopeService {
+
+    private final ApiKeyMapper apiKeyMapper;
+
+    public ApiKey authenticateOrNull(String rawApiKey) {
+        if (!StringUtils.hasText(rawApiKey)) {
+            return null;
+        }
+        String key = rawApiKey.trim();
+        String hash = sha256Hex(key);
+        ApiKey row = apiKeyMapper.selectOne(new LambdaQueryWrapper<ApiKey>().eq(ApiKey::getKeyHash, hash));
+        if (row == null || !"active".equalsIgnoreCase(row.getStatus())) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "API Key 无效或已停用");
+        }
+        if (row.getExpiresAt() != null && row.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "API Key 已过期");
+        }
+        return row;
+    }
+
+    public void ensureCatalogAllowed(ApiKey apiKey, String resourceType, String resourceId) {
+        ensureAllowed(apiKey, "catalog", resourceType, resourceId);
+    }
+
+    public void ensureResolveAllowed(ApiKey apiKey, String resourceType, String resourceId) {
+        ensureAllowed(apiKey, "resolve", resourceType, resourceId);
+    }
+
+    public void ensureInvokeAllowed(ApiKey apiKey, String resourceType, String resourceId) {
+        ensureAllowed(apiKey, "invoke", resourceType, resourceId);
+    }
+
+    public boolean canCatalog(ApiKey apiKey, String resourceType, String resourceId) {
+        return canAccess(apiKey, "catalog", resourceType, resourceId);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void markUsed(ApiKey apiKey) {
+        if (apiKey == null || !StringUtils.hasText(apiKey.getId())) {
+            return;
+        }
+        // 禁止 updateById(完整实体)：会把认证时加载的 status 等字段写回库，
+        // 若在调用过程中密钥已被撤销，会把 revoked 误改回 active。
+        LocalDateTime now = LocalDateTime.now();
+        apiKeyMapper.update(
+                null,
+                new LambdaUpdateWrapper<ApiKey>()
+                        .eq(ApiKey::getId, apiKey.getId())
+                        .set(ApiKey::getLastUsedAt, now)
+                        .setSql("call_count = IFNULL(call_count, 0) + 1"));
+        apiKey.setLastUsedAt(now);
+        apiKey.setCallCount((apiKey.getCallCount() == null ? 0L : apiKey.getCallCount()) + 1L);
+    }
+
+    private void ensureAllowed(ApiKey apiKey, String action, String resourceType, String resourceId) {
+        if (!canAccess(apiKey, action, resourceType, resourceId)) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "API Key scope 不允许访问该资源");
+        }
+    }
+
+    private boolean canAccess(ApiKey apiKey, String action, String resourceType, String resourceId) {
+        List<String> scopes = apiKey.getScopes();
+        if (scopes == null || scopes.isEmpty()) {
+            return false;
+        }
+        String type = resourceType == null ? "" : resourceType.trim().toLowerCase();
+        String rid = resourceId == null ? "" : resourceId.trim();
+
+        if (scopes.contains("*") || scopes.contains(action + ":*")) {
+            return true;
+        }
+        if (StringUtils.hasText(type) && scopes.contains(action + ":type:" + type)) {
+            return true;
+        }
+        if (StringUtils.hasText(type) && StringUtils.hasText(rid) && scopes.contains(action + ":id:" + type + ":" + rid)) {
+            return true;
+        }
+
+        // Backward-compatible broad scopes from existing role-like semantics.
+        if ("agent".equals(type) && scopes.contains("agent:read")) return true;
+        if ("skill".equals(type) && scopes.contains("skill:read")) return true;
+        if ("app".equals(type) && scopes.contains("app:view")) return true;
+        if ("dataset".equals(type) && scopes.contains("dataset:read")) return true;
+        if ("mcp".equals(type) && scopes.contains("skill:read")) return true;
+
+        return false;
+    }
+
+    private static String sha256Hex(String raw) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(raw.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "SHA-256 不可用");
+        }
+    }
+}

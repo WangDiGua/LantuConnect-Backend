@@ -1,0 +1,82 @@
+package com.lantu.connect.task;
+
+import com.lantu.connect.task.support.TaskDistributedLock;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class HealthCheckTask {
+
+    private static final String TASK_NAME = "HealthCheck";
+
+    private final TaskDistributedLock taskDistributedLock;
+    private final JdbcTemplate jdbcTemplate;
+
+    @Scheduled(cron = "0 */1 * * * ?")
+    public void run() {
+        if (!taskDistributedLock.tryLock(TASK_NAME)) {
+            return;
+        }
+        try {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                    "SELECT id, resource_code, check_url, timeout_sec FROM t_resource_health_config "
+                            + "WHERE check_url IS NOT NULL AND TRIM(check_url) <> ''");
+            int healthy = 0, degraded = 0;
+            for (Map<String, Object> row : rows) {
+                Long id = ((Number) row.get("id")).longValue();
+                String url = String.valueOf(row.get("check_url"));
+                int timeoutSec = 10;
+                Object to = row.get("timeout_sec");
+                if (to instanceof Number n) {
+                    timeoutSec = Math.max(1, Math.min(120, n.intValue()));
+                }
+                boolean ok = probe(url, timeoutSec);
+                String status = ok ? "healthy" : "degraded";
+                if (ok) healthy++; else degraded++;
+                jdbcTemplate.update(
+                        "UPDATE t_resource_health_config SET health_status = ?, last_check_time = ? WHERE id = ?",
+                        status, LocalDateTime.now(), id);
+            }
+            if (rows.size() > 0) {
+                log.info("[定时任务] {} 完成: {} 个目标 (健康: {}, 异常: {})", 
+                        TASK_NAME, rows.size(), healthy, degraded);
+            }
+        } catch (Exception e) {
+            log.warn("[定时任务] {} 失败: {}", TASK_NAME, e.getMessage());
+        } finally {
+            taskDistributedLock.unlock(TASK_NAME);
+        }
+    }
+
+    private static boolean probe(String url, int timeoutSec) {
+        try {
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(timeoutSec))
+                    .build();
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(timeoutSec))
+                    .GET()
+                    .build();
+            HttpResponse<Void> resp = client.send(req, HttpResponse.BodyHandlers.discarding());
+            int code = resp.statusCode();
+            return code >= 200 && code < 400;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+}
