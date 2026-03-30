@@ -9,6 +9,7 @@ import com.lantu.connect.sysconfig.entity.RateLimitRule;
 import com.lantu.connect.sysconfig.service.RateLimitRuleService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -52,7 +53,9 @@ public class RateLimitRuleController {
     public R<PageResult<RateLimitRule>> page(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int pageSize,
-            @RequestParam(required = false) String name) {
-        return R.ok(rateLimitRuleService.page(page, pageSize, name));
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String keyword) {
+        String filter = StringUtils.hasText(keyword) ? keyword.trim() : name;
+        return R.ok(rateLimitRuleService.page(page, pageSize, filter));
     }
 }

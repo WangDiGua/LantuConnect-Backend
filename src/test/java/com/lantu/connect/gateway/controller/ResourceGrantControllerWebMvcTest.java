@@ -43,10 +43,10 @@ class ResourceGrantControllerWebMvcTest {
 
     @Test
     void shouldListGrants() {
-        when(resourceInvokeGrantService.listByResource(anyLong(), any(), anyLong()))
+        when(resourceInvokeGrantService.listByResource(anyLong(), any(), anyLong(), any()))
                 .thenReturn(List.of());
 
-        R<List<ResourceGrantVO>> result = resourceGrantController.list(1L, "mcp", 1L);
+        R<List<ResourceGrantVO>> result = resourceGrantController.list(1L, "mcp", 1L, null);
         assertEquals(0, result.getCode());
         assertEquals(0, result.getData().size());
     }

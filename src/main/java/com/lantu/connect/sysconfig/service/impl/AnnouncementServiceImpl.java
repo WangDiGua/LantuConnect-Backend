@@ -6,6 +6,7 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.sysconfig.dto.AnnouncementCreateRequest;
 import com.lantu.connect.sysconfig.dto.AnnouncementUpdateRequest;
@@ -27,13 +28,22 @@ public class AnnouncementServiceImpl implements AnnouncementService {
     private final UserDisplayNameResolver userDisplayNameResolver;
 
     @Override
-    public PageResult<Announcement> list(Integer page, Integer pageSize) {
+    public PageResult<Announcement> list(Integer page, Integer pageSize, String keyword, String type) {
         int p = page == null || page < 1 ? 1 : page;
         int ps = pageSize == null || pageSize < 1 ? 20 : pageSize;
         Page<Announcement> mp = new Page<>(p, ps);
         LambdaQueryWrapper<Announcement> q = new LambdaQueryWrapper<Announcement>()
+                .eq(StringUtils.hasText(type), Announcement::getType, type != null ? type.trim() : null)
                 .orderByDesc(Announcement::getPinned)
                 .orderByDesc(Announcement::getCreateTime);
+        String kw = ListQueryKeyword.normalize(keyword);
+        if (kw != null) {
+            q.and(w -> w.like(Announcement::getTitle, kw)
+                    .or()
+                    .like(Announcement::getSummary, kw)
+                    .or()
+                    .like(Announcement::getContent, kw));
+        }
         Page<Announcement> result = announcementMapper.selectPage(mp, q);
         enrichNames(result.getRecords());
         return PageResults.from(result);

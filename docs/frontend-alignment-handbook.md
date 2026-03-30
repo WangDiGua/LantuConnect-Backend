@@ -320,6 +320,16 @@
 | GET | `/resource-grants` | query:`resourceType,resourceId` | `X-User-Id`；资源拥有者或平台管理员 | 保留（新增） |
 | DELETE | `/resource-grants/{grantId}` | path:`grantId` | `X-User-Id`；资源拥有者或平台管理员 | 保留（新增） |
 
+## 4.2.1a 资源授权申请（工单）
+
+| 方法 | 路径 | 请求要点 | 鉴权/权限 | 结论 |
+|---|---|---|---|---|
+| POST | `/grant-applications` | body:`GrantApplicationRequest` | `X-User-Id` | 保留 |
+| GET | `/grant-applications/mine` | query:`status?,page,pageSize` | `X-User-Id` | 保留 |
+| GET | `/grant-applications/pending` | query:`status?,keyword?,q?,page,pageSize`；`keyword` 与 `q` 等价择一；服务端 OR 匹配资源字段、`actions`、申请人 `t_user` 用户名/姓名及申请 `id`（纯数字）；`total` 为筛选后总数 | `@RequireRole(platform_admin)` | 保留 |
+| POST | `/grant-applications/{id}/approve` | path:`id` | `@RequireRole(platform_admin)` + `X-User-Id` | 保留 |
+| POST | `/grant-applications/{id}/reject` | path:`id` + body:`ResourceRejectRequest` | `@RequireRole(platform_admin)` + `X-User-Id` | 保留 |
+
 ## 4.2.2 统一资源注册中心（新增）
 
 | 方法 | 路径 | 请求要点 | 鉴权/权限 | 结论 |
@@ -423,11 +433,15 @@
 
 | 方法 | 路径 | 关键约束 | 结论 |
 |---|---|---|---|
+| GET | `/system-config/announcements` | `@RequireRole(platform_admin)` + query:`page,pageSize,keyword?,type?`；`total` 为 keyword/type 筛选后的总数 | 保留 |
+| POST | `/system-config/announcements` | `@RequireRole(platform_admin)` + header:`X-User-Id` + body:`AnnouncementCreateRequest` | 保留 |
+| PUT | `/system-config/announcements/{id}` | `@RequireRole(platform_admin)` + body:`AnnouncementUpdateRequest` | 保留 |
+| DELETE | `/system-config/announcements/{id}` | `@RequireRole(platform_admin)` | 保留 |
 | GET | `/system-config/params` | `@RequireRole(platform_admin)` | 保留 |
 | PUT | `/system-config/params` | `@RequireRole(platform_admin)` + body:`SystemParamUpsertRequest` | 保留 |
 | GET | `/system-config/security` | `@RequireRole(platform_admin)` | 保留 |
 | PUT | `/system-config/security` | `@RequireRole(platform_admin)` + body:`SecuritySettingUpsertRequest` | 保留 |
-| GET | `/system-config/audit-logs` | `@RequireRole(platform_admin)` + query:`AuditLogQueryRequest` | 保留 |
+| GET | `/system-config/audit-logs` | `@RequireRole(platform_admin)` + query:`AuditLogQueryRequest`（含 `keyword?`、`onlyFailure?`、`timeFrom?`/`timeTo?` 等；`total` 为筛选后总数） | 保留 |
 | POST | `/system-config/network/apply` | `@RequireRole(platform_admin)` | 保留 |
 | POST | `/system-config/acl/publish` | `@RequireRole(platform_admin)` | 保留 |
 | POST | `/system-config/model-configs` | `@RequireRole(platform_admin)` + body:`ModelConfigCreateRequest` | 保留 |
@@ -510,7 +524,7 @@
 | POST | `/tags/batch` | `@RequireRole(platform_admin)` + body:`List<TagCreateRequest>` | 保留 |
 | DELETE | `/tags/{id}` | `@RequireRole(platform_admin)` + path:`id` | 保留 |
 | POST | `/files/upload` | multipart:`file`,query:`category?` | 保留 |
-| GET | `/sensitive-words` | `@RequireRole(platform_admin)` + query:`page,pageSize,category?,enabled?` | 保留 |
+| GET | `/sensitive-words` | `@RequireRole(platform_admin)` + query:`page,pageSize,category?,enabled?,keyword?`；`total` 为筛选后总数 | 保留 |
 | GET | `/sensitive-words/categories` | `@RequireRole(platform_admin)` | 保留 |
 | GET | `/sensitive-words/count` | `@RequireRole(platform_admin)` | 保留 |
 | POST | `/sensitive-words` | `@RequireRole(platform_admin)` + header:`X-User-Id`, body:`AddRequest` | 保留 |
@@ -697,7 +711,7 @@
 | `page` | Integer | 否 | `1` | 页码 |
 | `pageSize` | Integer | 否 | `20` | 每页 |
 | `status` | String | 否 | - | 状态筛选 |
-| `keyword` | String | 否 | - | 关键词 |
+| `keyword` | String | 否 | - | 服务端检索：`companyName`、`applyReason`、`contactEmail`、`contactPhone`、`user_id`（含 `CAST` 模糊）、`t_user.username`/`real_name`（EXISTS）；纯数字同时匹配 `userId` |
 
 ### 审批 `POST /developer/applications/{id}/approve|reject`
 
@@ -706,6 +720,19 @@
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `reviewComment` | String | 驳回必填 | 审批意见 |
+
+### `GET /system-config/audit-logs`
+
+查询参数（`AuditLogQueryRequest`，在既有 `page`/`pageSize`/`userId`/`action` 基础上）：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `keyword` | String | 否 | 对 `username`、`action`、`resource`、`resourceId`、`details`、`ip`、`userId` 等 OR 模糊匹配；超长截断由后端统一处理 |
+| `onlyFailure` | Boolean | 否 | `true` 时仅 `result=failure` |
+| `timeFrom` | LocalDateTime | 否 | ISO-8601，筛选 `create_time` 下限 |
+| `timeTo` | LocalDateTime | 否 | ISO-8601，筛选 `create_time` 上限 |
+
+分页 `total` 为上述条件组合后的总条数。
 
 ## 5.6 复杂流程（前端必须按流程实现）
 

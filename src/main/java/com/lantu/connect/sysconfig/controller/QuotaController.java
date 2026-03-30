@@ -51,7 +51,8 @@ public class QuotaController {
     public R<PageResult<Quota>> page(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int pageSize,
-            @RequestParam(required = false) String subjectType) {
-        return R.ok(quotaService.page(page, pageSize, subjectType));
+            @RequestParam(required = false) String subjectType,
+            @RequestParam(required = false) String keyword) {
+        return R.ok(quotaService.page(page, pageSize, subjectType, keyword));
     }
 }

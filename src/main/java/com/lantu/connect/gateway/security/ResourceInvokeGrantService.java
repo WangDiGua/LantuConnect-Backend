@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.security.CasbinAuthorizationService;
+import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.gateway.dto.ResourceGrantCreateRequest;
 import com.lantu.connect.gateway.dto.ResourceGrantVO;
@@ -149,15 +150,21 @@ public class ResourceInvokeGrantService {
                 grant.getGranteeId());
     }
 
-    public List<ResourceGrantVO> listByResource(Long operatorUserId, String resourceType, Long resourceId) {
+    public List<ResourceGrantVO> listByResource(Long operatorUserId, String resourceType, Long resourceId, String keyword) {
         String normalizedType = normalizeType(resourceType);
         Long ownerUserId = resolveResourceOwnerUserId(normalizedType, resourceId);
         ensureCanManageGrant(operatorUserId, ownerUserId);
-        List<ResourceInvokeGrant> grants = resourceInvokeGrantMapper.selectList(
-                new LambdaQueryWrapper<ResourceInvokeGrant>()
-                        .eq(ResourceInvokeGrant::getResourceType, normalizedType)
-                        .eq(ResourceInvokeGrant::getResourceId, resourceId)
-                        .orderByDesc(ResourceInvokeGrant::getUpdateTime));
+        LambdaQueryWrapper<ResourceInvokeGrant> q = new LambdaQueryWrapper<ResourceInvokeGrant>()
+                .eq(ResourceInvokeGrant::getResourceType, normalizedType)
+                .eq(ResourceInvokeGrant::getResourceId, resourceId);
+        String kw = ListQueryKeyword.normalize(keyword);
+        if (kw != null) {
+            q.and(w -> w.like(ResourceInvokeGrant::getGranteeId, kw)
+                    .or()
+                    .like(ResourceInvokeGrant::getGranteeType, kw));
+        }
+        q.orderByDesc(ResourceInvokeGrant::getUpdateTime);
+        List<ResourceInvokeGrant> grants = resourceInvokeGrantMapper.selectList(q);
         Map<Long, String> names = userDisplayNameResolver.resolveDisplayNames(
                 grants.stream().map(ResourceInvokeGrant::getGrantedByUserId).toList());
         return grants

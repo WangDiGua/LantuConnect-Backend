@@ -9,6 +9,7 @@ import com.github.houbb.sensitive.word.support.allow.WordAllows;
 import com.github.houbb.sensitive.word.support.deny.WordDenys;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -115,13 +116,17 @@ public class SensitiveWordService {
         return DEFAULT_MASK_GROUP.matcher(masked).replaceAll(replacement);
     }
 
-    public Page<SensitiveWord> list(int page, int pageSize, String category, Boolean enabled) {
+    public Page<SensitiveWord> list(int page, int pageSize, String category, Boolean enabled, String keyword) {
         LambdaQueryWrapper<SensitiveWord> wrapper = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(category)) {
             wrapper.eq(SensitiveWord::getCategory, category);
         }
         if (enabled != null) {
             wrapper.eq(SensitiveWord::getEnabled, enabled);
+        }
+        String kw = ListQueryKeyword.normalize(keyword);
+        if (kw != null) {
+            wrapper.like(SensitiveWord::getWord, kw);
         }
         wrapper.orderByDesc(SensitiveWord::getCreateTime);
         Page<SensitiveWord> result = sensitiveWordMapper.selectPage(new Page<>(page, pageSize), wrapper);
@@ -368,10 +373,24 @@ public class SensitiveWordService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public void update(Long id, String category, Integer severity, Boolean enabled) {
+    public void update(Long id, String word, String category, Integer severity, Boolean enabled) {
         SensitiveWord entity = sensitiveWordMapper.selectById(id);
         if (entity == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "敏感词不存在");
+        }
+        if (StringUtils.hasText(word)) {
+            String nw = normalizeWord(word);
+            if (nw.length() > MAX_WORD_LENGTH) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "敏感词长度不能超过 " + MAX_WORD_LENGTH);
+            }
+            if (!nw.equals(entity.getWord())) {
+                Long dup = sensitiveWordMapper.selectCount(
+                        new LambdaQueryWrapper<SensitiveWord>().eq(SensitiveWord::getWord, nw).ne(SensitiveWord::getId, id));
+                if (dup != null && dup > 0) {
+                    throw new BusinessException(ResultCode.CONFLICT, "敏感词已存在");
+                }
+                entity.setWord(nw);
+            }
         }
         if (StringUtils.hasText(category)) {
             entity.setCategory(category);

@@ -28,9 +28,10 @@ public class AuditController {
             @RequestHeader("X-User-Id") Long userId,
             @RequestParam(required = false) String resourceType,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int pageSize) {
-        return R.ok(auditService.pagePendingResources(userId, resourceType, status, page, pageSize));
+        return R.ok(auditService.pagePendingResources(userId, resourceType, status, keyword, page, pageSize));
     }
 
     @GetMapping("/agents")

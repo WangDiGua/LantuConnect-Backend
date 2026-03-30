@@ -21,8 +21,10 @@ public class AnnouncementController {
 
     @GetMapping
     public R<PageResult<Announcement>> list(@RequestParam(defaultValue = "1") Integer page,
-                                            @RequestParam(defaultValue = "20") Integer pageSize) {
-        return R.ok(announcementService.list(page, pageSize));
+                                            @RequestParam(defaultValue = "20") Integer pageSize,
+                                            @RequestParam(required = false) String keyword,
+                                            @RequestParam(required = false) String type) {
+        return R.ok(announcementService.list(page, pageSize, keyword, type));
     }
 
     @PostMapping

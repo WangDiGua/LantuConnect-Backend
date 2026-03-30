@@ -12,7 +12,7 @@ public interface GrantApplicationService {
 
     void reject(Long reviewerUserId, Long applicationId, String reason);
 
-    PageResult<GrantApplicationVO> pageMyApplications(Long applicantUserId, String status, int page, int pageSize);
+    PageResult<GrantApplicationVO> pageMyApplications(Long applicantUserId, String status, String keyword, int page, int pageSize);
 
-    PageResult<GrantApplicationVO> pagePendingApplications(String status, int page, int pageSize);
+    PageResult<GrantApplicationVO> pagePendingApplications(String status, String keyword, int page, int pageSize);
 }

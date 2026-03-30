@@ -62,6 +62,16 @@ public class SystemParamController {
         return R.ok(systemParamFacadeService.pageAuditLogs(request));
     }
 
+    @GetMapping("/acl")
+    public R<Map<String, Object>> aclRules() {
+        return R.ok(systemParamFacadeService.getAclRules());
+    }
+
+    @GetMapping("/audit-actions")
+    public R<List<String>> auditActions() {
+        return R.ok(systemParamFacadeService.listDistinctAuditActions());
+    }
+
     @PostMapping("/network/apply")
     @AuditLog(action = "apply_network", resource = "system-config")
     public R<Map<String, Object>> applyNetwork(@RequestHeader("X-User-Id") Long operatorUserId) {

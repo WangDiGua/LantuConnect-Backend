@@ -3,6 +3,9 @@ package com.lantu.connect.sysconfig.dto;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.Data;
+import org.springframework.format.annotation.DateTimeFormat;
+
+import java.time.LocalDateTime;
 
 /**
  * 系统配置 AuditLogQueryRequest 数据传输对象
@@ -21,4 +24,19 @@ public class AuditLogQueryRequest {
     private int pageSize = 20;
     private String userId;
     private String action;
+
+    /** 对 operator/username、action、resource、详情、ip 等做 OR 模糊匹配 */
+    private String keyword;
+
+    /** true 时仅返回 result=failure */
+    private Boolean onlyFailure;
+
+    /** success 或 failure；若与 onlyFailure 同时传入，以本字段为准 */
+    private String result;
+
+    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+    private LocalDateTime timeFrom;
+
+    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+    private LocalDateTime timeTo;
 }

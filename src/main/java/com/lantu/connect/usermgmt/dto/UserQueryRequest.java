@@ -18,4 +18,10 @@ public class UserQueryRequest {
     private String sortBy;
 
     private String sortOrder;
+
+    /** 模糊匹配用户名、姓名、手机、邮箱、用户 ID */
+    private String keyword;
+
+    /** active / disabled / locked；all 或不传则不按状态筛 */
+    private String status;
 }

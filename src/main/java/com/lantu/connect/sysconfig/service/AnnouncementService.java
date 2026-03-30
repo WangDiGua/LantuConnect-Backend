@@ -7,7 +7,7 @@ import com.lantu.connect.sysconfig.entity.Announcement;
 
 public interface AnnouncementService {
 
-    PageResult<Announcement> list(Integer page, Integer pageSize);
+    PageResult<Announcement> list(Integer page, Integer pageSize, String keyword, String type);
 
     Announcement create(Long operatorUserId, AnnouncementCreateRequest request);
 

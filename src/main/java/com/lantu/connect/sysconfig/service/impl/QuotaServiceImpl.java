@@ -6,6 +6,7 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.sysconfig.dto.QuotaCreateRequest;
 import com.lantu.connect.sysconfig.dto.QuotaUpdateRequest;
 import com.lantu.connect.sysconfig.entity.Quota;
@@ -99,11 +100,18 @@ public class QuotaServiceImpl implements QuotaService {
     }
 
     @Override
-    public PageResult<Quota> page(int page, int pageSize, String subjectType) {
+    public PageResult<Quota> page(int page, int pageSize, String subjectType, String keyword) {
         Page<Quota> p = new Page<>(page, pageSize);
         LambdaQueryWrapper<Quota> q = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(subjectType)) {
             q.eq(Quota::getTargetType, subjectType);
+        }
+        String kw = ListQueryKeyword.normalize(keyword);
+        if (kw != null) {
+            String likeParam = "%" + kw + "%";
+            q.and(w -> w.like(Quota::getTargetName, kw)
+                    .or()
+                    .apply("CAST(target_id AS CHAR) LIKE {0}", likeParam));
         }
         q.orderByDesc(Quota::getUpdateTime);
         Page<Quota> result = quotaMapper.selectPage(p, q);

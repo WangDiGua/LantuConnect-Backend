@@ -10,6 +10,7 @@ import com.lantu.connect.gateway.dto.ResourceRejectRequest;
 import com.lantu.connect.gateway.service.GrantApplicationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -36,18 +37,24 @@ public class GrantApplicationController {
     public R<PageResult<GrantApplicationVO>> myApplications(
             @RequestHeader("X-User-Id") Long userId,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int pageSize) {
-        return R.ok(grantApplicationService.pageMyApplications(userId, status, page, pageSize));
+        String kw = StringUtils.hasText(keyword) ? keyword : q;
+        return R.ok(grantApplicationService.pageMyApplications(userId, status, kw, page, pageSize));
     }
 
     @GetMapping("/pending")
     @RequireRole({"platform_admin"})
     public R<PageResult<GrantApplicationVO>> pendingApplications(
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int pageSize) {
-        return R.ok(grantApplicationService.pagePendingApplications(status, page, pageSize));
+        String kw = StringUtils.hasText(keyword) ? keyword : q;
+        return R.ok(grantApplicationService.pagePendingApplications(status, kw, page, pageSize));
     }
 
     @PostMapping("/{id}/approve")

@@ -10,6 +10,7 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.onboarding.dto.DeveloperApplicationCreateRequest;
 import com.lantu.connect.onboarding.dto.DeveloperApplicationQueryRequest;
@@ -88,13 +89,29 @@ public class DeveloperApplicationServiceImpl implements DeveloperApplicationServ
         if (StringUtils.hasText(request.getStatus())) {
             q.eq(DeveloperApplication::getStatus, request.getStatus().trim());
         }
-        if (StringUtils.hasText(request.getKeyword())) {
-            String keyword = request.getKeyword().trim();
-            q.and(w -> w.like(DeveloperApplication::getCompanyName, keyword)
-                    .or()
-                    .like(DeveloperApplication::getApplyReason, keyword)
-                    .or()
-                    .like(DeveloperApplication::getContactEmail, keyword));
+        String kw = ListQueryKeyword.normalize(request.getKeyword());
+        if (kw != null) {
+            String likeParam = "%" + kw + "%";
+            q.and(w -> {
+                w.like(DeveloperApplication::getCompanyName, kw)
+                        .or()
+                        .like(DeveloperApplication::getApplyReason, kw)
+                        .or()
+                        .like(DeveloperApplication::getContactEmail, kw)
+                        .or()
+                        .like(DeveloperApplication::getContactPhone, kw)
+                        .or()
+                        .apply("CAST(user_id AS CHAR) LIKE {0}", likeParam)
+                        .or()
+                        .apply("EXISTS (SELECT 1 FROM t_user u WHERE u.user_id = t_developer_application.user_id"
+                                + " AND u.deleted = 0 AND (u.username LIKE {0} OR u.real_name LIKE {0}))", likeParam);
+                try {
+                    long uid = Long.parseLong(kw);
+                    w.or().eq(DeveloperApplication::getUserId, uid);
+                } catch (NumberFormatException ignored) {
+                    // ignore
+                }
+            });
         }
         q.orderByDesc(DeveloperApplication::getCreateTime);
 

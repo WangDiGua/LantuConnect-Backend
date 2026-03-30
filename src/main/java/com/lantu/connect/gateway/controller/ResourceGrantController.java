@@ -49,7 +49,8 @@ public class ResourceGrantController {
     @GetMapping
     public R<List<ResourceGrantVO>> list(@RequestHeader("X-User-Id") Long userId,
                                          @RequestParam String resourceType,
-                                         @RequestParam Long resourceId) {
-        return R.ok(resourceInvokeGrantService.listByResource(userId, resourceType, resourceId));
+                                         @RequestParam Long resourceId,
+                                         @RequestParam(required = false) String keyword) {
+        return R.ok(resourceInvokeGrantService.listByResource(userId, resourceType, resourceId, keyword));
     }
 }

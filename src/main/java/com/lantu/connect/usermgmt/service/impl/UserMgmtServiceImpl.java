@@ -15,11 +15,14 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
 import com.lantu.connect.usermgmt.ApiKeyScopes;
 import com.lantu.connect.usermgmt.dto.*;
+import com.lantu.connect.usermgmt.entity.AccessToken;
 import com.lantu.connect.usermgmt.entity.ApiKey;
+import com.lantu.connect.usermgmt.mapper.AccessTokenMapper;
 import com.lantu.connect.usermgmt.mapper.ApiKeyMapper;
 import com.lantu.connect.usermgmt.service.UserMgmtService;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +35,7 @@ import org.springframework.util.StringUtils;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDateTime;
 import java.util.*;
 
 /**
@@ -49,6 +53,7 @@ public class UserMgmtServiceImpl implements UserMgmtService {
     private final UserRoleRelMapper userRoleRelMapper;
     private final OrgMenuMapper orgMenuMapper;
     private final ApiKeyMapper apiKeyMapper;
+    private final AccessTokenMapper accessTokenMapper;
     private final UserDisplayNameResolver userDisplayNameResolver;
     private final SystemNotificationFacade systemNotificationFacade;
 
@@ -65,6 +70,21 @@ public class UserMgmtServiceImpl implements UserMgmtService {
             if (op != null && op.getMenuId() != null) {
                 w.eq(User::getMenuId, op.getMenuId());
             }
+        }
+        if (StringUtils.hasText(request.getStatus()) && !"all".equalsIgnoreCase(request.getStatus().trim())) {
+            w.eq(User::getStatus, request.getStatus().trim());
+        }
+        String kw = ListQueryKeyword.normalize(request.getKeyword());
+        if (kw != null) {
+            w.and(x -> x.like(User::getUsername, kw)
+                    .or()
+                    .like(User::getRealName, kw)
+                    .or()
+                    .like(User::getMobile, kw)
+                    .or()
+                    .like(User::getMail, kw)
+                    .or()
+                    .apply("CAST(user_id AS CHAR) LIKE {0}", "%" + kw + "%"));
         }
         Page<User> result = userMapper.selectPage(page, w);
         return PageResults.from(result);
@@ -273,6 +293,49 @@ public class UserMgmtServiceImpl implements UserMgmtService {
         key.setStatus("revoked");
         apiKeyMapper.updateById(key);
         systemNotificationFacade.notifyApiKeyChanged(0L, key.getId(), key.getName(), false);
+    }
+
+    @Override
+    public PageResult<AccessToken> pageTokens(int page, int pageSize, String keyword, String status) {
+        Page<AccessToken> p = new Page<>(page, pageSize);
+        LambdaQueryWrapper<AccessToken> w = new LambdaQueryWrapper<>();
+        if (StringUtils.hasText(status) && !"all".equalsIgnoreCase(status.trim())) {
+            String st = status.trim().toLowerCase(Locale.ROOT);
+            if ("expired".equals(st)) {
+                LocalDateTime now = LocalDateTime.now();
+                w.and(x -> x.eq(AccessToken::getStatus, "expired")
+                        .or(x2 -> x2.eq(AccessToken::getStatus, "active").lt(AccessToken::getExpiresAt, now)));
+            } else if ("active".equals(st)) {
+                w.eq(AccessToken::getStatus, "active").ge(AccessToken::getExpiresAt, LocalDateTime.now());
+            } else {
+                w.eq(AccessToken::getStatus, st);
+            }
+        }
+        String kw = ListQueryKeyword.normalize(keyword);
+        if (kw != null) {
+            w.and(x -> x.like(AccessToken::getName, kw)
+                    .or()
+                    .like(AccessToken::getMaskedToken, kw)
+                    .or()
+                    .like(AccessToken::getId, kw)
+                    .or()
+                    .like(AccessToken::getType, kw)
+                    .or()
+                    .like(AccessToken::getCreatedBy, kw));
+        }
+        w.orderByDesc(AccessToken::getCreateTime);
+        Page<AccessToken> result = accessTokenMapper.selectPage(p, w);
+        return PageResults.from(result);
+    }
+
+    @Override
+    public void revokeToken(String id) {
+        AccessToken token = accessTokenMapper.selectById(id);
+        if (token == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "Token 不存在");
+        }
+        token.setStatus("revoked");
+        accessTokenMapper.updateById(token);
     }
 
     @Override

@@ -32,4 +32,12 @@ public interface SystemParamFacadeService {
     Map<String, Object> applyNetwork(Long operatorUserId);
 
     Map<String, Object> publishAcl(Long operatorUserId);
+
+    /**
+     * ACL 规则列表（无独立存储时返回空列表；键 {@code rules} 与前端约定一致）。
+     */
+    Map<String, Object> getAclRules();
+
+    /** 审计日志中出现过的 action 值，供管理端下拉 */
+    List<String> listDistinctAuditActions();
 }

@@ -10,6 +10,7 @@ import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.util.DeptScopeHelper;
+import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.notification.service.NotificationEventCodes;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
@@ -54,24 +55,58 @@ public class AuditServiceImpl implements AuditService {
 
     @Override
     public PageResult<AuditItem> pagePendingAgents(Long operatorUserId, int page, int pageSize) {
-        return pagePendingResources(operatorUserId, TARGET_AGENT, null, page, pageSize);
+        return pagePendingResources(operatorUserId, TARGET_AGENT, null, null, page, pageSize);
     }
 
     @Override
     public PageResult<AuditItem> pagePendingSkills(Long operatorUserId, int page, int pageSize) {
-        return pagePendingResources(operatorUserId, TARGET_SKILL, null, page, pageSize);
+        return pagePendingResources(operatorUserId, TARGET_SKILL, null, null, page, pageSize);
     }
 
     @Override
-    public PageResult<AuditItem> pagePendingResources(Long operatorUserId, String resourceType, String status, int page, int pageSize) {
+    public PageResult<AuditItem> pagePendingResources(Long operatorUserId, String resourceType, String status, String keyword, int page, int pageSize) {
         String normalizedType = normalizeTargetType(resourceType);
-        String filterStatus = StringUtils.hasText(status) ? status.trim().toLowerCase() : STATUS_PENDING;
 
         Page<AuditItem> p = new Page<>(page, pageSize);
         LambdaQueryWrapper<AuditItem> wrapper = new LambdaQueryWrapper<AuditItem>()
                 .eq(StringUtils.hasText(normalizedType), AuditItem::getTargetType, normalizedType)
-                .eq(AuditItem::getStatus, filterStatus)
                 .orderByDesc(AuditItem::getSubmitTime);
+
+        if (!StringUtils.hasText(status)) {
+            wrapper.eq(AuditItem::getStatus, STATUS_PENDING);
+        } else if ("all".equalsIgnoreCase(status.trim())) {
+            // 不按状态过滤
+        } else {
+            wrapper.eq(AuditItem::getStatus, status.trim().toLowerCase());
+        }
+
+        String kw = ListQueryKeyword.normalize(keyword);
+        if (kw != null) {
+            String likeParam = "%" + kw + "%";
+            wrapper.and(q -> {
+                q.like(AuditItem::getDisplayName, kw)
+                        .or()
+                        .like(AuditItem::getAgentName, kw)
+                        .or()
+                        .like(AuditItem::getDescription, kw)
+                        .or()
+                        .like(AuditItem::getTargetType, kw)
+                        .or()
+                        .like(AuditItem::getAgentType, kw)
+                        .or()
+                        .like(AuditItem::getSourceType, kw)
+                        .or()
+                        .like(AuditItem::getSubmitter, kw)
+                        .or()
+                        .apply("CAST(target_id AS CHAR) LIKE {0}", likeParam);
+                try {
+                    long id = Long.parseLong(kw);
+                    q.or().eq(AuditItem::getId, id).or().eq(AuditItem::getTargetId, id);
+                } catch (NumberFormatException ignored) {
+                    // not numeric id search
+                }
+            });
+        }
 
         if (deptScopeHelper.isDeptAdminOnly(operatorUserId)) {
             List<String> deptUserIds = findDeptUserIds(operatorUserId);

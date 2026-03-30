@@ -8,7 +8,7 @@ import com.lantu.connect.common.result.PageResult;
  */
 public interface AuditService {
 
-    PageResult<AuditItem> pagePendingResources(Long operatorUserId, String resourceType, String status, int page, int pageSize);
+    PageResult<AuditItem> pagePendingResources(Long operatorUserId, String resourceType, String status, String keyword, int page, int pageSize);
 
     PageResult<AuditItem> pagePendingAgents(Long operatorUserId, int page, int pageSize);
 

@@ -21,5 +21,5 @@ public interface QuotaService {
 
     Quota getById(Long id);
 
-    PageResult<Quota> page(int page, int pageSize, String subjectType);
+    PageResult<Quota> page(int page, int pageSize, String subjectType, String keyword);
 }

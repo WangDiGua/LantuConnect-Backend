@@ -18,6 +18,7 @@ import com.lantu.connect.monitoring.service.AlertRuleService;
 import com.lantu.connect.monitoring.service.MonitoringService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -99,8 +100,17 @@ public class MonitoringController {
     public R<PageResult<AlertRule>> pageAlertRules(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int pageSize,
-            @RequestParam(required = false) String name) {
-        return R.ok(alertRuleService.page(page, pageSize, name));
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String keyword) {
+        String filter = StringUtils.hasText(keyword) ? keyword.trim() : name;
+        return R.ok(alertRuleService.page(page, pageSize, filter));
+    }
+
+    /** 告警规则指标 id，与前端 METRIC_OPTIONS / handoff 02 对齐；扩展指标可改为读配置或 DB */
+    @GetMapping("/alert-rule-metrics")
+    @RequirePermission({"monitor:view"})
+    public R<List<String>> alertRuleMetrics() {
+        return R.ok(List.of("http_5xx_rate", "latency_p99", "error_rate"));
     }
 
     @PostMapping("/alert-rules/{id}/dry-run")

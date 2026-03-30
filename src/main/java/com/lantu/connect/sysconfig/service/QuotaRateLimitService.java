@@ -18,7 +18,7 @@ public interface QuotaRateLimitService {
 
     QuotaRateLimit getById(Long id);
 
-    PageResult<QuotaRateLimit> page(int page, int pageSize, Long quotaId);
+    PageResult<QuotaRateLimit> page(int page, int pageSize, Long quotaId, String keyword);
 
     void toggle(Long id, Integer enabled);
 }

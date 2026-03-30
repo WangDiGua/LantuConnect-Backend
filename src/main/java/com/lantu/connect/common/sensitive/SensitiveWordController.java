@@ -41,8 +41,9 @@ public class SensitiveWordController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int pageSize,
             @RequestParam(required = false) String category,
-            @RequestParam(required = false) Boolean enabled) {
-        Page<SensitiveWord> p = sensitiveWordService.list(page, pageSize, category, enabled);
+            @RequestParam(required = false) Boolean enabled,
+            @RequestParam(required = false) String keyword) {
+        Page<SensitiveWord> p = sensitiveWordService.list(page, pageSize, category, enabled, keyword);
         return R.ok(PageResults.from(p));
     }
 
@@ -135,7 +136,7 @@ public class SensitiveWordController {
     @PutMapping("/{id}")
     @RequireRole({"platform_admin"})
     public R<Void> update(@PathVariable Long id, @Valid @RequestBody UpdateRequest request) {
-        sensitiveWordService.update(id, request.getCategory(), request.getSeverity(), request.getEnabled());
+        sensitiveWordService.update(id, request.getWord(), request.getCategory(), request.getSeverity(), request.getEnabled());
         return R.ok();
     }
 
@@ -176,6 +177,8 @@ public class SensitiveWordController {
 
     @Data
     public static class UpdateRequest {
+        /** 可选；传入则更新词面（规范化后与去重校验） */
+        private String word;
         private String category;
         private Integer severity;
         private Boolean enabled;

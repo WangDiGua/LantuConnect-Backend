@@ -78,6 +78,10 @@ public class MonitoringServiceImpl implements MonitoringService {
                     .or().like(CallLog::getAgentName, kw)
                     .or().like(CallLog::getTraceId, kw));
         }
+        String callStatus = query.getStatus();
+        if (StringUtils.hasText(callStatus) && !"all".equalsIgnoreCase(callStatus.trim())) {
+            q.eq(CallLog::getStatus, callStatus.trim());
+        }
         q.orderByDesc(CallLog::getCreateTime);
         Page<CallLog> result = callLogMapper.selectPage(page, q);
         enrichCallLogUserNames(result.getRecords());
@@ -89,7 +93,21 @@ public class MonitoringServiceImpl implements MonitoringService {
         Page<AlertRecord> page = new Page<>(query.getPage(), query.getPageSize());
         LambdaQueryWrapper<AlertRecord> q = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(query.getKeyword())) {
-            q.and(w -> w.like(AlertRecord::getMessage, query.getKeyword()).or().like(AlertRecord::getRuleId, query.getKeyword()));
+            String kw = query.getKeyword().trim();
+            q.and(w -> w.like(AlertRecord::getMessage, kw).or().like(AlertRecord::getRuleId, kw));
+        }
+        if (StringUtils.hasText(query.getSeverity())) {
+            q.eq(AlertRecord::getSeverity, query.getSeverity().trim());
+        }
+        String ast = query.getAlertStatus();
+        if (!StringUtils.hasText(ast) && StringUtils.hasText(query.getStatus())) {
+            String s = query.getStatus().trim();
+            if ("firing".equalsIgnoreCase(s) || "resolved".equalsIgnoreCase(s) || "silenced".equalsIgnoreCase(s)) {
+                ast = s;
+            }
+        }
+        if (StringUtils.hasText(ast) && !"all".equalsIgnoreCase(ast.trim())) {
+            q.eq(AlertRecord::getStatus, ast.trim());
         }
         q.orderByDesc(AlertRecord::getFiredAt);
         Page<AlertRecord> result = alertRecordMapper.selectPage(page, q);

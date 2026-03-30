@@ -6,6 +6,7 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.sysconfig.dto.QuotaRateLimitCreateRequest;
 import com.lantu.connect.sysconfig.entity.QuotaRateLimit;
 import com.lantu.connect.sysconfig.mapper.QuotaRateLimitMapper;
@@ -66,11 +67,22 @@ public class QuotaRateLimitServiceImpl implements QuotaRateLimitService {
     }
 
     @Override
-    public PageResult<QuotaRateLimit> page(int page, int pageSize, Long quotaId) {
+    public PageResult<QuotaRateLimit> page(int page, int pageSize, Long quotaId, String keyword) {
         Page<QuotaRateLimit> p = new Page<>(page, pageSize);
         LambdaQueryWrapper<QuotaRateLimit> q = new LambdaQueryWrapper<>();
         if (quotaId != null) {
             q.eq(QuotaRateLimit::getTargetId, quotaId).eq(QuotaRateLimit::getTargetType, "quota");
+        }
+        String kw = ListQueryKeyword.normalize(keyword);
+        if (kw != null) {
+            String likeParam = "%" + kw + "%";
+            q.and(w -> w.like(QuotaRateLimit::getName, kw)
+                    .or()
+                    .like(QuotaRateLimit::getTargetName, kw)
+                    .or()
+                    .like(QuotaRateLimit::getTargetType, kw)
+                    .or()
+                    .apply("CAST(target_id AS CHAR) LIKE {0}", likeParam));
         }
         q.orderByDesc(QuotaRateLimit::getUpdateTime);
         Page<QuotaRateLimit> result = quotaRateLimitMapper.selectPage(p, q);

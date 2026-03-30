@@ -19,6 +19,7 @@ import com.lantu.connect.usermgmt.dto.UserRoleReplaceRequest;
 import com.lantu.connect.usermgmt.dto.UpdateUserRequest;
 import com.lantu.connect.usermgmt.dto.UserQueryRequest;
 import com.lantu.connect.usermgmt.entity.ApiKey;
+import com.lantu.connect.usermgmt.entity.AccessToken;
 
 import java.util.List;
 
@@ -53,6 +54,10 @@ public interface UserMgmtService {
     ApiKeyResponse createApiKey(ApiKeyCreateRequest request);
 
     void revokeApiKey(String id);
+
+    PageResult<AccessToken> pageTokens(int page, int pageSize, String keyword, String status);
+
+    void revokeToken(String id);
 
     List<OrgNodeVO> getOrgTree();
 

@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.gateway.dto.GrantApplicationRequest;
 import com.lantu.connect.gateway.dto.GrantApplicationVO;
@@ -178,12 +179,15 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
     }
 
     @Override
-    public PageResult<GrantApplicationVO> pageMyApplications(Long applicantUserId, String status, int page, int pageSize) {
+    public PageResult<GrantApplicationVO> pageMyApplications(Long applicantUserId, String status, String keyword, int page, int pageSize) {
         Page<ResourceGrantApplication> p = new Page<>(page, pageSize);
         LambdaQueryWrapper<ResourceGrantApplication> w = new LambdaQueryWrapper<ResourceGrantApplication>()
-                .eq(ResourceGrantApplication::getApplicantId, applicantUserId)
-                .eq(StringUtils.hasText(status), ResourceGrantApplication::getStatus, status)
-                .orderByDesc(ResourceGrantApplication::getCreateTime);
+                .eq(ResourceGrantApplication::getApplicantId, applicantUserId);
+        if (StringUtils.hasText(status) && !"all".equalsIgnoreCase(status.trim())) {
+            w.eq(ResourceGrantApplication::getStatus, status.trim());
+        }
+        applyGrantApplicationKeyword(w, keyword);
+        w.orderByDesc(ResourceGrantApplication::getCreateTime);
         Page<ResourceGrantApplication> result = applicationMapper.selectPage(p, w);
         Map<Long, String> names = resolveUserNames(result.getRecords());
         return PageResult.of(result.getRecords().stream().map(app -> toVO(app, names)).toList(),
@@ -191,16 +195,47 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
     }
 
     @Override
-    public PageResult<GrantApplicationVO> pagePendingApplications(String status, int page, int pageSize) {
+    public PageResult<GrantApplicationVO> pagePendingApplications(String status, String keyword, int page, int pageSize) {
         String filterStatus = StringUtils.hasText(status) ? status.trim().toLowerCase() : "pending";
         Page<ResourceGrantApplication> p = new Page<>(page, pageSize);
-        Page<ResourceGrantApplication> result = applicationMapper.selectPage(p,
-                new LambdaQueryWrapper<ResourceGrantApplication>()
-                        .eq(ResourceGrantApplication::getStatus, filterStatus)
-                        .orderByDesc(ResourceGrantApplication::getCreateTime));
+        LambdaQueryWrapper<ResourceGrantApplication> w = new LambdaQueryWrapper<ResourceGrantApplication>()
+                .eq(ResourceGrantApplication::getStatus, filterStatus);
+        applyGrantApplicationKeyword(w, keyword);
+        w.orderByDesc(ResourceGrantApplication::getCreateTime);
+        Page<ResourceGrantApplication> result = applicationMapper.selectPage(p, w);
         Map<Long, String> names = resolveUserNames(result.getRecords());
         return PageResult.of(result.getRecords().stream().map(app -> toVO(app, names)).toList(),
                 result.getTotal(), page, pageSize);
+    }
+
+    private void applyGrantApplicationKeyword(LambdaQueryWrapper<ResourceGrantApplication> w, String keyword) {
+        String kw = ListQueryKeyword.normalize(keyword);
+        if (kw == null) {
+            return;
+        }
+        String likeParam = "%" + kw + "%";
+        w.and(q -> {
+            q.like(ResourceGrantApplication::getResourceType, kw)
+                    .or()
+                    .apply("CAST(resource_id AS CHAR) LIKE {0}", likeParam)
+                    .or()
+                    .like(ResourceGrantApplication::getApiKeyId, kw)
+                    .or()
+                    .like(ResourceGrantApplication::getUseCase, kw)
+                    .or()
+                    .like(ResourceGrantApplication::getCallFrequency, kw)
+                    .or()
+                    .apply("CAST(actions AS CHAR) LIKE {0}", likeParam)
+                    .or()
+                    .apply("EXISTS (SELECT 1 FROM t_user u WHERE u.user_id = t_resource_grant_application.applicant_id"
+                            + " AND u.deleted = 0 AND (u.username LIKE {0} OR u.real_name LIKE {0}))", likeParam);
+            try {
+                long id = Long.parseLong(kw);
+                q.or().eq(ResourceGrantApplication::getId, id);
+            } catch (NumberFormatException ignored) {
+                // not numeric
+            }
+        });
     }
 
     private ResourceGrantApplication requirePending(Long applicationId) {

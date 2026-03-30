@@ -45,8 +45,9 @@ public class QuotaRateLimitController {
     public R<PageResult<QuotaRateLimit>> page(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int pageSize,
-            @RequestParam(required = false) Long quotaId) {
-        return R.ok(quotaRateLimitService.page(page, pageSize, quotaId));
+            @RequestParam(required = false) Long quotaId,
+            @RequestParam(required = false) String keyword) {
+        return R.ok(quotaRateLimitService.page(page, pageSize, quotaId, keyword));
     }
 
     @PatchMapping("/{id}")
