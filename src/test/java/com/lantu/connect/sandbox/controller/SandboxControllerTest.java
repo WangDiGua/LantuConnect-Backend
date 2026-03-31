@@ -29,14 +29,14 @@ class SandboxControllerTest {
     @Test
     void shouldGenerateTraceIdForSandboxInvoke() {
         InvokeRequest request = new InvokeRequest();
-        request.setResourceType("skill");
-        request.setResourceId("8");
+        request.setResourceType("mcp");
+        request.setResourceId("9");
         when(sandboxService.sandboxInvoke(eq("st-1"), org.mockito.ArgumentMatchers.anyString(), eq("127.0.0.1"), eq(request)))
                 .thenReturn(InvokeResponse.builder()
                         .requestId("req-1")
                         .traceId("trace-1")
-                        .resourceType("skill")
-                        .resourceId("8")
+                        .resourceType("mcp")
+                        .resourceId("9")
                         .status("success")
                         .statusCode(200)
                         .latencyMs(10L)

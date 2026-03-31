@@ -26,34 +26,57 @@ public class CasbinAuthorizationService {
     private final PlatformRoleMapper platformRoleMapper;
     private final UserMapper userMapper;
 
+    /**
+     * 为当前用户构建 Enforcer（含一次角色/策略加载）。高流量路径应对每个请求复用同一实例，避免重复查库与构建模型。
+     */
+    public Enforcer loadEnforcerForUser(Long userId) {
+        return buildEnforcer(userId);
+    }
+
     public boolean hasAnyRole(Long userId, String[] requiredRoles) {
         if (userId == null || requiredRoles == null || requiredRoles.length == 0) {
             return false;
         }
-        Enforcer enforcer = buildEnforcer(userId);
-        String subject = subject(userId);
+        return hasAnyRole(userId, requiredRoles, loadEnforcerForUser(userId));
+    }
+
+    /**
+     * 使用已加载的 Enforcer 做角色判断（须与 userId 对应策略一致）。
+     */
+    public boolean hasAnyRole(Long userId, String[] requiredRoles, Enforcer enforcer) {
+        if (userId == null || requiredRoles == null || requiredRoles.length == 0 || enforcer == null) {
+            return false;
+        }
+        String subj = subject(userId);
         return Arrays.stream(requiredRoles)
                 .filter(StringUtils::hasText)
                 .map(this::normalize)
-                .anyMatch(role -> enforcer.enforce(subject, "role", role, "*"));
+                .anyMatch(role -> enforcer.enforce(subj, "role", role, "*"));
     }
 
     public boolean hasPermissions(Long userId, String[] requiredPermissions, RequirePermission.LogicalOperator operator) {
         if (userId == null || requiredPermissions == null || requiredPermissions.length == 0) {
             return false;
         }
-        Enforcer enforcer = buildEnforcer(userId);
-        String subject = subject(userId);
+        return hasPermissions(userId, requiredPermissions, operator, loadEnforcerForUser(userId));
+    }
+
+    public boolean hasPermissions(Long userId, String[] requiredPermissions, RequirePermission.LogicalOperator operator,
+                                    Enforcer enforcer) {
+        if (userId == null || requiredPermissions == null || requiredPermissions.length == 0 || enforcer == null) {
+            return false;
+        }
+        String subj = subject(userId);
         if (operator == RequirePermission.LogicalOperator.AND) {
             for (String p : requiredPermissions) {
-                if (!enforcePermission(enforcer, subject, p)) {
+                if (!enforcePermission(enforcer, subj, p)) {
                     return false;
                 }
             }
             return true;
         }
         for (String p : requiredPermissions) {
-            if (enforcePermission(enforcer, subject, p)) {
+            if (enforcePermission(enforcer, subj, p)) {
                 return true;
             }
         }

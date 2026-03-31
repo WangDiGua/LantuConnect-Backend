@@ -1,12 +1,13 @@
 package com.lantu.connect.common.filter;
 
 import com.lantu.connect.auth.mapper.UserRoleRelMapper;
+import com.lantu.connect.common.config.SecurityProperties;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.common.util.JsonStringEscaper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -15,15 +16,15 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
  * 未赋权账号仅允许访问申请开发者相关接口。
  */
-@RequiredArgsConstructor
 public class UnassignedUserAccessFilter extends OncePerRequestFilter {
 
-    private static final List<String> UNASSIGNED_ALLOWED_PATTERNS = List.of(
+    private static final List<String> BASE_PATTERNS = List.of(
             "/auth/me",
             "/auth/logout",
             "/auth/refresh",
@@ -34,14 +35,28 @@ public class UnassignedUserAccessFilter extends OncePerRequestFilter {
             "/developer/applications",
             "/developer/applications/**",
             "/error",
+            "/actuator/health",
+            "/actuator/info"
+    );
+
+    private static final List<String> SWAGGER_PATTERNS = List.of(
             "/swagger-ui/**",
             "/swagger-ui.html",
-            "/v3/api-docs/**",
-            "/actuator/**"
+            "/v3/api-docs/**"
     );
 
     private final UserRoleRelMapper userRoleRelMapper;
+    private final List<String> allowedPatterns;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
+
+    public UnassignedUserAccessFilter(UserRoleRelMapper userRoleRelMapper, SecurityProperties securityProperties) {
+        this.userRoleRelMapper = userRoleRelMapper;
+        List<String> p = new ArrayList<>(BASE_PATTERNS);
+        if (securityProperties.isExposeApiDocs()) {
+            p.addAll(SWAGGER_PATTERNS);
+        }
+        this.allowedPatterns = List.copyOf(p);
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -64,7 +79,7 @@ public class UnassignedUserAccessFilter extends OncePerRequestFilter {
         }
 
         String servletPath = request.getServletPath();
-        for (String pattern : UNASSIGNED_ALLOWED_PATTERNS) {
+        for (String pattern : allowedPatterns) {
             if (pathMatcher.match(pattern, servletPath)) {
                 filterChain.doFilter(request, response);
                 return;
@@ -78,12 +93,8 @@ public class UnassignedUserAccessFilter extends OncePerRequestFilter {
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        String body = "{\"code\":" + ResultCode.FORBIDDEN.getCode() + ",\"message\":\"" + escapeJson(message) + "\",\"data\":null}";
+        String body = "{\"code\":" + ResultCode.FORBIDDEN.getCode() + ",\"message\":\"" + JsonStringEscaper.escape(message) + "\",\"data\":null}";
         response.getWriter().write(body);
-    }
-
-    private static String escapeJson(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private static Long resolveAuthenticatedUserId() {

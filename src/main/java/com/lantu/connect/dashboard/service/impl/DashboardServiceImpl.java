@@ -143,6 +143,7 @@ public class DashboardServiceImpl implements DashboardService {
             row.put("action", r.getAction());
             row.put("targetType", r.getType());
             row.put("targetId", r.getAgentName());
+            row.put("displayName", r.getDisplayName() != null ? r.getDisplayName() : r.getAgentName());
             row.put("createTime", r.getCreateTime());
             recent.add(row);
         }
@@ -173,12 +174,32 @@ public class DashboardServiceImpl implements DashboardService {
         long cfg = healthConfigMapper.selectCount(null);
         long open = circuitBreakerMapper.selectCount(
                 new LambdaQueryWrapper<CircuitBreaker>().eq(CircuitBreaker::getCurrentState, CircuitBreaker.STATE_OPEN));
-        String status = open > 0 ? "degraded" : "ok";
-        return new LinkedHashMap<>(Map.of(
-                "status", status,
-                "healthConfigCount", cfg,
-                "circuitBreakersOpen", open,
-                "checks", List.of()));
+        List<Map<String, Object>> checks = jdbcTemplate.queryForList(
+                "SELECT resource_id, resource_type, resource_code, display_name, health_status, last_check_time "
+                        + "FROM t_resource_health_config ORDER BY update_time DESC LIMIT 20");
+        List<Map<String, Object>> degraded = jdbcTemplate.queryForList(
+                "SELECT h.resource_id, h.resource_type, h.resource_code, h.display_name, h.health_status, "
+                        + "COALESCE(cb.current_state, 'unknown') AS circuit_state "
+                        + "FROM t_resource_health_config h "
+                        + "LEFT JOIN t_resource_circuit_breaker cb ON cb.resource_id = h.resource_id "
+                        + "WHERE h.health_status <> 'healthy' OR cb.current_state = 'OPEN' "
+                        + "ORDER BY h.update_time DESC LIMIT 20");
+        List<Map<String, Object>> statusDistRows = jdbcTemplate.queryForList(
+                "SELECT health_status, COUNT(1) AS cnt FROM t_resource_health_config GROUP BY health_status");
+        Map<String, Long> statusDistribution = new LinkedHashMap<>();
+        for (Map<String, Object> row : statusDistRows) {
+            statusDistribution.put(String.valueOf(row.get("health_status")),
+                    row.get("cnt") instanceof Number n ? n.longValue() : 0L);
+        }
+        String status = open > 0 || !degraded.isEmpty() ? "degraded" : "ok";
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("status", status);
+        out.put("healthConfigCount", cfg);
+        out.put("circuitBreakersOpen", open);
+        out.put("checks", checks == null ? List.of() : checks);
+        out.put("statusDistribution", statusDistribution);
+        out.put("degradedResources", degraded == null ? List.of() : degraded);
+        return out;
     }
 
     @Override
@@ -620,7 +641,8 @@ public class DashboardServiceImpl implements DashboardService {
         List<Map<String, Object>> recentActivity = new ArrayList<>();
         for (UsageRecord r : recentRows) {
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("type", r.getType());
+            row.put("action", r.getAction() != null ? r.getAction() : "invoke");
+            row.put("resourceType", r.getType());
             row.put("resourceName", r.getDisplayName() != null ? r.getDisplayName() : r.getAgentName());
             row.put("timestamp", r.getCreateTime());
             recentActivity.add(row);

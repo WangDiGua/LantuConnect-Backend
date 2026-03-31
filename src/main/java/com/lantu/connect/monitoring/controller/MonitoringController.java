@@ -10,6 +10,7 @@ import com.lantu.connect.monitoring.dto.AlertRuleDryRunResult;
 import com.lantu.connect.monitoring.dto.AlertRuleUpdateRequest;
 import com.lantu.connect.monitoring.dto.KpiMetric;
 import com.lantu.connect.monitoring.dto.PageQuery;
+import com.lantu.connect.monitoring.dto.QualityHistoryPointVO;
 import com.lantu.connect.monitoring.entity.AlertRecord;
 import com.lantu.connect.monitoring.entity.AlertRule;
 import com.lantu.connect.monitoring.entity.CallLog;
@@ -23,6 +24,8 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 /**
  * 监控 Monitoring 控制器
@@ -42,6 +45,18 @@ public class MonitoringController {
     @RequirePermission({"monitor:view"})
     public R<List<KpiMetric>> kpis() {
         return R.ok(monitoringService.kpis());
+    }
+
+    @GetMapping("/resources/{type}/{id}/quality-history")
+    @RequirePermission({"monitor:view"})
+    public R<List<QualityHistoryPointVO>> qualityHistory(@PathVariable String type,
+                                                          @PathVariable Long id,
+                                                          @RequestParam(required = false) String from,
+                                                          @RequestParam(required = false) String to) {
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        LocalDateTime fromTime = StringUtils.hasText(from) ? LocalDateTime.parse(from.trim(), fmt) : LocalDateTime.now().minusDays(7);
+        LocalDateTime toTime = StringUtils.hasText(to) ? LocalDateTime.parse(to.trim(), fmt) : LocalDateTime.now();
+        return R.ok(monitoringService.qualityHistory(type, id, fromTime, toTime));
     }
 
     @GetMapping("/performance")

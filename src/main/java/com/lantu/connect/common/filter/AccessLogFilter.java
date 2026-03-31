@@ -4,8 +4,10 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import com.lantu.connect.common.web.TraceLogging;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -13,6 +15,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.ContentCachingResponseWrapper;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 @Slf4j
 @Component
@@ -21,41 +25,85 @@ public class AccessLogFilter extends OncePerRequestFilter {
 
     private static final String IGNORED_PATHS = "/actuator,/swagger-ui,/v3/api-docs";
 
+    /** HTTP 状态 >=400 时，响应体预览最大字符数；0 表示不输出正文预览。流式接口见 isStreamingInvokePath。 */
+    @Value("${lantu.logging.access-log-error-body-max-chars:2048}")
+    private int accessLogErrorBodyMaxChars;
+
+    /**
+     * 超过此字节数的已缓存响应体不写预览（仅字符预览策略下仍可能截断）。0 表示不按大小跳过。
+     */
+    @Value("${lantu.logging.access-log-error-body-max-bytes:262144}")
+    private int accessLogErrorBodyMaxBytes;
+
+    /**
+     * 请求 URI 包含任一片段时不记录错误响应体（如登录返回含 token）。逗号分隔，前后空格忽略。
+     */
+    @Value("${lantu.logging.access-log-skip-error-body-path-fragments:/auth/login,/auth/refresh,/auth/register}")
+    private String accessLogSkipErrorBodyPathFragments;
+
+    /** SSE/chunked 长响应不能使用 ContentCachingResponseWrapper 全量缓存，否则易占满内存。 */
+    private static boolean isStreamingInvokePath(String uri) {
+        return uri != null && uri.contains("/invoke-stream");
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
         long start = System.currentTimeMillis();
-        String traceId = MDC.get("traceId");
-        String shortTraceId = traceId != null && traceId.length() >= 8 
-                ? traceId.substring(0, 8) 
+        String traceIdFull = TraceLogging.traceIdOrDash();
+        String shortTraceId = traceIdFull.length() >= 8 && !"-".equals(traceIdFull)
+                ? traceIdFull.substring(0, 8)
                 : "--------";
-        
+
         String uri = request.getRequestURI();
         String query = request.getQueryString();
         String fullUrl = query != null ? uri + "?" + query : uri;
+
+        if (isStreamingInvokePath(uri)) {
+            try {
+                chain.doFilter(request, response);
+            } finally {
+                int st = response.getStatus();
+                String hintStream = st >= 400 ? "(stream-body-not-captured)" : null;
+                logAccessLine(request.getMethod(), fullUrl, traceIdFull, shortTraceId, start, st, uri, hintStream);
+            }
+            return;
+        }
 
         ContentCachingResponseWrapper wrapped = new ContentCachingResponseWrapper(response);
         try {
             chain.doFilter(request, wrapped);
         } finally {
-            long elapsed = System.currentTimeMillis() - start;
             int status = wrapped.getStatus();
-            String userId = MDC.get("userId");
-            String user = userId != null ? userId : "-";
-
-            if (!isIgnoredPath(uri)) {
-                if (status >= 400) {
-                    log.warn(">>> {} {} [{}] ({}ms) user={} status={}", 
-                            request.getMethod(), fullUrl, shortTraceId, elapsed, user, status);
-                } else if (elapsed > 3000) {
-                    log.warn(">>> {} {} [{}] ({}ms) user={} status={} [SLOW]", 
-                            request.getMethod(), fullUrl, shortTraceId, elapsed, user, status);
-                } else {
-                    log.info(">>> {} {} [{}] ({}ms) user={} status={}", 
-                            request.getMethod(), fullUrl, shortTraceId, elapsed, user, status);
-                }
-            }
+            String bodyPreview = status >= 400 && accessLogErrorBodyMaxChars > 0
+                    ? responseBodyPreview(wrapped, uri, accessLogErrorBodyMaxChars, accessLogErrorBodyMaxBytes,
+                    accessLogSkipErrorBodyPathFragments)
+                    : null;
+            logAccessLine(request.getMethod(), fullUrl, traceIdFull, shortTraceId, start, status, uri, bodyPreview);
             wrapped.copyBodyToResponse();
+        }
+    }
+
+    private void logAccessLine(String method, String fullUrl, String traceIdFull, String shortTraceId,
+                               long start, int status, String uri, String bodyPreview) {
+        long elapsed = System.currentTimeMillis() - start;
+        String userId = MDC.get("userId");
+        String user = userId != null ? userId : "-";
+
+        if (isIgnoredPath(uri)) {
+            return;
+        }
+        if (status >= 400) {
+            String preview = bodyPreview != null ? bodyPreview : "";
+            log.warn(
+                    ">>> {} {} traceId={} shortId=[{}] ({}ms) user={} status={} responsePreview={}",
+                    method, fullUrl, traceIdFull, shortTraceId, elapsed, user, status, preview);
+        } else if (elapsed > 3000) {
+            log.warn(">>> {} {} traceId={} shortId=[{}] ({}ms) user={} status={} [SLOW]",
+                    method, fullUrl, traceIdFull, shortTraceId, elapsed, user, status);
+        } else {
+            log.info(">>> {} {} traceId={} shortId=[{}] ({}ms) user={} status={}",
+                    method, fullUrl, traceIdFull, shortTraceId, elapsed, user, status);
         }
     }
 
@@ -66,5 +114,48 @@ public class AccessLogFilter extends OncePerRequestFilter {
             }
         }
         return false;
+    }
+
+    private static String responseBodyPreview(ContentCachingResponseWrapper wrapped, String requestUri, int maxChars,
+                                              int maxBytes, String skipPathFragments) {
+        if (shouldSkipBodyPreviewForPath(requestUri, skipPathFragments)) {
+            return "(body-redacted-by-path-policy)";
+        }
+        byte[] buf = wrapped.getContentAsByteArray();
+        if (buf == null || buf.length == 0) {
+            return "";
+        }
+        if (maxBytes > 0 && buf.length > maxBytes) {
+            return "(body-too-large-for-log: " + buf.length + " bytes)";
+        }
+        String s = new String(buf, StandardCharsets.UTF_8);
+        s = redactSensitiveJsonish(s);
+        if (s.length() <= maxChars) {
+            return s.replace("\r\n", " ").replace('\n', ' ');
+        }
+        return s.substring(0, maxChars).replace("\r\n", " ").replace('\n', ' ') + "...";
+    }
+
+    private static boolean shouldSkipBodyPreviewForPath(String uri, String fragmentsConfig) {
+        if (uri == null || fragmentsConfig == null || fragmentsConfig.isBlank()) {
+            return false;
+        }
+        String u = uri.toLowerCase(Locale.ROOT);
+        for (String raw : fragmentsConfig.split(",")) {
+            String frag = raw.trim().toLowerCase(Locale.ROOT);
+            if (!frag.isEmpty() && u.contains(frag)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 弱脱敏：错误日志预览中常见 token 字段，减少误打明文。 */
+    private static String redactSensitiveJsonish(String s) {
+        if (s == null || s.isEmpty()) {
+            return s;
+        }
+        return s.replaceAll("(?i)\"(access_token|refresh_token|password|token|secret)\"\\s*:\\s*\"[^\"]*\"",
+                "\"$1\":\"[REDACTED]\"");
     }
 }

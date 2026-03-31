@@ -39,9 +39,9 @@ public class AlertRuleServiceImpl implements AlertRuleService {
         entity.setName(request.getName());
         entity.setMetric(request.getMetric() != null ? request.getMetric() : "custom");
         entity.setDescription(request.getConditionExpr());
-        entity.setOperator(">=");
-        entity.setDuration("5m");
-        entity.setSeverity("medium");
+        entity.setOperator(normalizeOperator(request.getOperator()));
+        entity.setDuration(normalizeDuration(request.getDuration()));
+        entity.setSeverity(normalizeSeverity(request.getSeverity()));
         if (request.getThreshold() != null) {
             entity.setThreshold(BigDecimal.valueOf(request.getThreshold()));
         }
@@ -78,6 +78,15 @@ public class AlertRuleServiceImpl implements AlertRuleService {
         }
         if (request.getEnabled() != null) {
             existing.setEnabled(request.getEnabled() != 0);
+        }
+        if (request.getOperator() != null) {
+            existing.setOperator(normalizeOperator(StringUtils.hasText(request.getOperator()) ? request.getOperator() : null));
+        }
+        if (request.getSeverity() != null) {
+            existing.setSeverity(normalizeSeverity(StringUtils.hasText(request.getSeverity()) ? request.getSeverity() : null));
+        }
+        if (request.getDuration() != null) {
+            existing.setDuration(normalizeDuration(StringUtils.hasText(request.getDuration()) ? request.getDuration() : null));
         }
         existing.setUpdateTime(LocalDateTime.now());
         alertRuleMapper.updateById(existing);
@@ -122,6 +131,45 @@ public class AlertRuleServiceImpl implements AlertRuleService {
         String detail = String.format("样本值=%s, 阈值=%s, 算子=%s => %s",
                 sampleValue, threshold, op, fire ? "会触发" : "不触发");
         return new AlertRuleDryRunResult(fire, op, threshold, sampleValue, detail);
+    }
+
+    /**
+     * 默认 gte；空串视为默认。与 {@link #evaluate} 支持的算子一致。
+     */
+    private static String normalizeOperator(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return "gte";
+        }
+        String s = raw.trim().toLowerCase();
+        return switch (s) {
+            case ">", "gt" -> "gt";
+            case ">=", "ge", "gte" -> "gte";
+            case "<", "lt" -> "lt";
+            case "<=", "le", "lte" -> "lte";
+            case "=", "eq" -> "eq";
+            default -> throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的算子: " + raw);
+        };
+    }
+
+    private static String normalizeSeverity(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return "warning";
+        }
+        String s = raw.trim().toLowerCase();
+        if ("medium".equals(s)) {
+            return "warning";
+        }
+        if ("critical".equals(s) || "warning".equals(s) || "info".equals(s)) {
+            return s;
+        }
+        throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的严重级别: " + raw);
+    }
+
+    private static String normalizeDuration(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return "5m";
+        }
+        return raw.trim();
     }
 
     private static boolean evaluate(BigDecimal value, BigDecimal threshold, String op) {

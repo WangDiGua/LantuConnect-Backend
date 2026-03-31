@@ -1,4 +1,4 @@
-# LantuConnect 后端架构基线
+# NexusAI Connect 后端架构基线
 
 ## 1. 平台定位
 

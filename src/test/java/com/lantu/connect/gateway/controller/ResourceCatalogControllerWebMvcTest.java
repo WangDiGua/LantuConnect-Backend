@@ -6,13 +6,17 @@ import com.lantu.connect.gateway.dto.InvokeResponse;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
 import com.lantu.connect.usermgmt.entity.ApiKey;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Map;
 
@@ -33,6 +37,11 @@ class ResourceCatalogControllerWebMvcTest {
 
     @InjectMocks
     private ResourceCatalogController resourceCatalogController;
+
+    @BeforeEach
+    void wireGatewayFlags() {
+        ReflectionTestUtils.setField(resourceCatalogController, "invokeHttpStatusReflectsUpstream", true);
+    }
 
     @Test
     void shouldUseRequestIdWhenTraceIdMissing() {
@@ -58,10 +67,11 @@ class ResourceCatalogControllerWebMvcTest {
 
         MockHttpServletRequest httpRequest = new MockHttpServletRequest();
         httpRequest.setRemoteAddr("127.0.0.1");
-        R<InvokeResponse> result = resourceCatalogController.invoke(
+        ResponseEntity<R<InvokeResponse>> response = resourceCatalogController.invoke(
                 null, null, "request-id-1", "raw-key", request, httpRequest);
-        assertEquals(0, result.getCode());
-        assertEquals("req-1", result.getData().getRequestId());
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(0, response.getBody().getCode());
+        assertEquals("req-1", response.getBody().getData().getRequestId());
 
         ArgumentCaptor<String> traceCaptor = ArgumentCaptor.forClass(String.class);
         verify(unifiedGatewayService).invoke(any(), traceCaptor.capture(), any(), any(), eq(apiKey));

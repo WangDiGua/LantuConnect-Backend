@@ -51,7 +51,7 @@
 - `/v3/api-docs/**`
 - `/actuator/health`
 - `/actuator/info`
-- `/actuator/prometheus`
+- `/actuator/prometheus` **仅当** `permit-prometheus-without-auth=true`；否则需 JWT
 
 ## 2.4 无角色用户白名单（`UnassignedUserAccessFilter`）
 
@@ -68,7 +68,8 @@
 - `/swagger-ui/**`
 - `/swagger-ui.html`
 - `/v3/api-docs/**`
-- `/actuator/**`
+- `/actuator/health`
+- `/actuator/info`
 
 ## 2.5 Header 契约
 

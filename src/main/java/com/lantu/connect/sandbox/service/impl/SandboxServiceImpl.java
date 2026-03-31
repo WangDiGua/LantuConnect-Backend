@@ -30,7 +30,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SandboxServiceImpl implements SandboxService {
 
-    private static final Set<String> ALLOWED_RESOURCE_TYPES = Set.of("agent", "skill", "mcp", "app", "dataset");
+    private static final Set<String> ALLOWED_RESOURCE_TYPES = Set.of("agent", "mcp", "app", "dataset");
 
     private final SandboxSessionMapper sandboxSessionMapper;
     private final ApiKeyScopeService apiKeyScopeService;
@@ -126,14 +126,19 @@ public class SandboxServiceImpl implements SandboxService {
         if (affected == 0) {
             throw new BusinessException(ResultCode.QUOTA_EXCEEDED, "沙箱会话调用次数已耗尽");
         }
-        InvokeResponse response = unifiedGatewayService.invoke(
-                session.getOwnerUserId(),
-                traceId,
-                ip,
-                request,
-                apiKey
-        );
-        return response;
+        try {
+            return unifiedGatewayService.invoke(
+                    session.getOwnerUserId(),
+                    traceId,
+                    ip,
+                    request,
+                    apiKey
+            );
+        } catch (RuntimeException ex) {
+            // 网关调用失败时回滚本次额度占用，避免失败请求吞掉 quota。
+            sandboxSessionMapper.rollbackUsedCalls(session.getId());
+            throw ex;
+        }
     }
 
     private static boolean sessionAllowed(SandboxSession session, String resourceType) {

@@ -66,7 +66,7 @@ public class HttpJsonProtocolInvoker implements GatewayProtocolInvoker {
                                                 Map<String, Object> spec,
                                                 ProtocolInvokeContext ctx,
                                                 Throwable t) {
-        String msg = "{\"error\":\"HTTP invoke degraded: " + t.getClass().getSimpleName() + "\"}";
+        String msg = ProtocolInvokeDegradedBody.buildJson(objectMapper, "HTTP invoke degraded", t);
         return new ProtocolInvokeResult(503, msg, 0L);
     }
 }

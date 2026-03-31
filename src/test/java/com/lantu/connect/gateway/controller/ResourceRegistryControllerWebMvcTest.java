@@ -12,7 +12,10 @@ import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.util.JwtUtil;
 import com.lantu.connect.gateway.dto.ResourceManageVO;
 import com.lantu.connect.gateway.dto.ResourceVersionVO;
+import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
+import com.lantu.connect.gateway.service.SkillArtifactDownloadService;
+import com.lantu.connect.gateway.service.SkillPackUploadService;
 import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,7 +28,6 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -37,10 +39,16 @@ class ResourceRegistryControllerWebMvcTest {
 
     private MockMvc mockMvc;
     private ResourceRegistryService resourceRegistryService;
+    private SkillPackUploadService skillPackUploadService;
+    private SkillArtifactDownloadService skillArtifactDownloadService;
+    private ApiKeyScopeService apiKeyScopeService;
 
     @BeforeEach
     void setUp() {
         resourceRegistryService = mock(ResourceRegistryService.class);
+        skillPackUploadService = mock(SkillPackUploadService.class);
+        skillArtifactDownloadService = mock(SkillArtifactDownloadService.class);
+        apiKeyScopeService = mock(ApiKeyScopeService.class);
         JwtUtil jwtUtil = mock(JwtUtil.class);
         AccessTokenBlacklist blacklist = mock(AccessTokenBlacklist.class);
         SessionRevocationRegistry sessionRevocationRegistry = mock(SessionRevocationRegistry.class);
@@ -51,7 +59,7 @@ class ResourceRegistryControllerWebMvcTest {
         properties.setAllowHeaderUserIdFallback(false);
         when(sessionRevocationRegistry.isRevoked(any())).thenReturn(false);
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtUtil, blacklist, sessionRevocationRegistry, properties);
-        UnassignedUserAccessFilter unassignedFilter = new UnassignedUserAccessFilter(userRoleRelMapper);
+        UnassignedUserAccessFilter unassignedFilter = new UnassignedUserAccessFilter(userRoleRelMapper, properties);
 
         Claims claims = mock(Claims.class);
         when(claims.getSubject()).thenReturn("1");
@@ -81,7 +89,8 @@ class ResourceRegistryControllerWebMvcTest {
                         .build());
 
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new ResourceRegistryController(resourceRegistryService))
+                .standaloneSetup(new ResourceRegistryController(
+                        resourceRegistryService, skillPackUploadService, skillArtifactDownloadService, apiKeyScopeService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .addFilters(jwtFilter, unassignedFilter)
                 .build();
@@ -120,8 +129,8 @@ class ResourceRegistryControllerWebMvcTest {
 
     @Test
     void submitShouldReturn403WhenNoPermission() throws Exception {
-        doThrow(new BusinessException(ResultCode.FORBIDDEN, "仅资源拥有者可操作"))
-                .when(resourceRegistryService).submitForAudit(1L, 101L);
+        when(resourceRegistryService.submitForAudit(1L, 101L))
+                .thenThrow(new BusinessException(ResultCode.FORBIDDEN, "仅资源拥有者可操作"));
         mockMvc.perform(post("/resource-center/resources/101/submit")
                         .header("Authorization", "Bearer token-user"))
                 .andExpect(status().isForbidden())
@@ -130,7 +139,7 @@ class ResourceRegistryControllerWebMvcTest {
 
     @Test
     void deleteShouldReturn409WhenIllegalState() throws Exception {
-        doThrow(new BusinessException(ResultCode.ILLEGAL_STATE_TRANSITION, "审核流程中的资源不可删除"))
+        org.mockito.Mockito.doThrow(new BusinessException(ResultCode.ILLEGAL_STATE_TRANSITION, "审核流程中的资源不可删除"))
                 .when(resourceRegistryService).delete(1L, 101L);
         mockMvc.perform(delete("/resource-center/resources/101")
                         .header("Authorization", "Bearer token-user"))
@@ -148,7 +157,8 @@ class ResourceRegistryControllerWebMvcTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.version").value("v2"));
+                .andExpect(jsonPath("$.data.version").value("v2"))
+                .andExpect(jsonPath("$.data.isCurrent").value(true));
     }
 }
 

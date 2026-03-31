@@ -13,9 +13,12 @@ import com.lantu.connect.auth.entity.LoginHistory;
 import com.lantu.connect.auth.service.AuthService;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.R;
+import com.lantu.connect.common.security.RedisAuthRateLimiter;
 import com.lantu.connect.common.util.JwtUtil;
+import com.lantu.connect.common.web.ClientIpResolver;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import io.jsonwebtoken.Claims;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.util.StringUtils;
@@ -46,16 +49,19 @@ public class AuthController {
 
     private final AuthService authService;
     private final JwtUtil jwtUtil;
+    private final ClientIpResolver clientIpResolver;
+    private final RedisAuthRateLimiter redisAuthRateLimiter;
 
     @PostMapping("/login")
     @RateLimiter(name = "authLogin")
-    public R<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
-        return R.ok(authService.login(request));
+    public R<LoginResponse> login(@Valid @RequestBody LoginRequest request, HttpServletRequest http) {
+        return R.ok(authService.login(request, clientIpResolver.resolve(http)));
     }
 
     @PostMapping("/register")
-    public R<LoginResponse> register(@Valid @RequestBody RegisterRequest request) {
-        return R.ok(authService.register(request));
+    @RateLimiter(name = "authRegister")
+    public R<LoginResponse> register(@Valid @RequestBody RegisterRequest request, HttpServletRequest http) {
+        return R.ok(authService.register(request, clientIpResolver.resolve(http)));
     }
 
     @PostMapping("/logout")
@@ -70,6 +76,7 @@ public class AuthController {
     }
 
     @PostMapping("/refresh")
+    @RateLimiter(name = "authRefresh")
     public R<TokenResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
         return R.ok(authService.refresh(request));
     }
@@ -91,7 +98,9 @@ public class AuthController {
     }
 
     @PostMapping("/send-sms")
-    public R<Void> sendSms(@RequestBody Map<String, String> body) {
+    @RateLimiter(name = "authSendSms")
+    public R<Void> sendSms(@RequestBody Map<String, String> body, HttpServletRequest http) {
+        redisAuthRateLimiter.checkSendSms(clientIpResolver.resolve(http));
         authService.sendSms(body);
         return R.ok();
     }

@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  logback-spring.xml — 日志模式与按 Spring profile 分流
+
+  - CONSOLE_LOG_PATTERN / SQL_LOG_PATTERN：控制台与 SQL 审计行格式；%X{traceId} 对齐 MDC
+  - springProfile name="dev"：控制台 DEBUG、Resilience4j 等降级噪声为 WARN
+  - springProfile name="prod"：滚动文件 logs/nexusai-connect*.log + 仅 ERROR 的 error 文件
+  - springProfile name="default"：无显式 profile 时的兜底（偏控制台）
+  - springProfile name="structured-json"：控制台单行 JSON（勿与 dev/prod 同时激活，以免重复 root）
+  激活方式：spring.profiles.active 或 SPRING_PROFILES_ACTIVE
+-->
 <configuration>
     <conversionRule conversionWord="clr" converterClass="org.springframework.boot.logging.logback.ColorConverter"/>
     <conversionRule conversionWord="wex" converterClass="org.springframework.boot.logging.logback.WhitespaceThrowableProxyConverter"/>
@@ -57,9 +67,9 @@
 
     <springProfile name="prod">
         <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-            <file>logs/lantu-connect.log</file>
+            <file>logs/nexusai-connect.log</file>
             <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-                <fileNamePattern>logs/lantu-connect.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <fileNamePattern>logs/nexusai-connect.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
                 <maxFileSize>100MB</maxFileSize>
                 <maxHistory>30</maxHistory>
                 <totalSizeCap>3GB</totalSizeCap>
@@ -76,9 +86,9 @@
                 <onMatch>ACCEPT</onMatch>
                 <onMismatch>DENY</onMismatch>
             </filter>
-            <file>logs/lantu-connect-error.log</file>
+            <file>logs/nexusai-connect-error.log</file>
             <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-                <fileNamePattern>logs/lantu-connect-error.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <fileNamePattern>logs/nexusai-connect-error.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
                 <maxFileSize>50MB</maxFileSize>
                 <maxHistory>60</maxHistory>
             </rollingPolicy>
@@ -119,6 +129,19 @@
 
         <root level="INFO">
             <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="structured-json">
+        <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <includeMdcKeyName>traceId</includeMdcKeyName>
+                <includeMdcKeyName>userId</includeMdcKeyName>
+                <includeMdcKeyName>task</includeMdcKeyName>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="JSON_CONSOLE"/>
         </root>
     </springProfile>
 </configuration>

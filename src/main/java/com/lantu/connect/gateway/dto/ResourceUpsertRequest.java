@@ -44,9 +44,17 @@ public class ResourceUpsertRequest {
     private String systemPrompt;
 
     /**
-     * 仅 skill 使用。
+     * 仅 skill 使用：技能包格式（如 anthropic_v1、folder_v1），非 MCP。
      */
     private String skillType;
+    /** 技能包 URI；草稿可为空，上传 zip 或提审前须补齐。 */
+    private String artifactUri;
+    /** 技能包 SHA-256 hex，可选。 */
+    private String artifactSha256;
+    /** 包 manifest（JSON），可选。 */
+    private Map<String, Object> manifest;
+    /** 入口文档相对路径，如 SKILL.md。 */
+    private String entryDoc;
     private Long parentResourceId;
     private String displayTemplate;
     private Map<String, Object> parametersSchema;

@@ -1,15 +1,41 @@
+# =============================================================================
+# application-prod.yml — 生产环境叠加配置（需 SPRING_PROFILES_ACTIVE=prod）
+#
+# 与主配置合并后覆盖：Swagger 关闭、安全默认值收紧、数据源 URL 默认开启 SSL 等
+# 仍需通过环境变量注入：JWT_SECRET、DB_*、SSL_KEY_STORE_PASSWORD、LANTU_ENCRYPTION_KEY 等
+# =============================================================================
+
 server:
   ssl:
-    enabled: ${SSL_ENABLED:false}
+    enabled: ${SSL_ENABLED:true}
     key-store: ${SSL_KEY_STORE:classpath:keystore.p12}
-    key-store-password: ${SSL_KEY_STORE_PASSWORD:changeit}
+    key-store-password: ${SSL_KEY_STORE_PASSWORD:}
     key-store-type: ${SSL_KEY_STORE_TYPE:PKCS12}
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
 
 lantu:
   security:
+    allow-insecure-local-database-credentials: false
     allow-header-user-id-fallback: false
     require-https: ${REQUIRE_HTTPS:true}
+    expose-api-docs: false
+    trust-proxy-forwarded-headers: ${TRUST_PROXY_FORWARDED_HEADERS:true}
+  integration:
+    # 生产默认禁止 MCP 走明文 http（本机 prod+local 由 application-local.yml 再放开）
+    mcp-allow-http: ${MCP_ALLOW_HTTP:false}
+    mcp-allow-local-targets: ${MCP_ALLOW_LOCAL_TARGETS:false}
 
+spring:
+  datasource:
+    # 生产强烈建议开启 TLS；自建 MySQL 无证书时可临时 useSSL=false
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:lantu_connect}?useUnicode=true&characterEncoding=UTF-8&useSSL=${DB_USE_SSL:true}&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=${DB_ALLOW_PUBLIC_KEY_RETRIEVAL:false}
+
+# 生产日志级别：根日志细节由 logback-spring.xml 中 springProfile=prod 一节决定（文件落盘等）
 logging:
   level:
     com.lantu.connect: info

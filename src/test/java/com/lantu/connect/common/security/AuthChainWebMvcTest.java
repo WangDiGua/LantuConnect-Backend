@@ -63,7 +63,7 @@ class AuthChainWebMvcTest {
         properties.setAllowHeaderUserIdFallback(false);
         when(sessionRevocationRegistry.isRevoked(anyString())).thenReturn(false);
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtUtil, accessTokenBlacklist, sessionRevocationRegistry, properties);
-        UnassignedUserAccessFilter unassignedFilter = new UnassignedUserAccessFilter(userRoleRelMapper);
+        UnassignedUserAccessFilter unassignedFilter = new UnassignedUserAccessFilter(userRoleRelMapper, properties);
 
         DashboardController dashboardController = new DashboardController(dashboardService);
         DashboardController proxiedDashboard = proxyWithPermissionAspect(dashboardController, casbinAuthorizationService);

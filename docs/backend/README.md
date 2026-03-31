@@ -5,8 +5,9 @@
 建议按以下顺序阅读：
 
 1. `architecture/backend-architecture.md`（平台定位与总体能力边界）
-2. `architecture/backend-contract-freeze.md`（冻结契约、状态机与数据模型）
-3. `architecture/backend-directory-layout-final.md`（最终目录结构与收口说明）
+2. `architecture/current-implementation-notes.md`（**与当前代码一致**：存储 local/minio、标签 rel、版本字段、技能包校验列等）
+3. `architecture/backend-contract-freeze.md`（冻结契约、状态机与数据模型）
+4. `architecture/backend-directory-layout-final.md`（最终目录结构与收口说明）
 
 ## 2. 能力与接入规范
 
@@ -16,6 +17,7 @@
 
 ## 3. 迁移与演进记录
 
+- `migration-notes/storage-type-switch-artifact-uri.md`（切换 local / MinIO 时技能 `artifact_uri` 对齐）
 - `migration/resource-core-migration.md`（资源主表 + 扩展表迁移）
 - `migration/monitoring-resource-migration.md`（治理表迁移）
 - `migration/gap-closure-final.md`（缺口补全与最终态收敛）

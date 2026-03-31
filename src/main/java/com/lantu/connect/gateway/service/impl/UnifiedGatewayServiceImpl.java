@@ -1,6 +1,7 @@
 package com.lantu.connect.gateway.service.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.PageResult;
@@ -11,9 +12,12 @@ import com.lantu.connect.gateway.dto.InvokeResponse;
 import com.lantu.connect.gateway.dto.ResourceCatalogItemVO;
 import com.lantu.connect.gateway.dto.ResourceCatalogQueryRequest;
 import com.lantu.connect.gateway.dto.ResourceResolveRequest;
+import com.lantu.connect.gateway.dto.ResourceResolveSpecSanitizer;
 import com.lantu.connect.gateway.dto.ResourceResolveVO;
 import com.lantu.connect.gateway.dto.ResourceStatsVO;
 import com.lantu.connect.gateway.dto.SearchSuggestion;
+import com.lantu.connect.gateway.protocol.McpJsonRpcProtocolInvoker;
+import com.lantu.connect.gateway.protocol.McpOutboundHeaderBuilder;
 import com.lantu.connect.gateway.protocol.ProtocolInvokeContext;
 import com.lantu.connect.gateway.protocol.ProtocolInvokeResult;
 import com.lantu.connect.gateway.protocol.ProtocolInvokerRegistry;
@@ -31,21 +35,30 @@ import com.lantu.connect.useractivity.entity.UsageRecord;
 import com.lantu.connect.useractivity.mapper.UsageRecordMapper;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
+import java.io.IOException;
+import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
@@ -70,6 +83,19 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private final AppLaunchTokenService appLaunchTokenService;
     private final GatewayGovernanceService gatewayGovernanceService;
     private final ProtocolInvokerRegistry protocolInvokerRegistry;
+    private final McpJsonRpcProtocolInvoker mcpJsonRpcProtocolInvoker;
+
+    @Value("${lantu.logging.gateway-invoke-log-success:false}")
+    private boolean gatewayInvokeLogSuccess;
+
+    @Value("${lantu.logging.gateway-invoke-log-payload-preview:false}")
+    private boolean gatewayInvokeLogPayloadPreview;
+
+    @Value("${lantu.logging.gateway-invoke-body-preview-max:1024}")
+    private int gatewayInvokeBodyPreviewMax;
+
+    @Value("${lantu.logging.gateway-invoke-payload-preview-max:300}")
+    private int gatewayInvokePayloadPreviewMax;
 
     /**
      * 统一资源目录查询：固定从新模型主表检索，再叠加用户权限和 API Key scope 裁剪。
@@ -80,6 +106,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "目录查询需要登录态或 API Key");
         }
         String type = normalizeType(request.getResourceType());
+        Set<String> includes = parseIncludes(request.getInclude());
         String status = StringUtils.hasText(request.getStatus()) ? request.getStatus().trim() : null;
         String keyword = StringUtils.hasText(request.getKeyword()) ? request.getKeyword().trim() : null;
         int page = request.getPage() == null ? 1 : Math.max(1, request.getPage());
@@ -87,20 +114,13 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
         List<Object> args = new ArrayList<>();
         StringBuilder sql = new StringBuilder("""
-                SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.source_type, r.update_time, r.created_by, se.skill_type
+                SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.source_type, r.update_time, r.created_by
                 FROM t_resource r
-                LEFT JOIN t_resource_skill_ext se ON se.resource_id = r.id
                 WHERE r.deleted = 0
                 """);
         if (StringUtils.hasText(type)) {
-            if (TYPE_MCP.equals(type)) {
-                sql.append(" AND (r.resource_type = 'mcp' OR (r.resource_type = 'skill' AND se.skill_type = 'mcp')) ");
-            } else if (TYPE_SKILL.equals(type)) {
-                sql.append(" AND r.resource_type = 'skill' AND (se.skill_type IS NULL OR se.skill_type <> 'mcp') ");
-            } else {
-                sql.append(" AND r.resource_type = ? ");
-                args.add(type);
-            }
+            sql.append(" AND r.resource_type = ? ");
+            args.add(type);
         }
         if (StringUtils.hasText(status)) {
             sql.append(" AND r.status = ? ");
@@ -161,6 +181,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         int batchSize = Math.max(200, pageSize * 4);
         int filteredCount = 0;
         List<ResourceCatalogItemVO> paged = new ArrayList<>();
+        GatewayUserPermissionService.CatalogTypePredicate catalogTypeOk = gatewayUserPermissionService.catalogTypePredicate(userId);
         while (true) {
             String batchSql = sql + " LIMIT ? OFFSET ? ";
             List<Object> batchArgs = new ArrayList<>(args);
@@ -171,11 +192,9 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 break;
             }
             for (Map<String, Object> row : rows) {
-                String rawType = valueOf(row.get("resource_type"));
-                String skillType = valueOf(row.get("skill_type"));
-                String rType = normalizeCatalogType(rawType, skillType);
+                String rType = valueOf(row.get("resource_type"));
                 String rId = valueOf(row.get("id"));
-                if (!gatewayUserPermissionService.canAccessType(userId, rType)) {
+                if (!catalogTypeOk.allow(rType)) {
                     continue;
                 }
                 if (apiKey != null && !apiKeyScopeService.canCatalog(apiKey, rType, rId)) {
@@ -194,6 +213,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                             .status(valueOf(row.get("status")))
                             .sourceType(valueOf(row.get("source_type")))
                             .updateTime(toDateTime(row.get("update_time")))
+                            .tags(new ArrayList<>())
                             .build());
                 }
                 filteredCount++;
@@ -203,7 +223,52 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 break;
             }
         }
+        attachCatalogTagNames(paged);
+        attachIncludesToCatalogItems(paged, includes);
         return PageResult.of(paged, filteredCount, page, pageSize);
+    }
+
+    private void attachCatalogTagNames(List<ResourceCatalogItemVO> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        List<Long> ids = new ArrayList<>();
+        for (ResourceCatalogItemVO vo : items) {
+            try {
+                ids.add(Long.parseLong(vo.getResourceId()));
+            } catch (Exception ignored) {
+            }
+        }
+        if (ids.isEmpty()) {
+            return;
+        }
+        String placeholders = ids.stream().map(id -> "?").collect(Collectors.joining(","));
+        List<Object> args = new ArrayList<>(ids);
+        List<Map<String, Object>> tagRows = jdbcTemplate.queryForList(
+                "SELECT rt.resource_id, t.name FROM t_resource_tag_rel rt "
+                        + "INNER JOIN t_tag t ON t.id = rt.tag_id WHERE rt.resource_id IN ("
+                        + placeholders + ") ORDER BY rt.resource_id, t.name",
+                args.toArray());
+        Map<Long, List<String>> byId = new LinkedHashMap<>();
+        for (Map<String, Object> row : tagRows) {
+            Object ridObj = row.get("resource_id");
+            if (ridObj == null) {
+                continue;
+            }
+            long rid = ridObj instanceof Number n ? n.longValue() : Long.parseLong(String.valueOf(ridObj));
+            String n = row.get("name") == null ? null : String.valueOf(row.get("name"));
+            if (StringUtils.hasText(n)) {
+                byId.computeIfAbsent(rid, k -> new ArrayList<>()).add(n);
+            }
+        }
+        for (ResourceCatalogItemVO vo : items) {
+            try {
+                long id = Long.parseLong(vo.getResourceId());
+                vo.setTags(byId.getOrDefault(id, List.of()));
+            } catch (Exception e) {
+                vo.setTags(List.of());
+            }
+        }
     }
 
     /**
@@ -211,18 +276,20 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
      */
     @Override
     public ResourceResolveVO resolve(ResourceResolveRequest request, ApiKey apiKey, Long userId) {
-        return getByTypeAndId(request.getResourceType(), request.getResourceId(), request.getVersion(), apiKey, userId, "resolve");
+        return getByTypeAndId(request.getResourceType(), request.getResourceId(), request.getVersion(),
+                request.getInclude(), apiKey, userId, "resolve");
     }
 
     /**
      * 按 type/id 解析资源，统一执行 RBAC 与 scope 双层鉴权。
      */
     @Override
-    public ResourceResolveVO getByTypeAndId(String resourceType, String resourceId, ApiKey apiKey, Long userId) {
-        return getByTypeAndId(resourceType, resourceId, null, apiKey, userId, "resolve");
+    public ResourceResolveVO getByTypeAndId(String resourceType, String resourceId, String include, ApiKey apiKey, Long userId) {
+        return getByTypeAndId(resourceType, resourceId, null, include, apiKey, userId, "resolve");
     }
 
-    private ResourceResolveVO getByTypeAndId(String resourceType, String resourceId, String requestedVersion, ApiKey apiKey, Long userId, String action) {
+    private ResourceResolveVO getByTypeAndId(String resourceType, String resourceId, String requestedVersion,
+                                             String include, ApiKey apiKey, Long userId, String action) {
         if (userId == null && apiKey == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "资源解析需要登录态或 API Key");
         }
@@ -262,9 +329,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         Map<String, Object> snapshot = loadVersionSnapshot(id, resolvedVersion);
         ResourceResolveVO merged = applyVersionSnapshot(resolved, snapshot);
         if (TYPE_APP.equals(type)) {
-            return issueAppLaunchTicket(merged, apiKey, userId, action);
+            merged = issueAppLaunchTicket(merged, apiKey, userId, action);
         }
-        return merged;
+        merged = attachIncludesToResolve(merged, parseIncludes(include));
+        return ResourceResolveSpecSanitizer.sanitize(merged);
     }
 
     /**
@@ -277,8 +345,9 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         }
         String reqId = UUID.randomUUID().toString();
         String type = requireType(request.getResourceType());
+        ensureSkillNotInvokable(type);
         Long id = parseId(request.getResourceId());
-        ResourceResolveVO resolved = getByTypeAndId(type, String.valueOf(id), request.getVersion(), apiKey, userId, "invoke");
+        ResourceResolveVO resolved = getByTypeAndId(type, String.valueOf(id), request.getVersion(), null, apiKey, userId, "invoke");
         ensurePublishedForInvoke(resolved);
         ensureNotCircuitOpen(type, resolved.getResourceCode());
         if (!StringUtils.hasText(resolved.getEndpoint())) {
@@ -321,6 +390,9 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         } finally {
             gatewayGovernanceService.release(governanceLease);
         }
+        if (errMsg == null && "error".equals(status) && StringUtils.hasText(respBody)) {
+            errMsg = abbreviateForCallLog(respBody, 4000);
+        }
 
         boolean invokeOk = "success".equals(status);
         CallLog log = new CallLog();
@@ -328,6 +400,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         log.setTraceId(traceId);
         log.setAgentId(String.valueOf(id));
         log.setAgentName(resolved.getResourceCode());
+        log.setResourceType(StringUtils.hasText(type) ? type.trim().toLowerCase() : null);
         log.setUserId(userId == null ? "0" : String.valueOf(userId));
         log.setMethod("POST /invoke");
         log.setStatus(status);
@@ -365,6 +438,21 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             apiKeyScopeService.markUsed(apiKey);
         });
 
+        logGatewayInvokeOutcome(
+                "POST /invoke",
+                traceId,
+                reqId,
+                type,
+                id,
+                resolved.getResourceCode(),
+                userId,
+                status,
+                statusCode,
+                latencyMs,
+                errMsg,
+                respBody,
+                request.getPayload());
+
         return InvokeResponse.builder()
                 .requestId(reqId)
                 .traceId(traceId)
@@ -375,6 +463,133 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .latencyMs(Math.max(0L, latencyMs))
                 .body(respBody)
                 .build();
+    }
+
+    @Override
+    public void invokeStream(Long userId,
+                             String traceId,
+                             String ip,
+                             InvokeRequest request,
+                             ApiKey apiKey,
+                             OutputStream responseBody) {
+        if (apiKey == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "调用网关必须提供 X-Api-Key");
+        }
+        if (responseBody == null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "响应流不能为空");
+        }
+        String reqId = UUID.randomUUID().toString();
+        String type = requireType(request.getResourceType());
+        ensureSkillNotInvokable(type);
+        Long id = parseId(request.getResourceId());
+        ResourceResolveVO resolved = getByTypeAndId(type, String.valueOf(id), request.getVersion(), null, apiKey, userId, "invoke");
+        ensurePublishedForInvoke(resolved);
+        ensureNotCircuitOpen(type, resolved.getResourceCode());
+        if (!StringUtils.hasText(resolved.getEndpoint())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "资源未配置可调用 endpoint");
+        }
+        String protocol = normalizeProtocol(resolved.getInvokeType(), "http");
+        if (!"mcp".equalsIgnoreCase(protocol)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "invoke-stream 仅支持 MCP（invokeType=mcp）");
+        }
+        if (mcpJsonRpcProtocolInvoker.isWebSocketMcp(resolved.getEndpoint(), resolved.getSpec())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "invoke-stream 不支持 WebSocket MCP，请使用 POST /invoke");
+        }
+
+        int timeoutSec = request.getTimeoutSec() == null ? 120 : Math.max(1, Math.min(600, request.getTimeoutSec()));
+        long t0 = System.nanoTime();
+        int[] statusCode = {200};
+        String[] status = {"success"};
+        String[] errMsg = {null};
+        GatewayGovernanceService.InvokeGovernanceLease governanceLease = null;
+        RuntimeException toRethrow = null;
+        try {
+            governanceLease = gatewayGovernanceService.applyPreInvoke(userId, apiKey, type, id, 1);
+            ProtocolInvokeContext protoCtx = ProtocolInvokeContext.of(apiKey.getId(), id, userId);
+            mcpJsonRpcProtocolInvoker.streamMcpHttpResponseTo(
+                    resolved.getEndpoint(),
+                    timeoutSec,
+                    traceId,
+                    request.getPayload(),
+                    resolved.getSpec(),
+                    protoCtx,
+                    responseBody);
+        } catch (BusinessException e) {
+            status[0] = "error";
+            statusCode[0] = 500;
+            errMsg[0] = e.getMessage();
+            toRethrow = e;
+        } catch (IOException e) {
+            status[0] = "error";
+            statusCode[0] = 502;
+            errMsg[0] = e.getMessage();
+            toRethrow = new BusinessException(ResultCode.INTERNAL_ERROR, "MCP 流式转发失败: " + e.getMessage());
+        } finally {
+            gatewayGovernanceService.release(governanceLease);
+        }
+        long latencyMs = Math.max(0L, (System.nanoTime() - t0) / 1_000_000L);
+        boolean invokeOk = "success".equals(status[0]);
+        CallLog log = new CallLog();
+        log.setId(reqId);
+        log.setTraceId(traceId);
+        log.setAgentId(String.valueOf(id));
+        log.setAgentName(resolved.getResourceCode());
+        log.setResourceType(StringUtils.hasText(type) ? type.trim().toLowerCase() : null);
+        log.setUserId(userId == null ? "0" : String.valueOf(userId));
+        log.setMethod("POST /invoke-stream");
+        log.setStatus(status[0]);
+        log.setStatusCode(statusCode[0]);
+        log.setLatencyMs((int) latencyMs);
+        log.setInputTokens(0);
+        log.setOutputTokens(0);
+        log.setCost(BigDecimal.ZERO);
+        log.setErrorMessage(errMsg[0]);
+        log.setIp(StringUtils.hasText(ip) ? ip : "0.0.0.0");
+        log.setCreateTime(LocalDateTime.now());
+        TraceSpan span = new TraceSpan();
+        span.setTraceId(traceId);
+        span.setOperationName("gateway.invoke-stream");
+        span.setServiceName("unified-gateway");
+        span.setStartTime(LocalDateTime.now().minusNanos(latencyMs * 1_000_000L));
+        span.setDuration((int) latencyMs);
+        span.setStatus(status[0]);
+        span.setTags(Map.of(
+                "resourceType", type,
+                "resourceId", String.valueOf(id),
+                "statusCode", statusCode[0],
+                "requestId", reqId
+        ));
+        String finalStatus = status[0];
+        long finalLatencyMs = latencyMs;
+        transactionTemplate.executeWithoutResult(tx -> {
+            recordCircuitResult(type, resolved.getResourceCode(), invokeOk);
+            callLogMapper.insert(log);
+            traceSpanMapper.insert(span);
+            UsageRecord usageRecord = buildUsageRecord(userId, type, resolved, request, finalStatus, finalLatencyMs);
+            if (usageRecord != null) {
+                usageRecordMapper.insert(usageRecord);
+            }
+            apiKeyScopeService.markUsed(apiKey);
+        });
+
+        logGatewayInvokeOutcome(
+                "POST /invoke-stream",
+                traceId,
+                reqId,
+                type,
+                id,
+                resolved.getResourceCode(),
+                userId,
+                status[0],
+                statusCode[0],
+                latencyMs,
+                errMsg[0],
+                null,
+                request.getPayload());
+
+        if (toRethrow != null) {
+            throw toRethrow;
+        }
     }
 
     private UsageRecord buildUsageRecord(Long userId,
@@ -422,33 +637,9 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     }
 
     private Map<String, Object> findResourceBase(String type, Long id) {
-        String sql;
-        Object[] args;
-        if (TYPE_MCP.equals(type)) {
-            sql = """
-                    SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status
-                    FROM t_resource r
-                    LEFT JOIN t_resource_skill_ext se ON se.resource_id = r.id
-                    WHERE r.deleted = 0 AND r.id = ?
-                      AND (r.resource_type = 'mcp' OR (r.resource_type = 'skill' AND se.skill_type = 'mcp'))
-                    LIMIT 1
-                    """;
-            args = new Object[]{id};
-        } else if (TYPE_SKILL.equals(type)) {
-            sql = """
-                    SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status
-                    FROM t_resource r
-                    LEFT JOIN t_resource_skill_ext se ON se.resource_id = r.id
-                    WHERE r.deleted = 0 AND r.id = ? AND r.resource_type = 'skill'
-                      AND (se.skill_type IS NULL OR se.skill_type <> 'mcp')
-                    LIMIT 1
-                    """;
-            args = new Object[]{id};
-        } else {
-            sql = "SELECT id, resource_type, resource_code, display_name, description, status FROM t_resource WHERE deleted = 0 AND resource_type = ? AND id = ? LIMIT 1";
-            args = new Object[]{type, id};
-        }
-        List<Map<String, Object>> list = jdbcTemplate.queryForList(sql, args);
+        List<Map<String, Object>> list = jdbcTemplate.queryForList(
+                "SELECT id, resource_type, resource_code, display_name, description, status FROM t_resource WHERE deleted = 0 AND resource_type = ? AND id = ? LIMIT 1",
+                type, id);
         if (list.isEmpty()) {
             throw new BusinessException(ResultCode.NOT_FOUND, "资源不存在");
         }
@@ -477,11 +668,41 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
     private ResourceResolveVO resolveSkill(Map<String, Object> base, String version) {
         Long id = longValue(base.get("id"));
-        Map<String, Object> ext = queryOne(
-                "SELECT spec_json FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1",
+        Map<String, Object> ext = queryOne("""
+                        SELECT skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, spec_json, parameters_schema, is_public
+                        FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
+                        """,
                 id);
-        Map<String, Object> spec = parseJsonMap(ext == null ? null : ext.get("spec_json"));
-        String invokeType = normalizeProtocol(spec == null ? null : spec.get("protocol"), "rest");
+        if (ext == null) {
+            ext = Map.of();
+        }
+        Map<String, Object> spec = new LinkedHashMap<>();
+        Map<String, Object> manifest = parseJsonMap(ext.get("manifest_json"));
+        if (!manifest.isEmpty()) {
+            spec.put("manifest", manifest);
+        }
+        if (StringUtils.hasText(valueOf(ext.get("entry_doc")))) {
+            spec.put("entryDoc", valueOf(ext.get("entry_doc")).trim());
+        }
+        Map<String, Object> extra = parseJsonMap(ext.get("spec_json"));
+        if (!extra.isEmpty()) {
+            spec.put("extra", extra);
+        }
+        Map<String, Object> params = parseJsonMap(ext.get("parameters_schema"));
+        if (!params.isEmpty()) {
+            spec.put("parametersSchema", params);
+        }
+        if (StringUtils.hasText(valueOf(ext.get("artifact_sha256")))) {
+            spec.put("artifactSha256", valueOf(ext.get("artifact_sha256")).trim());
+        }
+        spec.put("packFormat", valueOf(ext.get("skill_type")));
+        String artifactUri = valueOf(ext.get("artifact_uri"));
+        boolean skillPublic = truthySkillPublic(ext.get("is_public"));
+        String endpointOut = StringUtils.hasText(artifactUri) ? artifactUri.trim() : null;
+        if (!skillPublic && StringUtils.hasText(artifactUri)) {
+            spec.put("artifactDownloadApi", "/api/resource-center/resources/" + id + "/skill-artifact");
+            endpointOut = null;
+        }
         return ResourceResolveVO.builder()
                 .resourceType(TYPE_SKILL)
                 .resourceId(String.valueOf(id))
@@ -489,29 +710,42 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .resourceCode(valueOf(base.get("resource_code")))
                 .displayName(valueOf(base.get("display_name")))
                 .status(valueOf(base.get("status")))
-                .invokeType(invokeType)
-                .endpoint(specUrl(spec))
+                .invokeType("artifact")
+                .endpoint(endpointOut)
                 .spec(spec)
                 .build();
     }
 
+    private static boolean truthySkillPublic(Object o) {
+        if (o == null) {
+            return false;
+        }
+        if (o instanceof Boolean b) {
+            return b;
+        }
+        if (o instanceof Number n) {
+            return n.intValue() != 0;
+        }
+        return false;
+    }
+
     private ResourceResolveVO resolveMcp(Map<String, Object> base, String version) {
         Long id = longValue(base.get("id"));
-        Map<String, Object> ext = queryOne("SELECT endpoint, protocol, auth_config FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1", id);
+        Map<String, Object> ext = queryOne("SELECT endpoint, protocol, auth_type, auth_config FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1", id);
         Map<String, Object> spec;
         String endpoint;
         String protocol;
-        if (ext != null) {
-            spec = parseJsonMap(ext.get("auth_config"));
-            protocol = normalizeProtocol(ext.get("protocol"), "mcp");
-            endpoint = valueOf(ext.get("endpoint"));
-        } else {
-            Map<String, Object> skillExt = queryOne("SELECT spec_json FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1", id);
-            Map<String, Object> skillSpec = parseJsonMap(skillExt == null ? null : skillExt.get("spec_json"));
-            spec = skillSpec == null ? Map.of() : new HashMap<>(skillSpec);
-            protocol = normalizeProtocol(spec.get("protocol"), "mcp");
-            endpoint = specUrl(spec);
+        if (ext == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "MCP 资源扩展信息不存在");
         }
+        Map<String, Object> parsed = parseJsonMap(ext.get("auth_config"));
+        spec = parsed == null ? new HashMap<>() : new HashMap<>(parsed);
+        String authTypeCol = valueOf(ext.get("auth_type"));
+        if (StringUtils.hasText(authTypeCol)) {
+            spec.put(McpOutboundHeaderBuilder.REGISTRY_AUTH_TYPE_KEY, authTypeCol.trim().toLowerCase(Locale.ROOT));
+        }
+        protocol = normalizeProtocol(ext.get("protocol"), "mcp");
+        endpoint = valueOf(ext.get("endpoint"));
         return ResourceResolveVO.builder()
                 .resourceType(TYPE_MCP)
                 .resourceId(String.valueOf(id))
@@ -528,10 +762,16 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private ResourceResolveVO resolveApp(Map<String, Object> base, String version, ApiKey apiKey, Long userId, String action) {
         Long id = longValue(base.get("id"));
         Map<String, Object> ext = queryOne(
-                "SELECT app_url, embed_type FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1",
+                "SELECT app_url, embed_type, icon, screenshots FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1",
                 id);
         Map<String, Object> spec = new HashMap<>();
         spec.put("embedType", valueOf(ext == null ? null : ext.get("embed_type")));
+        if (ext != null && StringUtils.hasText(valueOf(ext.get("icon")))) {
+            spec.put("icon", valueOf(ext.get("icon")).trim());
+        }
+        if (ext != null && ext.get("screenshots") != null) {
+            spec.put("screenshots", parseJsonList(ext.get("screenshots")));
+        }
         return ResourceResolveVO.builder()
                 .resourceType(TYPE_APP)
                 .resourceId(String.valueOf(id))
@@ -837,6 +1077,106 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         return null;
     }
 
+    private void logGatewayInvokeOutcome(
+            String httpLabel,
+            String traceId,
+            String requestId,
+            String resourceType,
+            Long resourceNumericId,
+            String resourceCode,
+            Long userId,
+            String status,
+            int statusCode,
+            long latencyMs,
+            String errMsg,
+            String respBody,
+            Object payload) {
+        int bodyMax = Math.min(4096, Math.max(128, gatewayInvokeBodyPreviewMax));
+        DegradedJsonFields dj = parseDegradedJsonFields(respBody);
+        String resolvedErr = StringUtils.hasText(errMsg) ? errMsg : dj.jsonMessage();
+        String bodyPreview = StringUtils.hasText(respBody) ? abbreviateForCallLog(respBody, bodyMax) : null;
+        String payloadPreview = buildPayloadPreviewForLog(payload);
+        String uid = userId == null ? "-" : String.valueOf(userId);
+        String rid = resourceNumericId == null ? "-" : String.valueOf(resourceNumericId);
+        String bcStr = dj.businessCode() == null ? "-" : String.valueOf(dj.businessCode());
+
+        if (!"success".equals(status)) {
+            log.warn(
+                    "[gateway.invoke] {} traceId={} requestId={} resourceType={} resourceId={} resourceCode={} userId={} status={} statusCode={} latencyMs={} businessCode={} errorMessage={} bodyPreview={} payloadPreview={}",
+                    httpLabel,
+                    traceId,
+                    requestId,
+                    resourceType,
+                    rid,
+                    resourceCode,
+                    uid,
+                    status,
+                    statusCode,
+                    latencyMs,
+                    bcStr,
+                    resolvedErr == null ? "" : resolvedErr,
+                    bodyPreview == null ? "" : bodyPreview,
+                    payloadPreview == null ? "" : payloadPreview);
+        } else if (gatewayInvokeLogSuccess) {
+            log.info(
+                    "[gateway.invoke] {} traceId={} requestId={} resourceType={} resourceId={} resourceCode={} userId={} status={} statusCode={} latencyMs={} payloadPreview={}",
+                    httpLabel,
+                    traceId,
+                    requestId,
+                    resourceType,
+                    rid,
+                    resourceCode,
+                    uid,
+                    status,
+                    statusCode,
+                    latencyMs,
+                    payloadPreview == null ? "" : payloadPreview);
+        }
+    }
+
+    private String buildPayloadPreviewForLog(Object payload) {
+        if (!gatewayInvokeLogPayloadPreview || payload == null) {
+            return null;
+        }
+        int max = Math.min(4096, Math.max(64, gatewayInvokePayloadPreviewMax));
+        try {
+            String raw = payload instanceof String s ? s : objectMapper.writeValueAsString(payload);
+            return abbreviateForCallLog(raw, max);
+        } catch (Exception e) {
+            return "(payload-preview-failed)";
+        }
+    }
+
+    private DegradedJsonFields parseDegradedJsonFields(String respBody) {
+        if (!StringUtils.hasText(respBody)) {
+            return new DegradedJsonFields(null, null);
+        }
+        String t = respBody.trim();
+        if (!t.startsWith("{")) {
+            return new DegradedJsonFields(null, null);
+        }
+        try {
+            JsonNode n = objectMapper.readTree(t);
+            Integer bc = n.hasNonNull("businessCode") && n.get("businessCode").isNumber()
+                    ? n.get("businessCode").asInt()
+                    : null;
+            String jm = n.hasNonNull("message") && n.get("message").isTextual() ? n.get("message").asText() : null;
+            return new DegradedJsonFields(bc, jm);
+        } catch (Exception e) {
+            return new DegradedJsonFields(null, null);
+        }
+    }
+
+    private record DegradedJsonFields(Integer businessCode, String jsonMessage) {}
+
+    private static String abbreviateForCallLog(String text, int maxLen) {
+        if (!StringUtils.hasText(text) || maxLen <= 0) {
+            return text;
+        }
+        String t = text.trim();
+        return t.length() <= maxLen ? t : t.substring(0, maxLen) + "...";
+    }
+
     private static Long longValue(Object v) {
         if (v == null) {
             return 0L;
@@ -1062,10 +1402,177 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 });
     }
 
-    private static String normalizeCatalogType(String resourceType, String skillType) {
-        if (TYPE_SKILL.equals(resourceType) && "mcp".equalsIgnoreCase(StringUtils.hasText(skillType) ? skillType : "")) {
-            return TYPE_MCP;
+    private static void ensureSkillNotInvokable(String type) {
+        if (TYPE_SKILL.equals(type)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "技能包（resourceType=skill）不支持网关远程调用，请由 Agent 运行时加载；远程工具请使用 resourceType=mcp。");
         }
-        return resourceType;
+    }
+
+    private Set<String> parseIncludes(String includeRaw) {
+        if (!StringUtils.hasText(includeRaw)) {
+            return Set.of();
+        }
+        Set<String> includes = new HashSet<>();
+        for (String part : includeRaw.split(",")) {
+            if (!StringUtils.hasText(part)) {
+                continue;
+            }
+            includes.add(part.trim().toLowerCase(Locale.ROOT));
+        }
+        return includes;
+    }
+
+    private void attachIncludesToCatalogItems(List<ResourceCatalogItemVO> items, Set<String> includes) {
+        if (items == null || items.isEmpty() || includes == null || includes.isEmpty()) {
+            return;
+        }
+        boolean needObs = includes.contains("observability");
+        boolean needQuality = includes.contains("quality");
+        if (!needObs && !needQuality) {
+            return;
+        }
+        for (ResourceCatalogItemVO item : items) {
+            Long rid;
+            try {
+                rid = Long.valueOf(item.getResourceId());
+            } catch (Exception ex) {
+                continue;
+            }
+            Map<String, Object> quality = computeQualitySummarySafe(rid);
+            if (needObs) {
+                item.setObservability(observabilityView(quality));
+            }
+            if (needQuality) {
+                item.setQuality(qualityView(quality));
+            }
+        }
+    }
+
+    private ResourceResolveVO attachIncludesToResolve(ResourceResolveVO resolved, Set<String> includes) {
+        if (resolved == null || includes == null || includes.isEmpty()) {
+            return resolved;
+        }
+        Long rid;
+        try {
+            rid = Long.valueOf(resolved.getResourceId());
+        } catch (Exception ex) {
+            return resolved;
+        }
+        if (includes.contains("tags")) {
+            String rtype = StringUtils.hasText(resolved.getResourceType())
+                    ? resolved.getResourceType().trim().toLowerCase(Locale.ROOT)
+                    : TYPE_AGENT;
+            List<String> tags = jdbcTemplate.query(
+                    "SELECT t.name FROM t_resource_tag_rel rr INNER JOIN t_tag t ON t.id = rr.tag_id "
+                            + "WHERE rr.resource_id = ? AND rr.resource_type = ? ORDER BY t.name",
+                    (rs, i) -> rs.getString(1),
+                    rid,
+                    rtype);
+            resolved.setTags(tags == null ? List.of() : tags);
+        }
+        if (includes.contains("observability") || includes.contains("quality")) {
+            Map<String, Object> quality = computeQualitySummarySafe(rid);
+            if (includes.contains("observability")) {
+                resolved.setObservability(observabilityView(quality));
+            }
+            if (includes.contains("quality")) {
+                resolved.setQuality(qualityView(quality));
+            }
+        }
+        return resolved;
+    }
+
+    private Map<String, Object> computeQualitySummarySafe(Long resourceId) {
+        try {
+            return computeQualitySummary(resourceId);
+        } catch (Exception ex) {
+            log.warn("computeQualitySummary failed for resourceId={}", resourceId, ex);
+            return defaultQualitySummary();
+        }
+    }
+
+    private static Map<String, Object> defaultQualitySummary() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("healthStatus", "unknown");
+        m.put("circuitState", "unknown");
+        m.put("qualityScore", 0);
+        m.put("successRate", 1.0D);
+        m.put("avgLatencyMs", 0.0D);
+        m.put("callCount7d", 0L);
+        m.put("degradationCode", "");
+        m.put("degradationHint", "");
+        return m;
+    }
+
+    private static Map<String, Object> observabilityView(Map<String, Object> quality) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("healthStatus", nzStr(quality.get("healthStatus")));
+        m.put("circuitState", nzStr(quality.get("circuitState")));
+        m.put("degradationCode", nzStr(quality.get("degradationCode")));
+        m.put("degradationHint", nzStr(quality.get("degradationHint")));
+        return m;
+    }
+
+    private static Map<String, Object> qualityView(Map<String, Object> quality) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("qualityScore", quality.get("qualityScore") != null ? quality.get("qualityScore") : 0);
+        m.put("successRate", quality.get("successRate") != null ? quality.get("successRate") : 1.0D);
+        m.put("avgLatencyMs", quality.get("avgLatencyMs") != null ? quality.get("avgLatencyMs") : 0.0D);
+        m.put("callCount7d", quality.get("callCount7d") != null ? quality.get("callCount7d") : 0L);
+        return m;
+    }
+
+    private static String nzStr(Object o) {
+        return o == null ? "" : String.valueOf(o);
+    }
+
+    private Map<String, Object> computeQualitySummary(Long resourceId) {
+        Map<String, Object> calls = queryOne("""
+                SELECT
+                    COUNT(1) AS total_calls,
+                    SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_calls,
+                    ROUND(AVG(latency_ms), 2) AS avg_latency
+                FROM t_call_log
+                WHERE agent_id = ? AND create_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                """, String.valueOf(resourceId));
+        long total = longValue(calls == null ? null : calls.get("total_calls"));
+        long success = longValue(calls == null ? null : calls.get("success_calls"));
+        double avgLatency = 0D;
+        if (calls != null && calls.get("avg_latency") != null) {
+            try {
+                avgLatency = Double.parseDouble(String.valueOf(calls.get("avg_latency")));
+            } catch (NumberFormatException ignored) {
+                avgLatency = 0D;
+            }
+        }
+        double successRate = total <= 0 ? 1D : ((double) success / (double) total);
+        double latencyFactor = Math.max(0D, 1D - (avgLatency / 8000D));
+        int qualityScore = (int) Math.round(successRate * 70D + latencyFactor * 30D);
+        qualityScore = Math.max(0, Math.min(100, qualityScore));
+        String healthStatus = valueOf(queryOne("SELECT health_status FROM t_resource_health_config WHERE resource_id = ? LIMIT 1", resourceId) == null
+                ? null
+                : queryOne("SELECT health_status FROM t_resource_health_config WHERE resource_id = ? LIMIT 1", resourceId).get("health_status"));
+        String circuitState = valueOf(queryOne("SELECT current_state FROM t_resource_circuit_breaker WHERE resource_id = ? LIMIT 1", resourceId) == null
+                ? null
+                : queryOne("SELECT current_state FROM t_resource_circuit_breaker WHERE resource_id = ? LIMIT 1", resourceId).get("current_state"));
+        String degradationCode = null;
+        String degradationHint = null;
+        if ("OPEN".equalsIgnoreCase(circuitState)) {
+            degradationCode = "CIRCUIT_OPEN";
+            degradationHint = "当前资源暂时不可用，请稍后重试";
+        } else if ("degraded".equalsIgnoreCase(healthStatus)) {
+            degradationCode = "HEALTH_DEGRADED";
+            degradationHint = "当前资源响应不稳定，建议稍后再试";
+        }
+        return new LinkedHashMap<>(Map.of(
+                "healthStatus", healthStatus == null ? "unknown" : healthStatus,
+                "circuitState", circuitState == null ? "unknown" : circuitState,
+                "qualityScore", qualityScore,
+                "successRate", successRate,
+                "avgLatencyMs", avgLatency,
+                "callCount7d", total,
+                "degradationCode", degradationCode == null ? "" : degradationCode,
+                "degradationHint", degradationHint == null ? "" : degradationHint));
     }
 }

@@ -23,7 +23,7 @@
 - `sandbox`：SDK 沙箱会话与隔离调用
 - `auth`、`usermgmt`、`usersettings`、`useractivity`：账号与用户侧能力
 - `dashboard`：平台看板汇总
-- `common`：通用过滤器、注解、配置
+- `common`：通用过滤器、注解、配置；**`common.storage`**（如 `FileStorageSupport`）统一本地/MinIO 路径与对象访问辅助逻辑
 
 ## 4. 保留但易混淆目录说明
 

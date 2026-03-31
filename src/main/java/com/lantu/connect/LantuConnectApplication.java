@@ -29,7 +29,7 @@ public class LantuConnectApplication {
     ApplicationListener<ApplicationReadyEvent> readyListener() {
         return event -> {
             Environment env = event.getApplicationContext().getEnvironment();
-            String appName = env.getProperty("spring.application.name", "lantu-connect");
+            String appName = env.getProperty("spring.application.name", "nexusai-connect");
             String port = env.getProperty("server.port", "8080");
             String contextPath = env.getProperty("server.servlet.context-path", "/api");
             String host = "localhost";

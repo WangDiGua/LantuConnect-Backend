@@ -4,12 +4,21 @@ import com.lantu.connect.common.annotation.AuditLog;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.gateway.dto.ResourceManageVO;
+import com.lantu.connect.gateway.dto.LifecycleTimelineVO;
+import com.lantu.connect.gateway.dto.ObservabilitySummaryVO;
 import com.lantu.connect.gateway.dto.ResourceUpsertRequest;
 import com.lantu.connect.gateway.dto.ResourceVersionCreateRequest;
 import com.lantu.connect.gateway.dto.ResourceVersionVO;
+import com.lantu.connect.gateway.dto.SkillPackUrlImportRequest;
+import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
+import com.lantu.connect.gateway.service.SkillArtifactDownloadService;
+import com.lantu.connect.gateway.service.SkillPackUploadService;
+import com.lantu.connect.usermgmt.entity.ApiKey;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,7 +29,9 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 
 /**
@@ -32,6 +43,9 @@ import java.util.List;
 public class ResourceRegistryController {
 
     private final ResourceRegistryService resourceRegistryService;
+    private final SkillPackUploadService skillPackUploadService;
+    private final SkillArtifactDownloadService skillArtifactDownloadService;
+    private final ApiKeyScopeService apiKeyScopeService;
 
     @PostMapping
     @AuditLog(action = "resource_create", resource = "resource-center")
@@ -57,24 +71,26 @@ public class ResourceRegistryController {
 
     @PostMapping("/{id}/submit")
     @AuditLog(action = "resource_submit", resource = "resource-center")
-    public R<Void> submit(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
-        resourceRegistryService.submitForAudit(userId, id);
-        return R.ok();
+    public R<ResourceManageVO> submit(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
+        return R.ok(resourceRegistryService.submitForAudit(userId, id));
     }
 
     @PostMapping("/{id}/deprecate")
     @AuditLog(action = "resource_deprecate", resource = "resource-center")
-    public R<Void> deprecate(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
-        resourceRegistryService.deprecate(userId, id);
-        return R.ok();
+    public R<ResourceManageVO> deprecate(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
+        return R.ok(resourceRegistryService.deprecate(userId, id));
     }
 
     @GetMapping("/mine")
     public R<PageResult<ResourceManageVO>> mine(@RequestHeader("X-User-Id") Long userId,
                                                 @RequestParam(required = false) String resourceType,
+                                                @RequestParam(required = false) String status,
+                                                @RequestParam(required = false) String keyword,
+                                                @RequestParam(required = false) String sortBy,
+                                                @RequestParam(required = false) String sortOrder,
                                                 @RequestParam(defaultValue = "1") Integer page,
                                                 @RequestParam(defaultValue = "20") Integer pageSize) {
-        return R.ok(resourceRegistryService.pageMine(userId, resourceType, page, pageSize));
+        return R.ok(resourceRegistryService.pageMine(userId, resourceType, status, keyword, sortBy, sortOrder, page, pageSize));
     }
 
     @GetMapping("/{id}")
@@ -93,11 +109,10 @@ public class ResourceRegistryController {
 
     @PostMapping("/{id}/versions/{version}/switch")
     @AuditLog(action = "resource_version_switch", resource = "resource-center")
-    public R<Void> switchVersion(@RequestHeader("X-User-Id") Long userId,
-                                 @PathVariable Long id,
-                                 @PathVariable String version) {
-        resourceRegistryService.switchVersion(userId, id, version);
-        return R.ok();
+    public R<ResourceManageVO> switchVersion(@RequestHeader("X-User-Id") Long userId,
+                                             @PathVariable Long id,
+                                             @PathVariable String version) {
+        return R.ok(resourceRegistryService.switchVersion(userId, id, version));
     }
 
     @GetMapping("/{id}/versions")
@@ -108,9 +123,54 @@ public class ResourceRegistryController {
 
     @PostMapping("/{id}/withdraw")
     @AuditLog(action = "resource_withdraw", resource = "resource-center")
-    public R<Void> withdraw(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
-        resourceRegistryService.withdraw(userId, id);
-        return R.ok();
+    public R<ResourceManageVO> withdraw(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
+        return R.ok(resourceRegistryService.withdraw(userId, id));
+    }
+
+    @GetMapping("/{id}/lifecycle-timeline")
+    public R<LifecycleTimelineVO> lifecycleTimeline(@RequestHeader("X-User-Id") Long userId,
+                                                    @PathVariable Long id) {
+        return R.ok(resourceRegistryService.lifecycleTimeline(userId, id));
+    }
+
+    @GetMapping("/{type}/{id}/observability-summary")
+    public R<ObservabilitySummaryVO> observabilitySummary(@RequestHeader("X-User-Id") Long userId,
+                                                          @PathVariable String type,
+                                                          @PathVariable Long id) {
+        return R.ok(resourceRegistryService.observabilitySummary(userId, type, id));
+    }
+
+    /**
+     * 上传 Anthropic 式技能 zip：校验 SKILL.md（及可选 frontmatter）、写入制品与 manifest，并更新 pack_validation_*。
+     */
+    @PostMapping(value = "/skills/package-upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @AuditLog(action = "skill_pack_upload", resource = "resource-center")
+    public R<ResourceManageVO> uploadSkillPackage(@RequestHeader("X-User-Id") Long userId,
+                                                    @RequestParam("file") MultipartFile file,
+                                                    @RequestParam(value = "resourceId", required = false) Long resourceId) {
+        return R.ok(skillPackUploadService.uploadPack(userId, file, resourceId));
+    }
+
+    /**
+     * 从 HTTPS（可配置允许 HTTP）URL 拉取 zip，校验与落库与 package-upload 一致；新建时 sourceType 为 cloud。
+     */
+    @PostMapping(value = "/skills/package-import-url", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @AuditLog(action = "skill_pack_import_url", resource = "resource-center")
+    public R<ResourceManageVO> importSkillPackageFromUrl(@RequestHeader("X-User-Id") Long userId,
+                                                         @Valid @RequestBody SkillPackUrlImportRequest body) {
+        return R.ok(skillPackUploadService.importPackFromUrl(userId, body.getUrl(), body.getResourceId()));
+    }
+
+    /**
+     * 下载技能包（主要用于 isPublic=0 时在 resolve 中不直接返回 artifact URL 的场景）。
+     */
+    @GetMapping("/{id}/skill-artifact")
+    public void downloadSkillArtifact(@RequestHeader("X-User-Id") Long userId,
+                                      @RequestHeader(value = "X-Api-Key", required = false) String apiKeyRaw,
+                                      @PathVariable Long id,
+                                      HttpServletResponse response) throws IOException {
+        ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
+        skillArtifactDownloadService.streamArtifact(id, userId, apiKey, response);
     }
 }
 

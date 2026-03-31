@@ -3,6 +3,7 @@ package com.lantu.connect.common.filter;
 import com.lantu.connect.auth.support.AccessTokenBlacklist;
 import com.lantu.connect.auth.support.SessionRevocationRegistry;
 import com.lantu.connect.common.config.SecurityProperties;
+import com.lantu.connect.common.util.JsonStringEscaper;
 import com.lantu.connect.common.util.JwtUtil;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -116,12 +117,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (securityProperties.isAllowHeaderUserIdFallback()
-                && StringUtils.hasText(request.getHeader("X-User-Id"))) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
         writeUnauthorized(response, "未认证");
     }
 
@@ -146,12 +141,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        String body = "{\"code\":1002,\"message\":\"" + escapeJson(message) + "\",\"data\":null}";
+        String body = "{\"code\":1002,\"message\":\"" + JsonStringEscaper.escape(message) + "\",\"data\":null}";
         response.getWriter().write(body);
-    }
-
-    private static String escapeJson(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private static final class UserIdHeaderRequestWrapper extends HttpServletRequestWrapper {

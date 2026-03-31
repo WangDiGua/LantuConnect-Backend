@@ -8,12 +8,17 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.gateway.dto.ResourceManageVO;
+import com.lantu.connect.gateway.dto.LifecycleTimelineVO;
+import com.lantu.connect.gateway.dto.DegradationHintVO;
+import com.lantu.connect.gateway.dto.ObservabilitySummaryVO;
 import com.lantu.connect.gateway.dto.ResourceUpsertRequest;
 import com.lantu.connect.gateway.dto.ResourceVersionCreateRequest;
 import com.lantu.connect.gateway.dto.ResourceVersionVO;
+import com.lantu.connect.gateway.protocol.McpOutboundHeaderBuilder;
 import com.lantu.connect.gateway.protocol.ProtocolInvokerRegistry;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
+import com.lantu.connect.gateway.service.support.SkillPackValidationStatus;
 import com.lantu.connect.common.util.DeptScopeHelper;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.notification.service.NotificationEventCodes;
@@ -37,13 +42,22 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.LinkedHashSet;
 
 @Service
 @RequiredArgsConstructor
 public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private static final Set<String> RESOURCE_TYPES = Set.of("agent", "skill", "mcp", "app", "dataset");
+
+    private static final Set<String> APP_EMBED_TYPES = Set.of("iframe", "redirect", "micro_frontend");
+
+    /** skill.skill_type：仅技能包格式；远程 MCP/HTTP 工具须用 resourceType=mcp。 */
+    private static final Set<String> SKILL_PACK_FORMATS = Set.of("anthropic_v1", "folder_v1");
+
+    private static final Set<String> FORBIDDEN_SKILL_PACK_TYPES = Set.of("mcp", "http_api");
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -88,7 +102,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
         upsertExtension(type, resourceId, request);
         syncResourceRelations(resourceId, type, request.getRelatedResourceIds());
-        upsertDefaultVersion(resourceId, buildSnapshot(type, request), true);
+        syncResourceTagRels(resourceId, type, request);
+        upsertDefaultVersion(resourceId, snapshotForVersion(type, resourceId, request), true);
         return findResource(resourceId);
     }
 
@@ -119,7 +134,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 resourceId);
         upsertExtension(type, resourceId, request);
         syncResourceRelations(resourceId, type, request.getRelatedResourceIds());
-        upsertCurrentVersionSnapshot(resourceId, buildSnapshot(type, request));
+        syncResourceTagRels(resourceId, type, request);
+        upsertCurrentVersionSnapshot(resourceId, snapshotForVersion(type, resourceId, request));
         return findResource(resourceId);
     }
 
@@ -129,13 +145,15 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         ensureAuthenticated(operatorUserId);
         ResourceRow row = requireManageableResource(operatorUserId, resourceId);
         ResourceLifecycleStateMachine.ensureDeletable(row.status());
+        jdbcTemplate.update("DELETE FROM t_resource_tag_rel WHERE resource_id = ? AND resource_type = ?",
+                resourceId, row.resourceType());
         jdbcTemplate.update("UPDATE t_resource SET deleted = 1, update_time = NOW() WHERE id = ? AND deleted = 0", resourceId);
         jdbcTemplate.update("UPDATE t_resource_version SET status = 'inactive', is_current = 0 WHERE resource_id = ?", resourceId);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void submitForAudit(Long operatorUserId, Long resourceId) {
+    public ResourceManageVO submitForAudit(Long operatorUserId, Long resourceId) {
         ensureAuthenticated(operatorUserId);
         ResourceRow row = requireManageableResource(operatorUserId, resourceId);
         ResourceLifecycleStateMachine.ensureTransitionAllowed(row.status(), ResourceLifecycleStateMachine.STATUS_PENDING_REVIEW);
@@ -150,6 +168,23 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 resourceId);
         if (pending != null && pending > 0) {
             throw new BusinessException(ResultCode.DUPLICATE_SUBMIT, "该资源已有待审核记录");
+        }
+
+        if ("skill".equals(row.resourceType())) {
+            List<Map<String, Object>> se = jdbcTemplate.queryForList(
+                    "SELECT pack_validation_status, artifact_uri FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1",
+                    resourceId);
+            if (se.isEmpty()) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "技能扩展信息不存在");
+            }
+            String packStatus = stringValue(se.get(0).get("pack_validation_status"));
+            String normalizedPack = packStatus == null ? "" : packStatus.trim().toLowerCase(Locale.ROOT);
+            if (!SkillPackValidationStatus.VALID.equals(normalizedPack)) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "技能包未通过校验（pack_validation_status 须为 valid），请先上传有效 zip");
+            }
+            if (!StringUtils.hasText(stringValue(se.get(0).get("artifact_uri")))) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "artifactUri 不能为空");
+            }
         }
 
         jdbcTemplate.update("UPDATE t_resource SET status = ?, update_time = NOW() WHERE id = ? AND deleted = 0",
@@ -185,11 +220,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                         resourceId,
                         row.displayName()),
                 resourceId);
+        return findResource(resourceId);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void deprecate(Long operatorUserId, Long resourceId) {
+    public ResourceManageVO deprecate(Long operatorUserId, Long resourceId) {
         ensureAuthenticated(operatorUserId);
         ResourceRow row = requireManageableResource(operatorUserId, resourceId);
         ResourceLifecycleStateMachine.ensureTransitionAllowed(row.status(), ResourceLifecycleStateMachine.STATUS_DEPRECATED);
@@ -202,11 +238,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 row.resourceType(),
                 resourceId,
                 "状态已切换为 deprecated");
+        return findResource(resourceId);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void withdraw(Long operatorUserId, Long resourceId) {
+    public ResourceManageVO withdraw(Long operatorUserId, Long resourceId) {
         ensureAuthenticated(operatorUserId);
         ResourceRow row = requireManageableResource(operatorUserId, resourceId);
         ResourceLifecycleStateMachine.ensureTransitionAllowed(row.status(), ResourceLifecycleStateMachine.STATUS_DRAFT);
@@ -221,6 +258,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 row.resourceType(),
                 resourceId,
                 "状态已切换为 draft");
+        return findResource(resourceId);
     }
 
     @Override
@@ -239,11 +277,49 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
         ResourceManageVO vo = toManageVo(row);
         enrichCreatedByName(vo);
+        enrichExtensionFields(vo, resourceId);
+        enrichCurrentVersionLabel(vo, resourceId);
+        enrichCatalogTagNames(vo, resourceId);
+        enrichLifecycleContext(vo, operatorUserId);
+        enrichObservabilityFields(vo);
         return vo;
     }
 
     @Override
-    public PageResult<ResourceManageVO> pageMine(Long operatorUserId, String resourceType, Integer page, Integer pageSize) {
+    @Transactional(rollbackFor = Exception.class)
+    public void recomputeCurrentVersionSnapshot(Long operatorUserId, Long resourceId) {
+        ensureAuthenticated(operatorUserId);
+        ResourceRow row = requireManageableResource(operatorUserId, resourceId);
+        upsertCurrentVersionSnapshot(resourceId, buildSnapshotFromDb(row.resourceType(), resourceId));
+    }
+
+    private Map<String, Object> snapshotForVersion(String type, Long resourceId, ResourceUpsertRequest request) {
+        if ("skill".equals(type)) {
+            return buildSnapshotFromDb(type, resourceId);
+        }
+        return buildSnapshot(type, request);
+    }
+
+    private static Timestamp toSqlTimestamp(Object raw) {
+        if (raw == null) {
+            return null;
+        }
+        if (raw instanceof Timestamp ts) {
+            return ts;
+        }
+        if (raw instanceof LocalDateTime ldt) {
+            return Timestamp.valueOf(ldt);
+        }
+        if (raw instanceof java.util.Date d) {
+            return new Timestamp(d.getTime());
+        }
+        return null;
+    }
+
+    @Override
+    public PageResult<ResourceManageVO> pageMine(Long operatorUserId, String resourceType, String status,
+                                                 String keyword, String sortBy, String sortOrder,
+                                                 Integer page, Integer pageSize) {
         ensureAuthenticated(operatorUserId);
         int p = page == null ? 1 : Math.max(1, page);
         int ps = pageSize == null ? 20 : Math.min(100, Math.max(1, pageSize));
@@ -271,15 +347,54 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             countArgs.add(normalizedType);
             listArgs.add(normalizedType);
         }
+        if (StringUtils.hasText(status)) {
+            where.append(" AND status = ? ");
+            countArgs.add(status.trim().toLowerCase(Locale.ROOT));
+            listArgs.add(status.trim().toLowerCase(Locale.ROOT));
+        }
+        if (StringUtils.hasText(keyword)) {
+            where.append(" AND (display_name LIKE ? OR resource_code LIKE ? OR description LIKE ?) ");
+            String kw = "%" + keyword.trim() + "%";
+            countArgs.add(kw);
+            countArgs.add(kw);
+            countArgs.add(kw);
+            listArgs.add(kw);
+            listArgs.add(kw);
+            listArgs.add(kw);
+        }
         Long total = jdbcTemplate.queryForObject("SELECT COUNT(1) FROM t_resource " + where, Long.class, countArgs.toArray());
         listArgs.add(ps);
         listArgs.add(offset);
+        String whereAliased = where.toString()
+                .replace(" WHERE deleted = 0 ", " WHERE r.deleted = 0 ")
+                .replace(" AND created_by IN (", " AND r.created_by IN (")
+                .replace(" AND created_by = ? ", " AND r.created_by = ? ")
+                .replace(" AND resource_type = ? ", " AND r.resource_type = ? ")
+                .replace(" AND status = ? ", " AND r.status = ? ")
+                .replace("display_name LIKE ?", "r.display_name LIKE ?")
+                .replace("resource_code LIKE ?", "r.resource_code LIKE ?")
+                .replace("description LIKE ?", "r.description LIKE ?");
+        String orderColumn = switch (StringUtils.hasText(sortBy) ? sortBy.trim().toLowerCase(Locale.ROOT) : "") {
+            case "create_time" -> "r.create_time";
+            case "display_name" -> "r.display_name";
+            case "status" -> "r.status";
+            default -> "r.update_time";
+        };
+        String direction = "asc".equalsIgnoreCase(sortOrder) ? "ASC" : "DESC";
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT id, resource_type, resource_code, display_name, description, status, source_type, provider_id, category_id, created_by, create_time, update_time FROM t_resource "
-                        + where + " ORDER BY update_time DESC LIMIT ? OFFSET ?",
+                """
+                        SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.source_type, \
+                        r.provider_id, r.category_id, r.created_by, r.create_time, r.update_time, \
+                        (SELECT v.version FROM t_resource_version v WHERE v.resource_id = r.id AND v.is_current = 1 LIMIT 1) AS current_version \
+                        FROM t_resource r \
+                        """
+                        + whereAliased + " ORDER BY " + orderColumn + " " + direction + " LIMIT ? OFFSET ?",
                 listArgs.toArray());
         List<ResourceManageVO> list = rows.stream().map(this::toManageVo).toList();
         enrichCreatedByNames(list);
+        enrichCatalogTagNamesBatch(list);
+        list.forEach(vo -> enrichLifecycleContext(vo, operatorUserId));
+        list.forEach(this::enrichObservabilityFields);
         return PageResult.of(list, total == null ? 0L : total, p, ps);
     }
 
@@ -313,7 +428,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void switchVersion(Long operatorUserId, Long resourceId, String version) {
+    public ResourceManageVO switchVersion(Long operatorUserId, Long resourceId, String version) {
         ensureAuthenticated(operatorUserId);
         ResourceRow row = requireManageableResource(operatorUserId, resourceId);
         String v = normalizeVersion(version);
@@ -334,6 +449,112 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 row.resourceType(),
                 resourceId,
                 "当前版本: " + v);
+        return findResource(resourceId);
+    }
+
+    @Override
+    public LifecycleTimelineVO lifecycleTimeline(Long operatorUserId, Long resourceId) {
+        ResourceManageVO detail = getById(operatorUserId, resourceId);
+        List<LifecycleTimelineVO.Event> events = new ArrayList<>();
+        List<Map<String, Object>> audits = jdbcTemplate.queryForList("""
+                SELECT submit_time, review_time, status, submitter, reviewer_id, reject_reason, create_time
+                FROM t_audit_item
+                WHERE target_id = ?
+                ORDER BY COALESCE(review_time, submit_time, create_time) ASC
+                """, resourceId);
+        events.add(LifecycleTimelineVO.Event.builder()
+                .eventType("created")
+                .title("资源创建")
+                .status(ResourceLifecycleStateMachine.STATUS_DRAFT)
+                .actor(detail.getCreatedByName())
+                .eventTime(detail.getCreateTime())
+                .build());
+        for (Map<String, Object> item : audits) {
+            LocalDateTime submitTime = toDateTime(item.get("submit_time"));
+            if (submitTime == null) {
+                submitTime = toDateTime(item.get("create_time"));
+            }
+            events.add(LifecycleTimelineVO.Event.builder()
+                    .eventType("submitted")
+                    .title("提交审核")
+                    .status("pending_review")
+                    .actor(stringValue(item.get("submitter")))
+                    .eventTime(submitTime)
+                    .build());
+            String st = stringValue(item.get("status"));
+            LocalDateTime reviewTime = toDateTime(item.get("review_time"));
+            if (reviewTime != null && StringUtils.hasText(st) && !"pending_review".equalsIgnoreCase(st)) {
+                events.add(LifecycleTimelineVO.Event.builder()
+                        .eventType(st)
+                        .title("审核结果: " + st)
+                        .status(st)
+                        .actor(stringValue(item.get("reviewer_id")))
+                        .reason(stringValue(item.get("reject_reason")))
+                        .eventTime(reviewTime)
+                        .build());
+            }
+        }
+        if ("published".equalsIgnoreCase(detail.getStatus())) {
+            events.add(LifecycleTimelineVO.Event.builder()
+                    .eventType("published")
+                    .title("资源已发布")
+                    .status("published")
+                    .eventTime(detail.getUpdateTime())
+                    .build());
+        } else if ("deprecated".equalsIgnoreCase(detail.getStatus())) {
+            events.add(LifecycleTimelineVO.Event.builder()
+                    .eventType("deprecated")
+                    .title("资源已下线")
+                    .status("deprecated")
+                    .eventTime(detail.getUpdateTime())
+                    .build());
+        }
+        return LifecycleTimelineVO.builder()
+                .resourceId(detail.getId())
+                .resourceType(detail.getResourceType())
+                .resourceCode(detail.getResourceCode())
+                .displayName(detail.getDisplayName())
+                .currentStatus(detail.getStatus())
+                .events(events.stream().sorted((a, b) -> {
+                    LocalDateTime at = a.getEventTime();
+                    LocalDateTime bt = b.getEventTime();
+                    if (at == null && bt == null) {
+                        return 0;
+                    }
+                    if (at == null) {
+                        return -1;
+                    }
+                    if (bt == null) {
+                        return 1;
+                    }
+                    return at.compareTo(bt);
+                }).toList())
+                .build();
+    }
+
+    @Override
+    public ObservabilitySummaryVO observabilitySummary(Long operatorUserId, String resourceType, Long resourceId) {
+        ResourceManageVO detail = getById(operatorUserId, resourceId);
+        String normalizedType = normalizeType(resourceType);
+        if (!normalizedType.equals(detail.getResourceType())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "resource type 与 id 不匹配");
+        }
+        Map<String, Object> quality = computeQuality(resourceId);
+        DegradationHintVO hint = buildDegradationHint(
+                stringValue(quality.get("healthStatus")),
+                stringValue(quality.get("circuitState")));
+        return ObservabilitySummaryVO.builder()
+                .resourceId(detail.getId())
+                .resourceType(detail.getResourceType())
+                .resourceCode(detail.getResourceCode())
+                .displayName(detail.getDisplayName())
+                .healthStatus(stringValue(quality.get("healthStatus")))
+                .circuitState(stringValue(quality.get("circuitState")))
+                .qualityScore((Integer) quality.get("qualityScore"))
+                .qualityFactors((Map<String, Object>) quality.get("qualityFactors"))
+                .degradationHint(hint)
+                .generatedAt(LocalDateTime.now())
+                .build();
     }
 
     @Override
@@ -361,7 +582,168 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
         ResourceManageVO vo = toManageVo(rows.get(0));
         enrichCreatedByName(vo);
+        enrichExtensionFields(vo, id);
+        enrichCurrentVersionLabel(vo, id);
+        enrichCatalogTagNames(vo, id);
+        enrichLifecycleContext(vo, null);
+        enrichObservabilityFields(vo);
         return vo;
+    }
+
+    private void enrichLifecycleContext(ResourceManageVO vo, Long viewerUserId) {
+        if (vo == null || vo.getId() == null) {
+            return;
+        }
+        List<Map<String, Object>> audits = jdbcTemplate.queryForList("""
+                SELECT id, status, reject_reason, reviewer_id, submit_time, review_time
+                FROM t_audit_item
+                WHERE target_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """, vo.getId());
+        if (!audits.isEmpty()) {
+            Map<String, Object> a = audits.get(0);
+            vo.setPendingAuditItemId(longValue(a.get("id")));
+            vo.setLastAuditStatus(stringValue(a.get("status")));
+            vo.setLastRejectReason(stringValue(a.get("reject_reason")));
+            vo.setLastReviewerId(longValue(a.get("reviewer_id")));
+            vo.setLastSubmitTime(toDateTime(a.get("submit_time")));
+            vo.setLastReviewTime(toDateTime(a.get("review_time")));
+        }
+        vo.setAllowedActions(suggestActions(vo.getStatus(), vo.getCreatedBy(), viewerUserId));
+        vo.setStatusHint(statusHint(vo.getStatus(), vo.getLastRejectReason()));
+    }
+
+    private static List<String> suggestActions(String status, Long ownerId, Long viewerUserId) {
+        boolean owner = ownerId != null && viewerUserId != null && ownerId.equals(viewerUserId);
+        String s = status == null ? "" : status.trim().toLowerCase(Locale.ROOT);
+        List<String> actions = new ArrayList<>();
+        switch (s) {
+            case "draft" -> {
+                actions.add("update");
+                actions.add("submit");
+                actions.add("delete");
+                actions.add("createVersion");
+            }
+            case "pending_review" -> actions.add("withdraw");
+            case "testing" -> {
+                actions.add("withdraw");
+                actions.add("deprecate");
+            }
+            case "published" -> {
+                actions.add("createVersion");
+                actions.add("switchVersion");
+                actions.add("deprecate");
+            }
+            case "rejected" -> {
+                actions.add("update");
+                actions.add("submit");
+            }
+            case "deprecated" -> {
+                actions.add("update");
+                actions.add("submit");
+            }
+            default -> {
+            }
+        }
+        if (!owner) {
+            actions.remove("delete");
+        }
+        return actions;
+    }
+
+    private static String statusHint(String status, String rejectReason) {
+        String s = status == null ? "" : status.trim().toLowerCase(Locale.ROOT);
+        return switch (s) {
+            case "draft" -> "草稿态，可编辑后重新提审";
+            case "pending_review" -> "审核进行中，可撤回到草稿";
+            case "testing" -> "测试阶段，建议观察稳定性后发布";
+            case "published" -> "线上可用，建议持续关注质量指标";
+            case "rejected" -> StringUtils.hasText(rejectReason) ? "已驳回：" + rejectReason : "已驳回，请修改后重提";
+            case "deprecated" -> "已下线，可修复后重新提审";
+            default -> "状态待确认";
+        };
+    }
+
+    private void enrichObservabilityFields(ResourceManageVO vo) {
+        if (vo == null || vo.getId() == null) {
+            return;
+        }
+        Map<String, Object> quality = computeQuality(vo.getId());
+        vo.setHealthStatus(stringValue(quality.get("healthStatus")));
+        vo.setCircuitState(stringValue(quality.get("circuitState")));
+        vo.setQualityScore((Integer) quality.get("qualityScore"));
+        vo.setQualityFactors((Map<String, Object>) quality.get("qualityFactors"));
+        DegradationHintVO hint = buildDegradationHint(vo.getHealthStatus(), vo.getCircuitState());
+        if (hint != null) {
+            vo.setDegradationCode(hint.getDegradationCode());
+            vo.setDegradationHint(hint.getUserFacingHint());
+        }
+    }
+
+    private Map<String, Object> computeQuality(Long resourceId) {
+        List<Map<String, Object>> callRows = jdbcTemplate.queryForList("""
+                SELECT
+                    COUNT(1) AS totalCalls,
+                    SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successCalls,
+                    ROUND(AVG(latency_ms), 2) AS avgLatencyMs
+                FROM t_call_log
+                WHERE agent_id = ?
+                AND create_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                """, String.valueOf(resourceId));
+        long totalCalls = 0L;
+        long successCalls = 0L;
+        double avgLatencyMs = 0D;
+        if (!callRows.isEmpty()) {
+            Map<String, Object> c = callRows.get(0);
+            totalCalls = longValue(c.get("totalCalls")) == null ? 0L : longValue(c.get("totalCalls"));
+            successCalls = longValue(c.get("successCalls")) == null ? 0L : longValue(c.get("successCalls"));
+            avgLatencyMs = doubleObject(c.get("avgLatencyMs")) == null ? 0D : doubleObject(c.get("avgLatencyMs"));
+        }
+        double successRate = totalCalls <= 0 ? 1D : ((double) successCalls / (double) totalCalls);
+        double latencyFactor = Math.max(0D, 1D - (avgLatencyMs / 8000D));
+        int qualityScore = (int) Math.round(successRate * 70D + latencyFactor * 30D);
+        qualityScore = Math.max(0, Math.min(100, qualityScore));
+
+        List<Map<String, Object>> hc = jdbcTemplate.queryForList(
+                "SELECT health_status FROM t_resource_health_config WHERE resource_id = ? LIMIT 1",
+                resourceId);
+        String health = hc.isEmpty() ? "unknown" : stringValue(hc.get(0).get("health_status"));
+        List<Map<String, Object>> cb = jdbcTemplate.queryForList(
+                "SELECT current_state FROM t_resource_circuit_breaker WHERE resource_id = ? LIMIT 1",
+                resourceId);
+        String circuitState = cb.isEmpty() ? "unknown" : stringValue(cb.get(0).get("current_state"));
+
+        Map<String, Object> factors = new LinkedHashMap<>();
+        factors.put("successRate", successRate);
+        factors.put("avgLatencyMs", avgLatencyMs);
+        factors.put("totalCalls7d", totalCalls);
+        factors.put("latencyFactor", latencyFactor);
+        return new LinkedHashMap<>(Map.of(
+                "healthStatus", health,
+                "circuitState", circuitState,
+                "qualityScore", qualityScore,
+                "qualityFactors", factors));
+    }
+
+    private static DegradationHintVO buildDegradationHint(String healthStatus, String circuitState) {
+        String h = healthStatus == null ? "" : healthStatus.trim().toLowerCase(Locale.ROOT);
+        String c = circuitState == null ? "" : circuitState.trim().toLowerCase(Locale.ROOT);
+        if ("open".equals(c)) {
+            return DegradationHintVO.builder()
+                    .degradationCode("CIRCUIT_OPEN")
+                    .userFacingHint("当前资源暂时不可用，请稍后重试")
+                    .opsHint("检查上游错误率、恢复后可尝试半开探测")
+                    .build();
+        }
+        if ("degraded".equals(h)) {
+            return DegradationHintVO.builder()
+                    .degradationCode("HEALTH_DEGRADED")
+                    .userFacingHint("当前资源响应不稳定，建议稍后再试")
+                    .opsHint("检查健康检查地址、超时阈值与依赖状态")
+                    .build();
+        }
+        return null;
     }
 
     private ResourceVersionVO findVersion(Long resourceId, String version) {
@@ -423,12 +805,46 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     }
 
     private void upsertSkillExt(Long resourceId, ResourceUpsertRequest request) {
+        List<Map<String, Object>> existingRows = jdbcTemplate.queryForList("""
+                        SELECT artifact_uri, artifact_sha256, pack_validation_status, pack_validated_at, pack_validation_message
+                        FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
+                        """,
+                resourceId);
+
+        String newUri = StringUtils.hasText(request.getArtifactUri()) ? request.getArtifactUri().trim() : null;
+        String newSha = StringUtils.hasText(request.getArtifactSha256()) ? request.getArtifactSha256().trim().toLowerCase(Locale.ROOT) : null;
+
+        String packStatus = SkillPackValidationStatus.NONE;
+        Timestamp packValidatedAt = null;
+        String packValidationMessage = null;
+        if (!existingRows.isEmpty()) {
+            Map<String, Object> er = existingRows.get(0);
+            String oldUri = stringValue(er.get("artifact_uri"));
+            String oldSha = stringValue(er.get("artifact_sha256"));
+            String oldShaNorm = StringUtils.hasText(oldSha) ? oldSha.trim().toLowerCase(Locale.ROOT) : null;
+            boolean artifactChanged = !Objects.equals(StringUtils.hasText(oldUri) ? oldUri.trim() : null, newUri)
+                    || !Objects.equals(oldShaNorm, newSha);
+            if (!artifactChanged) {
+                String ps = stringValue(er.get("pack_validation_status"));
+                packStatus = StringUtils.hasText(ps) ? ps.trim().toLowerCase(Locale.ROOT) : SkillPackValidationStatus.NONE;
+                packValidatedAt = toSqlTimestamp(er.get("pack_validated_at"));
+                packValidationMessage = stringValue(er.get("pack_validation_message"));
+            }
+        }
+
+        String manifestJson = writeJson(defaultMap(request.getManifest()));
         int updated = jdbcTemplate.update("""
                         UPDATE t_resource_skill_ext
-                        SET skill_type = ?, mode = ?, parent_resource_id = ?, display_template = ?, spec_json = CAST(? AS JSON), parameters_schema = CAST(? AS JSON), is_public = ?, max_concurrency = ?
+                        SET skill_type = ?, artifact_uri = ?, artifact_sha256 = ?, manifest_json = CAST(? AS JSON), entry_doc = ?,
+                            mode = ?, parent_resource_id = ?, display_template = ?, spec_json = CAST(? AS JSON), parameters_schema = CAST(? AS JSON), is_public = ?, max_concurrency = ?,
+                            pack_validation_status = ?, pack_validated_at = ?, pack_validation_message = ?
                         WHERE resource_id = ?
                         """,
-                request.getSkillType(),
+                request.getSkillType().trim().toLowerCase(Locale.ROOT),
+                newUri,
+                newSha,
+                manifestJson,
+                request.getEntryDoc(),
                 defaultString(request.getMode(), "TOOL"),
                 request.getParentResourceId(),
                 request.getDisplayTemplate(),
@@ -436,21 +852,31 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 writeJson(defaultMap(request.getParametersSchema())),
                 toBoolNumber(request.getIsPublic()),
                 request.getMaxConcurrency() == null ? 10 : request.getMaxConcurrency(),
+                packStatus,
+                packValidatedAt,
+                packValidationMessage,
                 resourceId);
         if (updated == 0) {
             jdbcTemplate.update("""
-                            INSERT INTO t_resource_skill_ext(resource_id, skill_type, mode, parent_resource_id, display_template, spec_json, parameters_schema, is_public, max_concurrency)
-                            VALUES(?, ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), ?, ?)
+                            INSERT INTO t_resource_skill_ext(resource_id, skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, mode, parent_resource_id, display_template, spec_json, parameters_schema, is_public, max_concurrency, pack_validation_status, pack_validated_at, pack_validation_message)
+                            VALUES(?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), ?, ?, ?, ?, ?)
                             """,
                     resourceId,
-                    request.getSkillType(),
+                    request.getSkillType().trim().toLowerCase(Locale.ROOT),
+                    newUri,
+                    newSha,
+                    manifestJson,
+                    request.getEntryDoc(),
                     defaultString(request.getMode(), "TOOL"),
                     request.getParentResourceId(),
                     request.getDisplayTemplate(),
                     writeJson(defaultMap(request.getSpec())),
                     writeJson(defaultMap(request.getParametersSchema())),
                     toBoolNumber(request.getIsPublic()),
-                    request.getMaxConcurrency() == null ? 10 : request.getMaxConcurrency());
+                    request.getMaxConcurrency() == null ? 10 : request.getMaxConcurrency(),
+                    SkillPackValidationStatus.NONE,
+                    null,
+                    null);
         }
     }
 
@@ -551,21 +977,71 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 }
             }
             case "skill" -> {
-                requireText(request.getSkillType(), "skillType 不能为空");
-                if (request.getSpec() == null || request.getSpec().isEmpty()) {
-                    throw new BusinessException(ResultCode.PARAM_ERROR, "skill spec 不能为空");
+                requireText(request.getSkillType(), "skillType（技能包格式）不能为空");
+                String packFmt = request.getSkillType().trim().toLowerCase(Locale.ROOT);
+                if (FORBIDDEN_SKILL_PACK_TYPES.contains(packFmt)) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR,
+                            "skillType 不可为 mcp/http_api；可远程调用的工具请使用 resourceType=mcp 注册");
+                }
+                if (!SKILL_PACK_FORMATS.contains(packFmt)) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR,
+                            "skillType 必须是 anthropic_v1 或 folder_v1");
+                }
+                if (StringUtils.hasText(request.getArtifactUri())) {
+                    request.setArtifactUri(request.getArtifactUri().trim());
+                } else {
+                    request.setArtifactUri(null);
+                }
+                if (StringUtils.hasText(request.getArtifactSha256())) {
+                    request.setArtifactSha256(request.getArtifactSha256().trim().toLowerCase(Locale.ROOT));
+                } else {
+                    request.setArtifactSha256(null);
+                }
+                if (StringUtils.hasText(request.getEntryDoc())) {
+                    request.setEntryDoc(request.getEntryDoc().trim());
                 }
             }
             case "mcp" -> {
-                requireText(request.getEndpoint(), "endpoint 不能为空");
+                Map<String, Object> ac = request.getAuthConfig() == null ? Map.of() : request.getAuthConfig();
+                String transport = stringValue(ac.get("transport"));
+                if ("stdio".equalsIgnoreCase(transport)) {
+                    requireText(request.getEndpoint(), "stdio MCP 须将本机边车 HTTP(S) 地址填入 endpoint");
+                    if (!isHttpOrHttpsUrl(request.getEndpoint().trim())) {
+                        throw new BusinessException(ResultCode.PARAM_ERROR, "stdio 边车 endpoint 须为 http(s) URL");
+                    }
+                } else {
+                    requireText(request.getEndpoint(), "endpoint 不能为空");
+                }
                 String protocol = defaultString(request.getProtocol(), "mcp");
                 if (!protocolInvokerRegistry.isSupported(protocol)) {
                     throw new BusinessException(ResultCode.PARAM_ERROR, "MCP 协议不可调用: " + protocol);
                 }
+                String at = defaultString(request.getAuthType(), "none");
+                if ("oauth2_client".equalsIgnoreCase(at)) {
+                    requireText(stringValue(ac.get("tokenUrl")), "oauth2_client 需要 auth_config.tokenUrl");
+                    requireText(stringValue(ac.get("clientId")), "oauth2_client 需要 auth_config.clientId");
+                    boolean hasSecret = StringUtils.hasText(stringValue(ac.get("clientSecret")))
+                            || StringUtils.hasText(stringValue(ac.get("clientSecretRef")));
+                    if (!hasSecret) {
+                        throw new BusinessException(ResultCode.PARAM_ERROR,
+                                "oauth2_client 需要 auth_config.clientSecret 或 clientSecretRef");
+                    }
+                }
             }
             case "app" -> {
                 requireText(request.getAppUrl(), "appUrl 不能为空");
+                String appUrl = request.getAppUrl().trim();
+                if (!isHttpOrHttpsUrl(appUrl)) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR, "appUrl 须为 http:// 或 https:// URL");
+                }
                 requireText(request.getEmbedType(), "embedType 不能为空");
+                String et = request.getEmbedType().trim().toLowerCase(Locale.ROOT);
+                if (!APP_EMBED_TYPES.contains(et)) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR,
+                            "embedType 必须是 iframe、redirect 或 micro_frontend 之一");
+                }
+                request.setAppUrl(appUrl);
+                request.setEmbedType(et);
             }
             case "dataset" -> {
                 requireText(request.getDataType(), "dataType 不能为空");
@@ -693,6 +1169,14 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
     }
 
+    private static boolean isHttpOrHttpsUrl(String url) {
+        if (!StringUtils.hasText(url)) {
+            return false;
+        }
+        String u = url.trim().toLowerCase(Locale.ROOT);
+        return u.startsWith("http://") || u.startsWith("https://");
+    }
+
     private static Integer toBoolNumber(Boolean value) {
         return Boolean.TRUE.equals(value) ? 1 : 0;
     }
@@ -731,9 +1215,23 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 snapshot.put("spec", defaultMap(request.getSpec()));
             }
             case "skill" -> {
-                snapshot.put("invokeType", "rest");
-                snapshot.put("endpoint", request.getSpec() == null ? null : request.getSpec().get("url"));
-                snapshot.put("spec", defaultMap(request.getSpec()));
+                snapshot.put("packFormat", request.getSkillType().trim().toLowerCase(Locale.ROOT));
+                snapshot.put("invokeType", "artifact");
+                snapshot.put("endpoint", request.getArtifactUri());
+                if (StringUtils.hasText(request.getArtifactSha256())) {
+                    snapshot.put("artifactSha256", request.getArtifactSha256());
+                }
+                Map<String, Object> spec = new LinkedHashMap<>();
+                if (request.getManifest() != null && !request.getManifest().isEmpty()) {
+                    spec.put("manifest", request.getManifest());
+                }
+                if (StringUtils.hasText(request.getEntryDoc())) {
+                    spec.put("entryDoc", request.getEntryDoc());
+                }
+                if (request.getSpec() != null && !request.getSpec().isEmpty()) {
+                    spec.put("extra", request.getSpec());
+                }
+                snapshot.put("spec", spec);
             }
             case "mcp" -> {
                 snapshot.put("invokeType", defaultString(request.getProtocol(), "mcp").toLowerCase(Locale.ROOT));
@@ -743,7 +1241,13 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             case "app" -> {
                 snapshot.put("invokeType", "redirect");
                 snapshot.put("endpoint", request.getAppUrl());
-                snapshot.put("spec", Map.of("embedType", request.getEmbedType()));
+                Map<String, Object> appSpec = new LinkedHashMap<>();
+                appSpec.put("embedType", request.getEmbedType());
+                if (StringUtils.hasText(request.getIcon())) {
+                    appSpec.put("icon", request.getIcon().trim());
+                }
+                appSpec.put("screenshots", defaultList(request.getScreenshots()));
+                snapshot.put("spec", appSpec);
             }
             case "dataset" -> {
                 snapshot.put("invokeType", "metadata");
@@ -786,26 +1290,62 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 snapshot.put("spec", spec);
             }
             case "skill" -> {
-                Map<String, Object> ext = jdbcTemplate.queryForList("SELECT spec_json FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1", resourceId)
+                Map<String, Object> ext = jdbcTemplate.queryForList("""
+                                SELECT skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, spec_json, pack_validation_status
+                                FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
+                                """, resourceId)
                         .stream().findFirst().orElse(Map.of());
-                Map<String, Object> spec = parseJsonMap(ext.get("spec_json"));
-                snapshot.put("invokeType", "rest");
-                snapshot.put("endpoint", spec.get("url"));
+                String packFmt = stringValue(ext.get("skill_type"));
+                snapshot.put("packFormat", packFmt);
+                snapshot.put("invokeType", "artifact");
+                snapshot.put("endpoint", stringValue(ext.get("artifact_uri")));
+                if (StringUtils.hasText(stringValue(ext.get("artifact_sha256")))) {
+                    snapshot.put("artifactSha256", stringValue(ext.get("artifact_sha256")).trim().toLowerCase(Locale.ROOT));
+                }
+                Map<String, Object> spec = new LinkedHashMap<>();
+                Map<String, Object> manifest = parseJsonMap(ext.get("manifest_json"));
+                if (!manifest.isEmpty()) {
+                    spec.put("manifest", manifest);
+                }
+                if (StringUtils.hasText(stringValue(ext.get("entry_doc")))) {
+                    spec.put("entryDoc", stringValue(ext.get("entry_doc")));
+                }
+                if (StringUtils.hasText(stringValue(ext.get("pack_validation_status")))) {
+                    spec.put("packValidationStatus", stringValue(ext.get("pack_validation_status")).trim().toLowerCase(Locale.ROOT));
+                }
+                Map<String, Object> extra = parseJsonMap(ext.get("spec_json"));
+                if (!extra.isEmpty()) {
+                    spec.put("extra", extra);
+                }
                 snapshot.put("spec", spec);
             }
             case "mcp" -> {
-                Map<String, Object> ext = jdbcTemplate.queryForList("SELECT endpoint, protocol, auth_config FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1", resourceId)
+                Map<String, Object> ext = jdbcTemplate.queryForList(
+                                "SELECT endpoint, protocol, auth_type, auth_config FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1", resourceId)
                         .stream().findFirst().orElse(Map.of());
                 snapshot.put("invokeType", stringValue(ext.get("protocol")));
                 snapshot.put("endpoint", stringValue(ext.get("endpoint")));
-                snapshot.put("spec", parseJsonMap(ext.get("auth_config")));
+                Map<String, Object> spec = parseJsonMap(ext.get("auth_config"));
+                spec = spec == null ? new LinkedHashMap<>() : new LinkedHashMap<>(spec);
+                String at = stringValue(ext.get("auth_type"));
+                if (StringUtils.hasText(at)) {
+                    spec.put(McpOutboundHeaderBuilder.REGISTRY_AUTH_TYPE_KEY, at.trim().toLowerCase(Locale.ROOT));
+                }
+                snapshot.put("spec", spec);
             }
             case "app" -> {
-                Map<String, Object> ext = jdbcTemplate.queryForList("SELECT app_url, embed_type FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1", resourceId)
+                Map<String, Object> ext = jdbcTemplate.queryForList(
+                                "SELECT app_url, embed_type, icon, screenshots FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1", resourceId)
                         .stream().findFirst().orElse(Map.of());
                 snapshot.put("invokeType", "redirect");
                 snapshot.put("endpoint", stringValue(ext.get("app_url")));
-                snapshot.put("spec", Map.of("embedType", stringValue(ext.get("embed_type"))));
+                Map<String, Object> appSpec = new LinkedHashMap<>();
+                appSpec.put("embedType", stringValue(ext.get("embed_type")));
+                if (StringUtils.hasText(stringValue(ext.get("icon")))) {
+                    appSpec.put("icon", stringValue(ext.get("icon")));
+                }
+                appSpec.put("screenshots", toStringListFromJsonColumn(ext.get("screenshots")));
+                snapshot.put("spec", appSpec);
             }
             case "dataset" -> {
                 Map<String, Object> ext = jdbcTemplate.queryForList("SELECT data_type, format, record_count, file_size, tags FROM t_resource_dataset_ext WHERE resource_id = ? LIMIT 1", resourceId)
@@ -860,6 +1400,191 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
     }
 
+    private void enrichExtensionFields(ResourceManageVO vo, Long resourceId) {
+        if (vo == null || resourceId == null) {
+            return;
+        }
+        String type = vo.getResourceType() == null ? null : vo.getResourceType().trim().toLowerCase(Locale.ROOT);
+        if (!StringUtils.hasText(type)) {
+            return;
+        }
+        switch (type) {
+            case "agent" -> enrichAgentFields(vo, resourceId);
+            case "skill" -> enrichSkillFields(vo, resourceId);
+            case "mcp" -> enrichMcpFields(vo, resourceId);
+            case "app" -> enrichAppFields(vo, resourceId);
+            case "dataset" -> enrichDatasetFields(vo, resourceId);
+            default -> {
+            }
+        }
+        List<Long> rel = loadRelatedResourceIds(resourceId, type);
+        if (!rel.isEmpty()) {
+            vo.setRelatedResourceIds(rel);
+        }
+    }
+
+    private List<Long> loadRelatedResourceIds(Long resourceId, String resourceType) {
+        String relationType = switch (resourceType) {
+            case "agent" -> "agent_depends_skill";
+            case "app" -> "app_depends_resource";
+            default -> null;
+        };
+        if (relationType == null) {
+            return List.of();
+        }
+        return jdbcTemplate.query(
+                "SELECT to_resource_id FROM t_resource_relation WHERE from_resource_id = ? AND relation_type = ? ORDER BY to_resource_id",
+                (rs, rowNum) -> rs.getLong("to_resource_id"),
+                resourceId,
+                relationType);
+    }
+
+    private void enrichAgentFields(ResourceManageVO vo, Long resourceId) {
+        var rows = jdbcTemplate.queryForList("""
+                        SELECT agent_type, mode, spec_json, is_public, hidden, max_concurrency, max_steps, temperature, system_prompt
+                        FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1
+                        """,
+                resourceId);
+        if (rows.isEmpty()) {
+            return;
+        }
+        Map<String, Object> r = rows.get(0);
+        vo.setAgentType(stringValue(r.get("agent_type")));
+        vo.setMode(stringValue(r.get("mode")));
+        vo.setSpec(parseJsonMap(r.get("spec_json")));
+        vo.setIsPublic(boolObject(r.get("is_public")));
+        vo.setHidden(boolObject(r.get("hidden")));
+        vo.setMaxConcurrency(intObject(r.get("max_concurrency")));
+        vo.setMaxSteps(intObject(r.get("max_steps")));
+        vo.setTemperature(doubleObject(r.get("temperature")));
+        vo.setSystemPrompt(stringValue(r.get("system_prompt")));
+    }
+
+    private void enrichSkillFields(ResourceManageVO vo, Long resourceId) {
+        var rows = jdbcTemplate.queryForList("""
+                        SELECT skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, mode, parent_resource_id, display_template, spec_json, parameters_schema, is_public, max_concurrency,
+                               pack_validation_status, pack_validated_at, pack_validation_message
+                        FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
+                        """,
+                resourceId);
+        if (rows.isEmpty()) {
+            return;
+        }
+        Map<String, Object> r = rows.get(0);
+        vo.setSkillType(stringValue(r.get("skill_type")));
+        vo.setArtifactUri(stringValue(r.get("artifact_uri")));
+        vo.setArtifactSha256(stringValue(r.get("artifact_sha256")));
+        vo.setManifest(parseJsonMap(r.get("manifest_json")));
+        vo.setEntryDoc(stringValue(r.get("entry_doc")));
+        vo.setPackValidationStatus(stringValue(r.get("pack_validation_status")));
+        vo.setPackValidatedAt(toDateTime(r.get("pack_validated_at")));
+        vo.setPackValidationMessage(stringValue(r.get("pack_validation_message")));
+        vo.setMode(stringValue(r.get("mode")));
+        vo.setParentResourceId(longObject(r.get("parent_resource_id")));
+        vo.setDisplayTemplate(stringValue(r.get("display_template")));
+        vo.setSpec(parseJsonMap(r.get("spec_json")));
+        vo.setParametersSchema(parseJsonMap(r.get("parameters_schema")));
+        vo.setIsPublic(boolObject(r.get("is_public")));
+        vo.setMaxConcurrency(intObject(r.get("max_concurrency")));
+    }
+
+    private void enrichMcpFields(ResourceManageVO vo, Long resourceId) {
+        var rows = jdbcTemplate.queryForList(
+                "SELECT endpoint, protocol, auth_type, auth_config FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1",
+                resourceId);
+        if (rows.isEmpty()) {
+            return;
+        }
+        Map<String, Object> r = rows.get(0);
+        vo.setEndpoint(stringValue(r.get("endpoint")));
+        vo.setProtocol(stringValue(r.get("protocol")));
+        vo.setAuthType(stringValue(r.get("auth_type")));
+        vo.setAuthConfig(parseJsonMap(r.get("auth_config")));
+    }
+
+    private void enrichAppFields(ResourceManageVO vo, Long resourceId) {
+        var rows = jdbcTemplate.queryForList(
+                "SELECT app_url, embed_type, icon, screenshots, is_public FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1",
+                resourceId);
+        if (rows.isEmpty()) {
+            return;
+        }
+        Map<String, Object> r = rows.get(0);
+        vo.setAppUrl(stringValue(r.get("app_url")));
+        vo.setEmbedType(stringValue(r.get("embed_type")));
+        vo.setIcon(stringValue(r.get("icon")));
+        vo.setScreenshots(toStringListFromJsonColumn(r.get("screenshots")));
+        vo.setIsPublic(boolObject(r.get("is_public")));
+    }
+
+    private void enrichDatasetFields(ResourceManageVO vo, Long resourceId) {
+        var rows = jdbcTemplate.queryForList(
+                "SELECT data_type, format, record_count, file_size, tags, is_public FROM t_resource_dataset_ext WHERE resource_id = ? LIMIT 1",
+                resourceId);
+        if (rows.isEmpty()) {
+            return;
+        }
+        Map<String, Object> r = rows.get(0);
+        vo.setDataType(stringValue(r.get("data_type")));
+        vo.setFormat(stringValue(r.get("format")));
+        vo.setRecordCount(longObject(r.get("record_count")));
+        vo.setFileSize(longObject(r.get("file_size")));
+        vo.setTags(toStringListFromJsonColumn(r.get("tags")));
+        vo.setIsPublic(boolObject(r.get("is_public")));
+    }
+
+    private List<String> toStringListFromJsonColumn(Object raw) {
+        return parseJsonList(raw).stream().map(String::valueOf).toList();
+    }
+
+    private static Boolean boolObject(Object o) {
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof Boolean b) {
+            return b;
+        }
+        if (o instanceof Number n) {
+            return n.intValue() != 0;
+        }
+        return null;
+    }
+
+    private static Integer intObject(Object o) {
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof Number n) {
+            return n.intValue();
+        }
+        try {
+            return Integer.parseInt(String.valueOf(o));
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private static Long longObject(Object o) {
+        if (o == null) {
+            return null;
+        }
+        return longValue(o);
+    }
+
+    private static Double doubleObject(Object o) {
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof Number n) {
+            return n.doubleValue();
+        }
+        try {
+            return Double.parseDouble(String.valueOf(o));
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
     private ResourceManageVO toManageVo(Map<String, Object> row) {
         return ResourceManageVO.builder()
                 .id(longValue(row.get("id")))
@@ -874,7 +1599,22 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 .createdBy(longValue(row.get("created_by")))
                 .createTime(toDateTime(row.get("create_time")))
                 .updateTime(toDateTime(row.get("update_time")))
+                .currentVersion(stringValue(row.get("current_version")))
                 .build();
+    }
+
+    /** 详情等场景主查询未带 current_version 列时补齐。 */
+    private void enrichCurrentVersionLabel(ResourceManageVO vo, Long resourceId) {
+        if (vo == null || resourceId == null) {
+            return;
+        }
+        List<String> found = jdbcTemplate.query(
+                "SELECT version FROM t_resource_version WHERE resource_id = ? AND is_current = 1 LIMIT 1",
+                (rs, i) -> rs.getString(1),
+                resourceId);
+        if (!found.isEmpty() && StringUtils.hasText(found.get(0))) {
+            vo.setCurrentVersion(found.get(0));
+        }
     }
 
     private ResourceVersionVO toVersionVo(Map<String, Object> row) {
@@ -925,6 +1665,84 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     private static void ensureAuthenticated(Long userId) {
         if (userId == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证");
+        }
+    }
+
+    /**
+     * 与目录按标签名筛选一致：维护 t_resource_tag_rel。categoryId 为 t_tag.id；dataset 的 request.tags 仅当名称在 t_tag 中存在时写入（不自动建标签）。
+     */
+    private void syncResourceTagRels(Long resourceId, String resourceType, ResourceUpsertRequest request) {
+        jdbcTemplate.update("DELETE FROM t_resource_tag_rel WHERE resource_id = ? AND resource_type = ?",
+                resourceId, resourceType);
+        LinkedHashSet<Long> tagIds = new LinkedHashSet<>();
+        if (request.getCategoryId() != null) {
+            Integer cnt = jdbcTemplate.queryForObject("SELECT COUNT(1) FROM t_tag WHERE id = ?",
+                    Integer.class, request.getCategoryId());
+            if (cnt != null && cnt > 0) {
+                tagIds.add(request.getCategoryId());
+            }
+        }
+        if ("dataset".equals(resourceType) && request.getTags() != null) {
+            for (String raw : request.getTags()) {
+                if (!StringUtils.hasText(raw)) {
+                    continue;
+                }
+                String label = raw.trim();
+                List<Long> found = jdbcTemplate.query(
+                        "SELECT id FROM t_tag WHERE name = ? LIMIT 2",
+                        (rs, i) -> rs.getLong(1),
+                        label);
+                if (found.size() == 1) {
+                    tagIds.add(found.get(0));
+                }
+            }
+        }
+        for (Long tagId : tagIds) {
+            jdbcTemplate.update(
+                    "INSERT INTO t_resource_tag_rel(resource_type, resource_id, tag_id) VALUES(?, ?, ?)",
+                    resourceType, resourceId, tagId);
+        }
+    }
+
+    private void enrichCatalogTagNames(ResourceManageVO vo, Long resourceId) {
+        if (vo == null || resourceId == null || !StringUtils.hasText(vo.getResourceType())) {
+            return;
+        }
+        List<String> names = jdbcTemplate.query(
+                "SELECT t.name FROM t_resource_tag_rel rt INNER JOIN t_tag t ON t.id = rt.tag_id "
+                        + "WHERE rt.resource_id = ? AND rt.resource_type = ? ORDER BY t.name",
+                (rs, i) -> rs.getString(1),
+                resourceId, vo.getResourceType());
+        vo.setCatalogTagNames(names.isEmpty() ? List.of() : names);
+    }
+
+    private void enrichCatalogTagNamesBatch(List<ResourceManageVO> list) {
+        if (list == null || list.isEmpty()) {
+            return;
+        }
+        List<Long> ids = list.stream().map(ResourceManageVO::getId).filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return;
+        }
+        String placeholders = ids.stream().map(id -> "?").collect(java.util.stream.Collectors.joining(","));
+        List<Object> args = new ArrayList<>(ids);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT rt.resource_id, t.name FROM t_resource_tag_rel rt "
+                        + "INNER JOIN t_tag t ON t.id = rt.tag_id WHERE rt.resource_id IN ("
+                        + placeholders + ") ORDER BY rt.resource_id, t.name",
+                args.toArray());
+        Map<Long, List<String>> byId = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            Long rid = longValue(row.get("resource_id"));
+            String n = stringValue(row.get("name"));
+            if (rid != null && StringUtils.hasText(n)) {
+                byId.computeIfAbsent(rid, k -> new ArrayList<>()).add(n);
+            }
+        }
+        for (ResourceManageVO vo : list) {
+            if (vo.getId() != null) {
+                vo.setCatalogTagNames(byId.getOrDefault(vo.getId(), List.of()));
+            }
         }
     }
 

@@ -161,6 +161,7 @@ public class UserActivityServiceImpl implements UserActivityService {
             r.put("agentName", row.get("resource_code"));
             r.put("displayName", row.get("display_name"));
             r.put("status", row.get("status"));
+            r.put("packFormat", row.get("skill_type"));
             r.put("agentType", row.get("skill_type"));
             r.put("parentId", row.get("parent_resource_id"));
             r.put("updateTime", toDateTime(row.get("update_time")));
@@ -261,12 +262,14 @@ public class UserActivityServiceImpl implements UserActivityService {
     }
 
     private static AuthorizedSkillVO toAuthorizedSkillVO(Map<String, Object> row, String source, LocalDateTime lastUsedTime) {
+        String packFmt = str(row.get("skill_type"));
         return AuthorizedSkillVO.builder()
                 .id(longValue(row.get("id")))
                 .agentName(str(row.get("resource_code")))
                 .displayName(str(row.get("display_name")))
                 .description(str(row.get("description")))
-                .agentType(str(row.get("skill_type")))
+                .agentType(packFmt)
+                .packFormat(packFmt)
                 .status(str(row.get("status")))
                 .source(source)
                 .updateTime(toDateTime(row.get("update_time")))

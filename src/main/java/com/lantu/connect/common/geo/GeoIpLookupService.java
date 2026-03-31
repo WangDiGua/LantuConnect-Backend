@@ -1,6 +1,5 @@
 package com.lantu.connect.common.geo;
 
-import cn.hutool.core.net.NetUtil;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
@@ -9,11 +8,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.net.InetAddress;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 /**
- * 公网 IP 地理位置（ip-api.com，无密钥；内网 IP 不请求外网）。
+ * 公网 IP 地理位置（ip-api.com，无密钥；仅接受字面值 IP，避免 DNS 解析导致 SSRF）。
  */
 @Slf4j
 @Service
@@ -33,11 +33,22 @@ public class GeoIpLookupService {
             return null;
         }
         ip = ip.trim();
-        if (isPrivateOrLocal(ip)) {
-            return "局域网";
+        if (ip.length() > 45) {
+            return null;
+        }
+        if (!looksLikeLiteralNumericIp(ip)) {
+            return null;
         }
         try {
-            String enc = URLEncoder.encode(ip, StandardCharsets.UTF_8);
+            InetAddress addr = InetAddress.getByName(ip);
+            if (addr.isAnyLocalAddress()
+                    || addr.isLoopbackAddress()
+                    || addr.isSiteLocalAddress()
+                    || addr.isLinkLocalAddress()
+                    || addr.isMulticastAddress()) {
+                return "局域网";
+            }
+            String enc = URLEncoder.encode(addr.getHostAddress(), StandardCharsets.UTF_8);
             String url = "http://ip-api.com/json/" + enc + "?fields=status,message,country,regionName,city&lang=zh-CN";
             String body = HttpRequest.get(url).timeout(timeoutMs).execute().body();
             if (!StringUtils.hasText(body)) {
@@ -73,10 +84,13 @@ public class GeoIpLookupService {
         }
     }
 
-    private static boolean isPrivateOrLocal(String ip) {
-        if ("127.0.0.1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip) || "::1".equals(ip)) {
-            return true;
+    /**
+     * 仅允许 IPv4 点分十进制或仅含十六进制数字与 {@code : . %} 的 IPv6 字面量，拒绝主机名以免触发解析。
+     */
+    private static boolean looksLikeLiteralNumericIp(String ip) {
+        if (ip.indexOf(':') >= 0) {
+            return ip.matches("^[0-9a-fA-F:.%]+$");
         }
-        return NetUtil.isInnerIP(ip);
+        return ip.matches("^(\\d{1,3}\\.){3}\\d{1,3}$");
     }
 }

@@ -36,7 +36,7 @@ public class SmsNotificationChannel implements NotificationChannel {
             return;
         }
         try {
-            smsService.send(user.getMobile(), "[LantuConnect] " + title + ": " + body);
+            smsService.send(user.getMobile(), "[NexusAI] " + title + ": " + body);
             log.info("SMS notification sent to user {} ({})", userId, user.getMobile());
         } catch (Exception e) {
             log.warn("Failed to send SMS notification to user {}: {}", userId, e.getMessage());

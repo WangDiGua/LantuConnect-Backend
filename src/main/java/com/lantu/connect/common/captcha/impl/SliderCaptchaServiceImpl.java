@@ -13,8 +13,8 @@ import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -33,7 +33,7 @@ public class SliderCaptchaServiceImpl implements CaptchaService {
     private static final int NOISE_LINE_COUNT = 8;
     private static final int NOISE_DOT_COUNT = 80;
 
-    private final Random random = new Random();
+    private final SecureRandom random = new SecureRandom();
 
     @Override
     public CaptchaResult generate() {

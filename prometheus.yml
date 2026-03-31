@@ -1,8 +1,11 @@
+# 默认后端不把 /actuator/prometheus 设为匿名。二选一：
+# - 应用环境 PERMIT_PROMETHEUS_WITHOUT_AUTH=true（仅信任网络时）
+# - 或在此 job 增加 authorization.credentials / bearer_token_file 指向长期 Service 账号 JWT
 global:
   scrape_interval: 15s
 
 scrape_configs:
-  - job_name: 'lantu-connect'
+  - job_name: 'nexusai-connect'
     metrics_path: '/api/actuator/prometheus'
     static_configs:
       - targets: ['app:8080']

@@ -12,8 +12,14 @@ import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.time.LocalDateTime;
+import java.util.Collections;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,6 +34,8 @@ class MonitoringServiceImplTest {
     private TraceSpanMapper traceSpanMapper;
     @Mock
     private UserDisplayNameResolver userDisplayNameResolver;
+    @Mock
+    private JdbcTemplate jdbcTemplate;
 
     @InjectMocks
     private MonitoringServiceImpl monitoringService;
@@ -68,5 +76,21 @@ class MonitoringServiceImplTest {
         query.setAlertStatus("all");
         monitoringService.alerts(query);
         verify(alertRecordMapper).selectPage(any(), any());
+    }
+
+    @Test
+    void qualityHistoryPassesResourceTypeToJdbc() {
+        LocalDateTime from = LocalDateTime.of(2026, 3, 1, 0, 0);
+        LocalDateTime to = LocalDateTime.of(2026, 3, 31, 12, 0);
+        when(jdbcTemplate.queryForList(anyString(), eq("42"), eq("skill"), eq("skill"), eq(from), eq(to)))
+                .thenReturn(Collections.emptyList());
+        monitoringService.qualityHistory("skill", 42L, from, to);
+        verify(jdbcTemplate).queryForList(
+                ArgumentMatchers.contains("resource_type"),
+                eq("42"),
+                eq("skill"),
+                eq("skill"),
+                eq(from),
+                eq(to));
     }
 }

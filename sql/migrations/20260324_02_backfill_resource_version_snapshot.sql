@@ -23,7 +23,7 @@ WHERE rv.status = 'active'
   AND r.deleted = 0
   AND r.resource_type = 'agent';
 
--- Skill snapshots (non-MCP)
+-- Skill snapshots（历史脚本：旧库中 skill 曾带 url；迁移 20260331 后仅存内容包形态）
 UPDATE t_resource_version rv
 JOIN t_resource r ON r.id = rv.resource_id
 JOIN t_resource_skill_ext se ON se.resource_id = r.id
@@ -58,7 +58,7 @@ WHERE rv.status = 'active'
   AND r.deleted = 0
   AND r.resource_type = 'mcp';
 
--- MCP snapshots from skill-type MCP rows (normalized path)
+-- MCP snapshots from skill-type MCP rows（迁移 20260331 前路径）
 UPDATE t_resource_version rv
 JOIN t_resource r ON r.id = rv.resource_id
 JOIN t_resource_skill_ext se ON se.resource_id = r.id

@@ -15,6 +15,7 @@ import com.lantu.connect.gateway.security.AppLaunchTokenService;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.security.ResourceInvokeGrantService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
+import com.lantu.connect.gateway.support.GatewayInvokeResponseSupport;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.usermgmt.entity.ApiKey;
@@ -23,6 +24,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,6 +36,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.util.List;
 import java.util.UUID;
@@ -44,6 +50,9 @@ public class ResourceCatalogController {
     private final AppLaunchTokenService appLaunchTokenService;
     private final ApiKeyMapper apiKeyMapper;
     private final ResourceInvokeGrantService resourceInvokeGrantService;
+
+    @Value("${lantu.gateway.invoke-http-status-reflects-upstream:true}")
+    private boolean invokeHttpStatusReflectsUpstream;
 
     @GetMapping("/catalog/resources")
     public R<PageResult<ResourceCatalogItemVO>> catalog(ResourceCatalogQueryRequest request,
@@ -68,10 +77,11 @@ public class ResourceCatalogController {
     @GetMapping("/catalog/resources/{type}/{id}")
     public R<ResourceResolveVO> getByTypeAndId(@PathVariable String type,
                                                @PathVariable String id,
+                                               @RequestParam(required = false) String include,
                                                @RequestHeader(value = "X-User-Id", required = false) Long userId,
                                                @RequestHeader(value = "X-Api-Key", required = false) String apiKeyRaw) {
         ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
-        return R.ok(unifiedGatewayService.getByTypeAndId(type, id, apiKey, userId));
+        return R.ok(unifiedGatewayService.getByTypeAndId(type, id, include, apiKey, userId));
     }
 
     @GetMapping("/catalog/resources/{type}/{id}/stats")
@@ -89,7 +99,7 @@ public class ResourceCatalogController {
     }
 
     @PostMapping("/invoke")
-    public R<InvokeResponse> invoke(@RequestHeader(value = "X-User-Id", required = false) Long userId,
+    public ResponseEntity<R<InvokeResponse>> invoke(@RequestHeader(value = "X-User-Id", required = false) Long userId,
                                     @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
                                     @RequestHeader(value = "X-Request-Id", required = false) String requestId,
                                     @RequestHeader(value = "X-Api-Key", required = false) String apiKeyRaw,
@@ -99,7 +109,35 @@ public class ResourceCatalogController {
         String resolvedTraceId = StringUtils.hasText(traceId)
                 ? traceId.trim()
                 : (StringUtils.hasText(requestId) ? requestId.trim() : UUID.randomUUID().toString());
-        return R.ok(unifiedGatewayService.invoke(userId, resolvedTraceId, httpRequest.getRemoteAddr(), request, apiKey));
+        InvokeResponse data = unifiedGatewayService.invoke(userId, resolvedTraceId, httpRequest.getRemoteAddr(), request, apiKey);
+        R<InvokeResponse> body = GatewayInvokeResponseSupport.wrap(data);
+        if (!invokeHttpStatusReflectsUpstream) {
+            return ResponseEntity.ok(body);
+        }
+        return ResponseEntity.status(GatewayInvokeResponseSupport.toHttpStatus(data)).body(body);
+    }
+
+    /**
+     * MCP HTTP/SSE：原样流式转发上游响应（长 SSE）。需要与 {@link #invoke} 相同鉴权；不支持 WebSocket 上游。
+     */
+    @PostMapping(value = "/invoke-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public ResponseEntity<StreamingResponseBody> invokeStream(
+            @RequestHeader(value = "X-User-Id", required = false) Long userId,
+            @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
+            @RequestHeader(value = "X-Request-Id", required = false) String requestId,
+            @RequestHeader(value = "X-Api-Key", required = false) String apiKeyRaw,
+            @Valid @RequestBody InvokeRequest request,
+            HttpServletRequest httpRequest) {
+        ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
+        String resolvedTraceId = StringUtils.hasText(traceId)
+                ? traceId.trim()
+                : (StringUtils.hasText(requestId) ? requestId.trim() : UUID.randomUUID().toString());
+        StreamingResponseBody body = outputStream -> unifiedGatewayService.invokeStream(
+                userId, resolvedTraceId, httpRequest.getRemoteAddr(), request, apiKey, outputStream);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header("X-Accel-Buffering", "no")
+                .body(body);
     }
 
     @GetMapping("/catalog/apps/launch")

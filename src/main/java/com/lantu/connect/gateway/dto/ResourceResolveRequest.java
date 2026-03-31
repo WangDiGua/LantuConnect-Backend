@@ -13,4 +13,9 @@ public class ResourceResolveRequest {
     private String resourceId;
 
     private String version;
+
+    /**
+     * 可选扩展块，逗号分隔：observability,quality,tags
+     */
+    private String include;
 }

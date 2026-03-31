@@ -7,6 +7,7 @@ import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.monitoring.dto.KpiMetric;
 import com.lantu.connect.monitoring.dto.PageQuery;
+import com.lantu.connect.monitoring.dto.QualityHistoryPointVO;
 import com.lantu.connect.monitoring.entity.AlertRecord;
 import com.lantu.connect.monitoring.entity.CallLog;
 import com.lantu.connect.monitoring.entity.TraceSpan;
@@ -15,12 +16,14 @@ import com.lantu.connect.monitoring.mapper.CallLogMapper;
 import com.lantu.connect.monitoring.mapper.TraceSpanMapper;
 import com.lantu.connect.monitoring.service.MonitoringService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -41,16 +44,20 @@ public class MonitoringServiceImpl implements MonitoringService {
     private final AlertRecordMapper alertRecordMapper;
     private final TraceSpanMapper traceSpanMapper;
     private final UserDisplayNameResolver userDisplayNameResolver;
+    private final JdbcTemplate jdbcTemplate;
 
     @Override
     public List<KpiMetric> kpis() {
         Long todayCount = callLogMapper.selectTodayCount();
         Double avgLatency = callLogMapper.selectTodayAvgLatencyMs();
         Long successCount = callLogMapper.selectTodaySuccessCount();
+        Long yesterdayCount = queryCountSince(LocalDateTime.now().minusDays(1), LocalDateTime.now().minusDays(0));
+        Double yesterdayAvgLatency = queryAvgLatencySince(LocalDateTime.now().minusDays(1), LocalDateTime.now().minusDays(0));
+        Long yesterdaySuccess = querySuccessSince(LocalDateTime.now().minusDays(1), LocalDateTime.now().minusDays(0));
         List<KpiMetric> list = new ArrayList<>();
-        list.add(KpiMetric.builder().name("call_count_today").value(String.valueOf(todayCount != null ? todayCount : 0)).unit("count").build());
-        list.add(KpiMetric.builder().name("avg_latency_ms_today").value(String.valueOf(avgLatency != null ? avgLatency : 0)).unit("ms").build());
-        list.add(KpiMetric.builder().name("success_count_today").value(String.valueOf(successCount != null ? successCount : 0)).unit("count").build());
+        list.add(buildMetric("call_count_today", number(todayCount), "count", number(yesterdayCount)));
+        list.add(buildMetric("avg_latency_ms_today", number(avgLatency), "ms", number(yesterdayAvgLatency)));
+        list.add(buildMetric("success_count_today", number(successCount), "count", number(yesterdaySuccess)));
         return list;
     }
 
@@ -127,6 +134,45 @@ public class MonitoringServiceImpl implements MonitoringService {
         return PageResults.from(result);
     }
 
+    @Override
+    public List<QualityHistoryPointVO> qualityHistory(String resourceType, Long resourceId, LocalDateTime from, LocalDateTime to) {
+        LocalDateTime start = from == null ? LocalDateTime.now().minusDays(7) : from;
+        LocalDateTime end = to == null ? LocalDateTime.now() : to;
+        String typeKey = StringUtils.hasText(resourceType) ? resourceType.trim().toLowerCase() : "agent";
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT DATE_FORMAT(create_time, '%Y-%m-%d %H:00:00') AS bucket,
+                       COUNT(1) AS total_calls,
+                       SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_calls,
+                       ROUND(AVG(latency_ms), 2) AS avg_latency
+                FROM t_call_log
+                WHERE agent_id = ?
+                  AND (resource_type = ? OR (? = 'agent' AND resource_type IS NULL))
+                  AND create_time >= ?
+                  AND create_time <= ?
+                GROUP BY DATE_FORMAT(create_time, '%Y-%m-%d %H:00:00')
+                ORDER BY bucket ASC
+                """, String.valueOf(resourceId), typeKey, typeKey, start, end);
+        List<QualityHistoryPointVO> result = new ArrayList<>();
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        for (Map<String, Object> row : rows) {
+            long total = parseLong(row.get("total_calls"));
+            long success = parseLong(row.get("success_calls"));
+            double avgLatency = parseDouble(row.get("avg_latency"));
+            double successRate = total <= 0 ? 1D : ((double) success / (double) total);
+            double latencyFactor = Math.max(0D, 1D - (avgLatency / 8000D));
+            int qualityScore = (int) Math.round(successRate * 70D + latencyFactor * 30D);
+            qualityScore = Math.max(0, Math.min(100, qualityScore));
+            result.add(QualityHistoryPointVO.builder()
+                    .bucketTime(LocalDateTime.parse(String.valueOf(row.get("bucket")), fmt))
+                    .callCount(total)
+                    .successRate(successRate)
+                    .avgLatencyMs(avgLatency)
+                    .qualityScore(qualityScore)
+                    .build());
+        }
+        return result;
+    }
+
     private void enrichCallLogUserNames(List<CallLog> records) {
         if (records == null || records.isEmpty()) {
             return;
@@ -154,5 +200,71 @@ public class MonitoringServiceImpl implements MonitoringService {
         } catch (NumberFormatException ex) {
             return null;
         }
+    }
+
+    private static long parseLong(Object value) {
+        if (value == null) {
+            return 0L;
+        }
+        if (value instanceof Number n) {
+            return n.longValue();
+        }
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (Exception ex) {
+            return 0L;
+        }
+    }
+
+    private static double parseDouble(Object value) {
+        if (value == null) {
+            return 0D;
+        }
+        if (value instanceof Number n) {
+            return n.doubleValue();
+        }
+        try {
+            return Double.parseDouble(String.valueOf(value));
+        } catch (Exception ex) {
+            return 0D;
+        }
+    }
+
+    private static String number(Number n) {
+        return n == null ? "0" : String.valueOf(n);
+    }
+
+    private KpiMetric buildMetric(String name, String value, String unit, String previousValue) {
+        double cur = parseDouble(value);
+        double prev = parseDouble(previousValue);
+        double delta = cur - prev;
+        double percent = prev == 0D ? (cur == 0D ? 0D : 100D) : (delta / prev * 100D);
+        String type = Math.abs(delta) < 0.0001 ? "flat" : (delta > 0 ? "up" : "down");
+        return KpiMetric.builder()
+                .name(name)
+                .value(value)
+                .unit(unit)
+                .previousValue(previousValue)
+                .changePercent(String.format("%.2f", percent))
+                .changeType(type)
+                .build();
+    }
+
+    private Long queryCountSince(LocalDateTime from, LocalDateTime to) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM t_call_log WHERE create_time >= ? AND create_time < ?",
+                Long.class, from, to);
+    }
+
+    private Double queryAvgLatencySince(LocalDateTime from, LocalDateTime to) {
+        return jdbcTemplate.queryForObject(
+                "SELECT ROUND(AVG(latency_ms), 2) FROM t_call_log WHERE create_time >= ? AND create_time < ?",
+                Double.class, from, to);
+    }
+
+    private Long querySuccessSince(LocalDateTime from, LocalDateTime to) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM t_call_log WHERE status = 'success' AND create_time >= ? AND create_time < ?",
+                Long.class, from, to);
     }
 }

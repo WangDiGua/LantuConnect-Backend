@@ -23,6 +23,10 @@ public class CallLog {
     private String agentId;
     private String agentName;
 
+    /** 网关调用目标资源类型（agent/skill/mcp/app/dataset）；历史数据可能为 null */
+    @TableField("resource_type")
+    private String resourceType;
+
     /** 与表列 user_id 一致，存字符串以兼容 VARCHAR(36) */
     private String userId;
     @TableField(exist = false)

@@ -20,6 +20,9 @@ public class AlertRuleUpdateRequest {
     private String metric;
     private String conditionExpr;
     private Double threshold;
+    private String operator;
+    private String severity;
+    private String duration;
     private List<String> notifyChannels;
     private Integer enabled;
 }

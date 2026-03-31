@@ -46,7 +46,7 @@ public class JacksonConfig {
     public Jackson2ObjectMapperBuilderCustomizer jackson2ObjectMapperBuilderCustomizer() {
         DateTimeFormatter dtf = DisplayDateTimeFormat.FORMATTER;
 
-        SimpleModule lantuTime = new SimpleModule("lantu-connect-java-time");
+        SimpleModule lantuTime = new SimpleModule("nexusai-connect-java-time");
         lantuTime.addSerializer(LocalDateTime.class, new LocalDateTimeSerializer(dtf));
         lantuTime.addDeserializer(LocalDateTime.class, new LenientLocalDateTimeDeserializer(dtf));
         lantuTime.addSerializer(LocalDate.class, new LocalDateAsStartOfDaySerializer(dtf));

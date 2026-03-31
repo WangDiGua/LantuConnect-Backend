@@ -1,6 +1,5 @@
 package com.lantu.connect.notification.service;
 
-import com.lantu.connect.notification.entity.Notification;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -21,29 +20,24 @@ public class SystemNotificationFacade {
 
     private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    private final NotificationService notificationService;
+    private final MultiChannelNotificationService multiChannelNotificationService;
     private final JdbcTemplate jdbcTemplate;
 
     public void notifyToUser(Long userId, String type, String title, String body, String sourceType, String sourceId) {
-        if (userId == null) {
+        if (userId == null || userId <= 0L) {
             return;
         }
-        Notification n = new Notification();
-        n.setUserId(userId);
-        n.setType(type);
-        n.setTitle(title);
-        n.setBody(body);
-        n.setSourceType(sourceType);
-        n.setSourceId(sourceId);
-        n.setIsRead(false);
-        notificationService.send(n);
+        multiChannelNotificationService.sendAll(userId, type, title, body, sourceType, sourceId);
     }
 
     public void notifyToUsers(List<Long> userIds, String type, String title, String body, String sourceType, Long sourceId) {
         if (userIds == null || userIds.isEmpty()) {
             return;
         }
-        notificationService.broadcast(userIds, type, title, body, sourceType, sourceId);
+        String normalizedSourceId = sourceId == null ? null : String.valueOf(sourceId);
+        for (Long userId : userIds) {
+            notifyToUser(userId, type, title, body, sourceType, normalizedSourceId);
+        }
     }
 
     public void notifyPlatformAdmins(String type, String title, String body, String sourceType, Long sourceId, Long excludeUserId) {
@@ -225,13 +219,13 @@ public class SystemNotificationFacade {
                 fallbackText(metric, "-"),
                 fallbackText(threshold, "-"),
                 fallbackText(sample, "-"));
-        notifyToUser(
-                0L,
+        notifyPlatformAdmins(
                 NotificationEventCodes.ALERT_TRIGGERED,
                 "系统告警触发: " + fallbackText(ruleName, "-"),
                 buildBody("监控告警", "触发", details, "请尽快检查监控面板并处理故障。"),
                 "alert",
-                recordId);
+                null,
+                null);
     }
 
     public List<Long> findRoleUserIds(String roleCode) {

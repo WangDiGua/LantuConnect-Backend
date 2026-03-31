@@ -9,6 +9,7 @@ import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
 
@@ -86,8 +87,13 @@ public class FieldEncryptor {
 
     private byte[] deriveKey() {
         byte[] raw = encryptionKey.getBytes(StandardCharsets.UTF_8);
-        byte[] key = new byte[32];
-        System.arraycopy(raw, 0, key, 0, Math.min(raw.length, 32));
-        return key;
+        if (raw.length == 16 || raw.length == 24 || raw.length == 32) {
+            return raw;
+        }
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(raw);
+        } catch (Exception e) {
+            throw new IllegalStateException("Unable to derive field encryption key", e);
+        }
     }
 }

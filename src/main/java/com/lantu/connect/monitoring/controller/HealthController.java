@@ -85,6 +85,7 @@ public class HealthController {
         Map<String, Object> config = new HashMap<>();
         config.put("jwtEnabled", securityProperties.isJwtEnabled());
         config.put("allowHeaderUserIdFallback", securityProperties.isAllowHeaderUserIdFallback());
+        config.put("permitPrometheusWithoutAuth", securityProperties.isPermitPrometheusWithoutAuth());
         config.put("productionReady", !securityProperties.isAllowHeaderUserIdFallback());
         return R.ok(config);
     }

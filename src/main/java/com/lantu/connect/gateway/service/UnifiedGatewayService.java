@@ -12,6 +12,7 @@ import com.lantu.connect.gateway.dto.SearchSuggestion;
 import com.lantu.connect.dashboard.dto.ExploreHubData;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 
+import java.io.OutputStream;
 import java.util.List;
 
 public interface UnifiedGatewayService {
@@ -20,9 +21,14 @@ public interface UnifiedGatewayService {
 
     ResourceResolveVO resolve(ResourceResolveRequest request, ApiKey apiKey, Long userId);
 
-    ResourceResolveVO getByTypeAndId(String resourceType, String resourceId, ApiKey apiKey, Long userId);
+    ResourceResolveVO getByTypeAndId(String resourceType, String resourceId, String include, ApiKey apiKey, Long userId);
 
     InvokeResponse invoke(Long userId, String traceId, String ip, InvokeRequest request, ApiKey apiKey);
+
+    /**
+     * MCP HTTP/SSE：将上游响应体原样流式写入（适用于长 SSE）。不支持 WebSocket 上游。
+     */
+    void invokeStream(Long userId, String traceId, String ip, InvokeRequest request, ApiKey apiKey, OutputStream responseBody);
 
     ResourceStatsVO getResourceStats(String resourceType, String resourceId);
 

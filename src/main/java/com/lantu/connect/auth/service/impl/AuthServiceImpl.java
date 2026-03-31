@@ -17,6 +17,7 @@ import com.lantu.connect.auth.support.AccessTokenBlacklist;
 import com.lantu.connect.auth.support.SessionRevocationRegistry;
 import com.lantu.connect.common.captcha.CaptchaService;
 import com.lantu.connect.common.geo.GeoIpLookupService;
+import com.lantu.connect.common.security.RedisAuthRateLimiter;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
@@ -47,7 +48,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
+import java.security.SecureRandom;
 
 /**
  * 认证服务实现
@@ -80,12 +81,16 @@ public class AuthServiceImpl implements AuthService {
     private final CaptchaService captchaService;
     private final TransactionTemplate transactionTemplate;
     private final SystemNotificationFacade systemNotificationFacade;
+    private final RedisAuthRateLimiter redisAuthRateLimiter;
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     @Value("${jwt.access-token-expiry}")
     private long accessTokenExpiry;
 
     @Override
-    public LoginResponse login(LoginRequest request) {
+    public LoginResponse login(LoginRequest request, String clientIp) {
+        redisAuthRateLimiter.checkLogin(clientIp, request.getUsername());
         if (StringUtils.hasText(request.getCaptchaId()) && StringUtils.hasText(request.getCaptchaCode())) {
             if (!captchaService.verify(request.getCaptchaId(), request.getCaptchaCode())) {
                 throw new BusinessException(ResultCode.CAPTCHA_ERROR);
@@ -119,7 +124,8 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public LoginResponse register(RegisterRequest request) {
+    public LoginResponse register(RegisterRequest request, String clientIp) {
+        redisAuthRateLimiter.checkRegister(clientIp);
         if (!request.getPassword().equals(request.getConfirmPassword())) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "两次密码输入不一致");
         }
@@ -281,7 +287,7 @@ public class AuthServiceImpl implements AuthService {
         if (Boolean.TRUE.equals(redisTemplate.hasKey(rateKey))) {
             throw new BusinessException(ResultCode.SMS_RATE_LIMITED);
         }
-        String code = String.format("%06d", ThreadLocalRandom.current().nextInt(1_000_000));
+        String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
         SmsVerifyCode row = new SmsVerifyCode();
         row.setPhone(phone);
         row.setCode(code);

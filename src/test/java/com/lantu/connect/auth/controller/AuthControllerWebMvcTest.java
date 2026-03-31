@@ -3,6 +3,9 @@ package com.lantu.connect.auth.controller;
 import com.lantu.connect.auth.dto.UserInfoVO;
 import com.lantu.connect.auth.service.AuthService;
 import com.lantu.connect.common.result.R;
+import com.lantu.connect.common.security.RedisAuthRateLimiter;
+import com.lantu.connect.common.util.JwtUtil;
+import com.lantu.connect.common.web.ClientIpResolver;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -17,6 +20,15 @@ class AuthControllerWebMvcTest {
 
     @Mock
     private AuthService authService;
+
+    @Mock
+    private JwtUtil jwtUtil;
+
+    @Mock
+    private ClientIpResolver clientIpResolver;
+
+    @Mock
+    private RedisAuthRateLimiter redisAuthRateLimiter;
 
     @InjectMocks
     private AuthController authController;

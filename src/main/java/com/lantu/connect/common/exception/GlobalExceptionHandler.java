@@ -2,6 +2,7 @@ package com.lantu.connect.common.exception;
 
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.common.web.TraceLogging;
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -32,7 +34,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<R<Void>> handleBusinessException(BusinessException e, HttpServletRequest request) {
-        log.warn("Business exception at {}: {}", request.getRequestURI(), e.getMessage());
+        log.warn("Business exception code={} traceId={} uri={}: {}",
+                e.getCode(),
+                TraceLogging.traceIdOrDash(),
+                request.getRequestURI(),
+                e.getMessage());
         return ResponseEntity.status(resolveHttpStatus(e.getCode()))
                 .body(R.fail(e.getCode(), e.getMessage()));
     }
@@ -40,7 +46,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RequestNotPermitted.class)
     @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
     public R<Void> handleRateLimit(RequestNotPermitted e, HttpServletRequest request) {
-        log.warn("Rate limited at {}", request.getRequestURI());
+        log.warn("Rate limited traceId={} uri={}", TraceLogging.traceIdOrDash(), request.getRequestURI());
         return R.fail(ResultCode.RATE_LIMITED);
     }
 
@@ -56,7 +62,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MissingRequestHeaderException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public R<Void> handleMissingRequestHeader(MissingRequestHeaderException e, HttpServletRequest request) {
-        log.warn("Missing request header at {}: {}", request.getRequestURI(), e.getHeaderName());
+        log.warn("Missing request header traceId={} uri={} header={}",
+                TraceLogging.traceIdOrDash(), request.getRequestURI(), e.getHeaderName());
         return R.fail(ResultCode.PARAM_ERROR, "缺少必需的请求头: " + e.getHeaderName());
     }
 
@@ -71,30 +78,60 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ConstraintViolationException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public R<Void> handleConstraintViolation(ConstraintViolationException e) {
+    public R<Void> handleConstraintViolation(ConstraintViolationException e, HttpServletRequest request) {
         String msg = e.getConstraintViolations().stream()
                 .map(v -> v.getMessage())
                 .collect(Collectors.joining("; "));
+        log.warn("Constraint violation traceId={} uri={}: {}",
+                TraceLogging.traceIdOrDash(), request.getRequestURI(), abbreviateLogMessage(msg, 2000));
         return R.fail(ResultCode.PARAM_ERROR, msg);
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public R<Void> handleMaxUpload(MaxUploadSizeExceededException e) {
+    public R<Void> handleMaxUpload(MaxUploadSizeExceededException e, HttpServletRequest request) {
+        log.warn("Max upload exceeded traceId={} uri={}: {}",
+                TraceLogging.traceIdOrDash(), request.getRequestURI(), e.getMessage());
         return R.fail(ResultCode.FILE_SIZE_EXCEEDED);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
-    public R<Void> handleNotFound(NoResourceFoundException e) {
+    public R<Void> handleNotFound(NoResourceFoundException e, HttpServletRequest request) {
+        log.warn("No resource found traceId={} uri={} resourcePath={}",
+                TraceLogging.traceIdOrDash(), request.getRequestURI(), e.getResourcePath());
         return R.fail(ResultCode.NOT_FOUND);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public R<Void> handleDataIntegrity(DataIntegrityViolationException e, HttpServletRequest request) {
+        log.warn("Data integrity traceId={} uri={}: {}",
+                TraceLogging.traceIdOrDash(),
+                request.getRequestURI(),
+                abbreviateLogMessage(String.valueOf(e.getMostSpecificCause().getMessage()), 2000));
+        String msg = e.getMostSpecificCause().getMessage();
+        if (msg != null && msg.contains("uk_provider_code")) {
+            return R.fail(ResultCode.DUPLICATE_NAME, "provider_code 已存在");
+        }
+        return R.fail(ResultCode.CONFLICT, "数据约束冲突，请检查唯一键与关联数据");
     }
 
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public R<Void> handleException(Exception e, HttpServletRequest request) {
-        log.error("Unhandled exception at {}", request.getRequestURI(), e);
+        log.error("Unhandled exception traceId={} uri={}", TraceLogging.traceIdOrDash(), request.getRequestURI(), e);
         return R.fail(ResultCode.INTERNAL_ERROR);
+    }
+
+    private static String abbreviateLogMessage(String msg, int max) {
+        if (msg == null) {
+            return "";
+        }
+        if (msg.length() <= max) {
+            return msg;
+        }
+        return msg.substring(0, max) + "...";
     }
 
     private static HttpStatus resolveHttpStatus(int code) {
@@ -114,6 +151,7 @@ public class GlobalExceptionHandler {
         }
         if (code == ResultCode.CONFLICT.getCode()
                 || code == ResultCode.DUPLICATE_SUBMIT.getCode()
+                || code == ResultCode.DUPLICATE_NAME.getCode()
                 || code == ResultCode.ILLEGAL_STATE_TRANSITION.getCode()) {
             return HttpStatus.CONFLICT;
         }

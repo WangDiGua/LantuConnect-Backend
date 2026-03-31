@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 @RequiredArgsConstructor
@@ -22,6 +23,7 @@ import java.util.Map;
 public class HealthCheckTask {
 
     private static final String TASK_NAME = "HealthCheck";
+    private static final Map<Long, Integer> CONSECUTIVE_FAILURES = new ConcurrentHashMap<>();
 
     private final TaskDistributedLock taskDistributedLock;
     private final JdbcTemplate jdbcTemplate;
@@ -33,27 +35,46 @@ public class HealthCheckTask {
         }
         try {
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                    "SELECT id, resource_code, check_url, timeout_sec FROM t_resource_health_config "
+                    "SELECT id, resource_code, check_url, timeout_sec, healthy_threshold, interval_sec FROM t_resource_health_config "
                             + "WHERE check_url IS NOT NULL AND TRIM(check_url) <> ''");
-            int healthy = 0, degraded = 0;
+            int healthy = 0, degraded = 0, down = 0;
             for (Map<String, Object> row : rows) {
                 Long id = ((Number) row.get("id")).longValue();
                 String url = String.valueOf(row.get("check_url"));
                 int timeoutSec = 10;
+                int failThreshold = 3;
                 Object to = row.get("timeout_sec");
                 if (to instanceof Number n) {
                     timeoutSec = Math.max(1, Math.min(120, n.intValue()));
                 }
+                Object ht = row.get("healthy_threshold");
+                if (ht instanceof Number n) {
+                    failThreshold = Math.max(1, Math.min(20, n.intValue()));
+                }
                 boolean ok = probe(url, timeoutSec);
-                String status = ok ? "healthy" : "degraded";
-                if (ok) healthy++; else degraded++;
+                String status;
+                if (ok) {
+                    CONSECUTIVE_FAILURES.remove(id);
+                    status = "healthy";
+                    healthy++;
+                } else {
+                    int failures = CONSECUTIVE_FAILURES.getOrDefault(id, 0) + 1;
+                    CONSECUTIVE_FAILURES.put(id, failures);
+                    if (failures >= failThreshold) {
+                        status = "down";
+                        down++;
+                    } else {
+                        status = "degraded";
+                        degraded++;
+                    }
+                }
                 jdbcTemplate.update(
                         "UPDATE t_resource_health_config SET health_status = ?, last_check_time = ? WHERE id = ?",
                         status, LocalDateTime.now(), id);
             }
             if (rows.size() > 0) {
-                log.info("[定时任务] {} 完成: {} 个目标 (健康: {}, 异常: {})", 
-                        TASK_NAME, rows.size(), healthy, degraded);
+                log.info("[定时任务] {} 完成: {} 个目标 (健康: {}, 降级: {}, 下线: {})",
+                        TASK_NAME, rows.size(), healthy, degraded, down);
             }
         } catch (Exception e) {
             log.warn("[定时任务] {} 失败: {}", TASK_NAME, e.getMessage());

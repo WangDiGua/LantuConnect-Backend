@@ -44,7 +44,7 @@ public class EmailNotificationChannel implements NotificationChannel {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(fromAddress);
             message.setTo(user.getMail());
-            message.setSubject("[LantuConnect] " + title);
+            message.setSubject("[NexusAI] " + title);
             message.setText(body);
             mailSender.send(message);
             log.info("Email notification sent to user {} ({})", userId, user.getMail());

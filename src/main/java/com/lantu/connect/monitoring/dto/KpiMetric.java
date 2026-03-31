@@ -20,4 +20,10 @@ public class KpiMetric {
     private String name;
     private String value;
     private String unit;
+    private String previousValue;
+    private String changePercent;
+    /**
+     * up / down / flat
+     */
+    private String changeType;
 }

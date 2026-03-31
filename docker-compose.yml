@@ -7,8 +7,14 @@ services:
       - "8080:8080"
     environment:
       - SPRING_PROFILES_ACTIVE=prod
+      # 与 compose 内 Prometheus 联调时可设 true；默认 false 与 application 一致
+      - PERMIT_PROMETHEUS_WITHOUT_AUTH=${PERMIT_PROMETHEUS_WITHOUT_AUTH:-false}
+      - DB_USER=${DB_USER:-lantu}
       - DB_PASSWORD=${DB_PASSWORD}
+      - DB_ALLOW_PUBLIC_KEY_RETRIEVAL=${DB_ALLOW_PUBLIC_KEY_RETRIEVAL:-false}
+      - DB_USE_SSL=${DB_USE_SSL:-false}
       - JWT_SECRET=${JWT_SECRET}
+      - LANTU_ENCRYPTION_KEY=${LANTU_ENCRYPTION_KEY}
       - SMS_ACCESS_KEY=${SMS_ACCESS_KEY}
       - SMS_SECRET=${SMS_SECRET}
       - MAIL_PASSWORD=${MAIL_PASSWORD}
@@ -16,6 +22,8 @@ services:
       mysql:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     restart: unless-stopped
 
@@ -48,6 +56,21 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-guest}
+      - RABBITMQ_DEFAULT_VHOST=${RABBITMQ_VHOST:-/}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
 
   nginx:
     image: nginx:alpine

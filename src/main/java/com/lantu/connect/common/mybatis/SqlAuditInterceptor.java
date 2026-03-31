@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.StringJoiner;
 
 /**
@@ -34,6 +35,11 @@ import java.util.StringJoiner;
         @Signature(type = Executor.class, method = "query", args = {MappedStatement.class, Object.class, org.apache.ibatis.session.RowBounds.class, org.apache.ibatis.session.ResultHandler.class, org.apache.ibatis.cache.CacheKey.class, BoundSql.class})
 })
 public class SqlAuditInterceptor implements Interceptor {
+    private static final Set<String> SENSITIVE_PARAM_KEYS = Set.of(
+            "password", "pwd", "secret", "token", "authorization", "apiKey", "key", "credential", "phone", "email");
+
+    /** 超过该耗时（毫秒）时在 WARN 打一行摘要，避免高流量下 INFO 刷盘；明细需打开 DEBUG。 */
+    private static final long SLOW_SQL_WARN_MS = 1_000L;
 
     @Override
     public Object intercept(Invocation invocation) throws Throwable {
@@ -60,11 +66,16 @@ public class SqlAuditInterceptor implements Interceptor {
             String rows = resolveRowCount(result);
 
             if (thrown == null) {
-                log.info("mapper={} caller={} costMs={} rows={} sql=\"{}\" params=[{}]",
-                        mapperMethod, caller, costMs, rows, sql, params);
+                if (log.isDebugEnabled()) {
+                    log.debug("mapper={} caller={} costMs={} rows={} sql=\"{}\" params=[{}]",
+                            mapperMethod, caller, costMs, rows, sql, params);
+                } else if (costMs >= SLOW_SQL_WARN_MS) {
+                    log.warn("slowSql mapper={} caller={} costMs={} rows={} sql=\"{}\"",
+                            mapperMethod, caller, costMs, rows, sql);
+                }
             } else {
-                log.error("mapper={} caller={} costMs={} rows={} sql=\"{}\" params=[{}] error={}",
-                        mapperMethod, caller, costMs, rows, sql, params, thrown.getMessage());
+                log.error("mapper={} caller={} costMs={} rows={} sql=\"{}\" error={}",
+                        mapperMethod, caller, costMs, rows, sql, thrown.getMessage());
             }
         }
     }
@@ -115,7 +126,7 @@ public class SqlAuditInterceptor implements Interceptor {
             } else {
                 value = null;
             }
-            items.add(property + "=" + stringify(value));
+            items.add(property + "=" + stringifyMaskingSensitive(property, value));
         }
         return String.join(", ", items);
     }
@@ -145,6 +156,26 @@ public class SqlAuditInterceptor implements Interceptor {
             return "[primitive-array]";
         }
         return Objects.toString(value);
+    }
+
+    private static String stringifyMaskingSensitive(String property, Object value) {
+        if (isSensitiveProperty(property)) {
+            return "***";
+        }
+        return stringify(value);
+    }
+
+    private static boolean isSensitiveProperty(String property) {
+        if (!StringUtils.hasText(property)) {
+            return false;
+        }
+        String normalized = property.toLowerCase(Locale.ROOT);
+        for (String key : SENSITIVE_PARAM_KEYS) {
+            if (normalized.contains(key.toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String resolveBusinessCaller() {

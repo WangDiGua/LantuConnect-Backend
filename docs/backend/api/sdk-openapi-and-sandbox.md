@@ -11,12 +11,27 @@
 - `GET /sdk/v1/resources/{type}/{id}`：按类型+ID查询
 - `POST /sdk/v1/resolve`：资源解析
 - `POST /sdk/v1/invoke`：统一调用
+- `POST /sdk/v1/invoke-stream`：MCP 等流式调用（`text/event-stream`）
 
 实现位置：`src/main/java/com/lantu/connect/gateway/controller/SdkGatewayController.java`
 
 说明：
 - 与现有网关逻辑共用 `UnifiedGatewayService`，保证行为一致。
 - 增加 OpenAPI 注解（`@Tag`、`@Operation`）用于文档稳定输出。
+- **鉴权**：所有上述接口须请求头 `X-Api-Key`（完整 `secretPlain`）；可选 `X-User-Id`、`X-Trace-Id`（invoke / invoke-stream）。
+- **多语言 SDK**：本仓库交付的是 **HTTP 契约**；Maven/npm 等客户端包由独立发版维护，调用路径为 `{context-path}/sdk/v1/...`（默认 context-path 为 `/api` 时即 `/api/sdk/v1/...`）。
+
+#### HTTP 调用示例（invoke）
+
+```bash
+# BASE：网关根，须含 context-path，例如 https://host/api
+curl -sS -X POST "$BASE/sdk/v1/invoke" \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: sk_..." \
+  -d '{"resourceType":"agent","resourceId":"1","timeoutSec":30,"payload":{"input":"hello"}}'
+```
+
+响应为统一包装 `R<InvokeResponse>`：`code == 0` 表示成功，`data` 为调用结果。
 
 ### 沙箱接口（`/sandbox`）
 - `POST /sandbox/sessions`：创建沙箱会话（需 `X-User-Id` + `X-Api-Key`）

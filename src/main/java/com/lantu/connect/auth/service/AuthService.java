@@ -23,9 +23,9 @@ import java.util.Map;
  */
 public interface AuthService {
 
-    LoginResponse login(LoginRequest request);
+    LoginResponse login(LoginRequest request, String clientIp);
 
-    LoginResponse register(RegisterRequest request);
+    LoginResponse register(RegisterRequest request, String clientIp);
 
     void logout(String accessToken);
 

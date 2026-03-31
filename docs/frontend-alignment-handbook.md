@@ -51,7 +51,7 @@
 - `/v3/api-docs/**`
 - `/actuator/health`
 - `/actuator/info`
-- `/actuator/prometheus`
+- `/actuator/prometheus` **仅当** `lantu.security.permit-prometheus-without-auth=true`（或 `PERMIT_PROMETHEUS_WITHOUT_AUTH=true`）；否则需携带有效 JWT
 
 ## 2.4 无角色用户白名单（`UnassignedUserAccessFilter`）
 
@@ -68,7 +68,8 @@
 - `/swagger-ui/**`
 - `/swagger-ui.html`
 - `/v3/api-docs/**`
-- `/actuator/**`
+- `/actuator/health`
+- `/actuator/info`（与匿名白名单一致；不含 `prometheus` 等其它 actuator 路径）
 
 ## 2.5 Header 契约
 

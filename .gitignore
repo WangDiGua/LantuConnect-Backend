@@ -16,6 +16,7 @@ release.properties
 hs_err_pid*
 
 # --- IDE ---
+.cursor/
 .idea/
 *.iml
 *.iws
