@@ -31,10 +31,11 @@ public class ApiKeyScopeService {
         String hash = sha256Hex(key);
         ApiKey row = apiKeyMapper.selectOne(new LambdaQueryWrapper<ApiKey>().eq(ApiKey::getKeyHash, hash));
         if (row == null || !"active".equalsIgnoreCase(row.getStatus())) {
-            throw new BusinessException(ResultCode.UNAUTHORIZED, "API Key 无效或已停用");
+            // 浏览器端常在全局 Header 里携带历史 Key；与 JWT 并存时按「未提供 Key」处理，由目录层走登录态。
+            return null;
         }
         if (row.getExpiresAt() != null && row.getExpiresAt().isBefore(LocalDateTime.now())) {
-            throw new BusinessException(ResultCode.UNAUTHORIZED, "API Key 已过期");
+            return null;
         }
         return row;
     }

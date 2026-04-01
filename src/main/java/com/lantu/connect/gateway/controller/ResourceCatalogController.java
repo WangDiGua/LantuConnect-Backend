@@ -15,6 +15,7 @@ import com.lantu.connect.gateway.security.AppLaunchTokenService;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.security.ResourceInvokeGrantService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
+import com.lantu.connect.gateway.support.GatewayCallerResolver;
 import com.lantu.connect.gateway.support.GatewayInvokeResponseSupport;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
@@ -47,6 +48,7 @@ public class ResourceCatalogController {
 
     private final UnifiedGatewayService unifiedGatewayService;
     private final ApiKeyScopeService apiKeyScopeService;
+    private final GatewayCallerResolver gatewayCallerResolver;
     private final AppLaunchTokenService appLaunchTokenService;
     private final ApiKeyMapper apiKeyMapper;
     private final ResourceInvokeGrantService resourceInvokeGrantService;
@@ -56,8 +58,8 @@ public class ResourceCatalogController {
 
     @GetMapping("/catalog/resources")
     public R<PageResult<ResourceCatalogItemVO>> catalog(ResourceCatalogQueryRequest request,
-                                                        @RequestHeader(value = "X-User-Id", required = false) Long userId,
                                                         @RequestHeader(value = "X-Api-Key", required = false) String apiKeyRaw) {
+        Long userId = gatewayCallerResolver.resolveTrustedUserIdOrNull();
         ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
         return R.ok(unifiedGatewayService.catalog(request, apiKey, userId));
     }
@@ -78,8 +80,8 @@ public class ResourceCatalogController {
     public R<ResourceResolveVO> getByTypeAndId(@PathVariable String type,
                                                @PathVariable String id,
                                                @RequestParam(required = false) String include,
-                                               @RequestHeader(value = "X-User-Id", required = false) Long userId,
                                                @RequestHeader(value = "X-Api-Key", required = false) String apiKeyRaw) {
+        Long userId = gatewayCallerResolver.resolveTrustedUserIdOrNull();
         ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
         return R.ok(unifiedGatewayService.getByTypeAndId(type, id, include, apiKey, userId));
     }
@@ -92,19 +94,19 @@ public class ResourceCatalogController {
 
     @PostMapping("/catalog/resolve")
     public R<ResourceResolveVO> resolve(@Valid @RequestBody ResourceResolveRequest request,
-                                        @RequestHeader(value = "X-User-Id", required = false) Long userId,
                                         @RequestHeader(value = "X-Api-Key", required = false) String apiKeyRaw) {
+        Long userId = gatewayCallerResolver.resolveTrustedUserIdOrNull();
         ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
         return R.ok(unifiedGatewayService.resolve(request, apiKey, userId));
     }
 
     @PostMapping("/invoke")
-    public ResponseEntity<R<InvokeResponse>> invoke(@RequestHeader(value = "X-User-Id", required = false) Long userId,
-                                    @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
+    public ResponseEntity<R<InvokeResponse>> invoke(@RequestHeader(value = "X-Trace-Id", required = false) String traceId,
                                     @RequestHeader(value = "X-Request-Id", required = false) String requestId,
                                     @RequestHeader(value = "X-Api-Key", required = false) String apiKeyRaw,
                                     @Valid @RequestBody InvokeRequest request,
                                     HttpServletRequest httpRequest) {
+        Long userId = gatewayCallerResolver.resolveTrustedUserIdOrNull();
         ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
         String resolvedTraceId = StringUtils.hasText(traceId)
                 ? traceId.trim()
@@ -122,12 +124,12 @@ public class ResourceCatalogController {
      */
     @PostMapping(value = "/invoke-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<StreamingResponseBody> invokeStream(
-            @RequestHeader(value = "X-User-Id", required = false) Long userId,
             @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
             @RequestHeader(value = "X-Request-Id", required = false) String requestId,
             @RequestHeader(value = "X-Api-Key", required = false) String apiKeyRaw,
             @Valid @RequestBody InvokeRequest request,
             HttpServletRequest httpRequest) {
+        Long userId = gatewayCallerResolver.resolveTrustedUserIdOrNull();
         ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
         String resolvedTraceId = StringUtils.hasText(traceId)
                 ? traceId.trim()

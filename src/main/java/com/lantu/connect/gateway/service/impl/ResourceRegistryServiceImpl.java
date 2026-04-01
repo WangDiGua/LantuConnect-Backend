@@ -672,8 +672,17 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         Map<String, Object> quality = computeQuality(vo.getId());
         vo.setHealthStatus(stringValue(quality.get("healthStatus")));
         vo.setCircuitState(stringValue(quality.get("circuitState")));
-        vo.setQualityScore((Integer) quality.get("qualityScore"));
-        vo.setQualityFactors((Map<String, Object>) quality.get("qualityFactors"));
+        vo.setQualityScore(intObject(quality.get("qualityScore")));
+        Object qf = quality.get("qualityFactors");
+        if (qf instanceof Map<?, ?> rawFactors) {
+            Map<String, Object> factors = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> ent : rawFactors.entrySet()) {
+                if (ent.getKey() != null) {
+                    factors.put(String.valueOf(ent.getKey()), ent.getValue());
+                }
+            }
+            vo.setQualityFactors(factors);
+        }
         DegradationHintVO hint = buildDegradationHint(vo.getHealthStatus(), vo.getCircuitState());
         if (hint != null) {
             vo.setDegradationCode(hint.getDegradationCode());
@@ -719,11 +728,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         factors.put("avgLatencyMs", avgLatencyMs);
         factors.put("totalCalls7d", totalCalls);
         factors.put("latencyFactor", latencyFactor);
-        return new LinkedHashMap<>(Map.of(
-                "healthStatus", health,
-                "circuitState", circuitState,
-                "qualityScore", qualityScore,
-                "qualityFactors", factors));
+        Map<String, Object> qualityBlock = new LinkedHashMap<>();
+        qualityBlock.put("healthStatus", health != null ? health : "unknown");
+        qualityBlock.put("circuitState", circuitState != null ? circuitState : "unknown");
+        qualityBlock.put("qualityScore", qualityScore);
+        qualityBlock.put("qualityFactors", factors);
+        return qualityBlock;
     }
 
     private static DegradationHintVO buildDegradationHint(String healthStatus, String circuitState) {

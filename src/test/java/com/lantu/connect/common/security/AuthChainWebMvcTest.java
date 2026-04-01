@@ -9,6 +9,7 @@ import com.lantu.connect.common.filter.JwtAuthenticationFilter;
 import com.lantu.connect.common.filter.UnassignedUserAccessFilter;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.util.JwtUtil;
+import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.dashboard.controller.DashboardController;
 import com.lantu.connect.dashboard.dto.UsageStatsVO;
 import com.lantu.connect.dashboard.service.DashboardService;
@@ -62,7 +63,9 @@ class AuthChainWebMvcTest {
         properties.setJwtEnabled(true);
         properties.setAllowHeaderUserIdFallback(false);
         when(sessionRevocationRegistry.isRevoked(anyString())).thenReturn(false);
-        JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtUtil, accessTokenBlacklist, sessionRevocationRegistry, properties);
+        ApiKeyScopeService apiKeyScopeService = mock(ApiKeyScopeService.class);
+        JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(
+                jwtUtil, accessTokenBlacklist, sessionRevocationRegistry, properties, apiKeyScopeService);
         UnassignedUserAccessFilter unassignedFilter = new UnassignedUserAccessFilter(userRoleRelMapper, properties);
 
         DashboardController dashboardController = new DashboardController(dashboardService);

@@ -3,8 +3,11 @@ package com.lantu.connect.common.filter;
 import com.lantu.connect.auth.support.AccessTokenBlacklist;
 import com.lantu.connect.auth.support.SessionRevocationRegistry;
 import com.lantu.connect.common.config.SecurityProperties;
+import com.lantu.connect.common.security.GatewayAuthDetails;
 import com.lantu.connect.common.util.JsonStringEscaper;
 import com.lantu.connect.common.util.JwtUtil;
+import com.lantu.connect.gateway.security.ApiKeyScopeService;
+import com.lantu.connect.usermgmt.entity.ApiKey;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
@@ -26,17 +29,22 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.List;
 
 /**
  * 从 Authorization Bearer 解析用户 ID，校验黑名单；可通过包装请求注入 X-User-Id 供下游 Controller 使用。
+ * 无 JWT 时若带 X-Api-Key，必须能通过 {@link ApiKeyScopeService#authenticateOrNull}，否则 401，避免任意非空 Key 冒充已认证。
  */
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    private static final String API_KEY_PRINCIPAL = "api-key";
 
     private final JwtUtil jwtUtil;
     private final AccessTokenBlacklist accessTokenBlacklist;
     private final SessionRevocationRegistry sessionRevocationRegistry;
     private final SecurityProperties securityProperties;
+    private final ApiKeyScopeService apiKeyScopeService;
 
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
 
@@ -107,13 +115,30 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        // API Key flows should not be blocked by JWT-only gate.
         if (StringUtils.hasText(request.getHeader("X-Api-Key"))) {
+            String raw = request.getHeader("X-Api-Key");
+            ApiKey apiKey = apiKeyScopeService.authenticateOrNull(raw);
+            if (apiKey == null) {
+                writeUnauthorized(response, "API Key 无效或已停用");
+                return;
+            }
+            Long ownerUserId = null;
+            if ("user".equalsIgnoreCase(apiKey.getOwnerType()) && StringUtils.hasText(apiKey.getOwnerId())) {
+                try {
+                    ownerUserId = Long.valueOf(apiKey.getOwnerId().trim());
+                } catch (NumberFormatException ignored) {
+                    ownerUserId = null;
+                }
+            }
             UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                    "api-key", null, java.util.List.of());
-            authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    API_KEY_PRINCIPAL, null, List.of());
+            authentication.setDetails(new GatewayAuthDetails(ownerUserId));
             SecurityContextHolder.getContext().setAuthentication(authentication);
-            filterChain.doFilter(request, response);
+            if (ownerUserId != null) {
+                filterChain.doFilter(new UserIdHeaderRequestWrapper(request, ownerUserId), response);
+            } else {
+                filterChain.doFilter(new StripClientUserIdRequestWrapper(request), response);
+            }
             return;
         }
 
@@ -145,7 +170,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         response.getWriter().write(body);
     }
 
-    private static final class UserIdHeaderRequestWrapper extends HttpServletRequestWrapper {
+    static final class UserIdHeaderRequestWrapper extends HttpServletRequestWrapper {
 
         private final Long userId;
 
@@ -166,6 +191,32 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         public Enumeration<String> getHeaders(String name) {
             if ("X-User-Id".equalsIgnoreCase(name)) {
                 return Collections.enumeration(Collections.singletonList(String.valueOf(userId)));
+            }
+            return super.getHeaders(name);
+        }
+    }
+
+    /**
+     * 非用户主体的 API Key：禁止客户端伪造 X-User-Id。
+     */
+    static final class StripClientUserIdRequestWrapper extends HttpServletRequestWrapper {
+
+        StripClientUserIdRequestWrapper(HttpServletRequest request) {
+            super(request);
+        }
+
+        @Override
+        public String getHeader(String name) {
+            if ("X-User-Id".equalsIgnoreCase(name)) {
+                return null;
+            }
+            return super.getHeader(name);
+        }
+
+        @Override
+        public Enumeration<String> getHeaders(String name) {
+            if ("X-User-Id".equalsIgnoreCase(name)) {
+                return Collections.emptyEnumeration();
             }
             return super.getHeaders(name);
         }

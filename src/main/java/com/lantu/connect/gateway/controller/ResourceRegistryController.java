@@ -9,6 +9,7 @@ import com.lantu.connect.gateway.dto.ObservabilitySummaryVO;
 import com.lantu.connect.gateway.dto.ResourceUpsertRequest;
 import com.lantu.connect.gateway.dto.ResourceVersionCreateRequest;
 import com.lantu.connect.gateway.dto.ResourceVersionVO;
+import com.lantu.connect.gateway.dto.SkillPackJsonUploadRequest;
 import com.lantu.connect.gateway.dto.SkillPackUrlImportRequest;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
@@ -141,7 +142,8 @@ public class ResourceRegistryController {
     }
 
     /**
-     * 上传 Anthropic 式技能 zip：校验 SKILL.md（及可选 frontmatter）、写入制品与 manifest，并更新 pack_validation_*。
+     * 上传 Anthropic 式技能包：支持 .zip、.tar.gz/.tgz、裸 .tar，或单个 Markdown（SKILL.md / frontmatter）。
+     * 服务端归一为标准 zip 后校验 SKILL.md、写入制品与 manifest，并更新 pack_validation_*。
      */
     @PostMapping(value = "/skills/package-upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @AuditLog(action = "skill_pack_upload", resource = "resource-center")
@@ -152,7 +154,19 @@ public class ResourceRegistryController {
     }
 
     /**
-     * 从 HTTPS（可配置允许 HTTP）URL 拉取 zip，校验与落库与 package-upload 一致；新建时 sourceType 为 cloud。
+     * 与 multipart 版同一 URL：部分前端/代理只发 JSON，可将 zip 字节经 Base64 放在 {@code file} / {@code fileBase64}。
+     */
+    @PostMapping(value = "/skills/package-upload", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @AuditLog(action = "skill_pack_upload", resource = "resource-center")
+    public R<ResourceManageVO> uploadSkillPackageJson(@RequestHeader("X-User-Id") Long userId,
+                                                      @Valid @RequestBody SkillPackJsonUploadRequest body) {
+        byte[] raw = SkillPackUploadService.decodeUploadBase64(body.getFileBase64());
+        String hint = body.getFilename();
+        return R.ok(skillPackUploadService.uploadPackBytes(userId, raw, hint, body.getResourceId()));
+    }
+
+    /**
+     * 从 HTTPS（可配置允许 HTTP）URL 拉取技能包（zip/tar.gz/tar/单文件 gzip 的 md 等），归一化后校验与落库与 package-upload 一致；新建时 sourceType 为 cloud。
      */
     @PostMapping(value = "/skills/package-import-url", consumes = MediaType.APPLICATION_JSON_VALUE)
     @AuditLog(action = "skill_pack_import_url", resource = "resource-center")

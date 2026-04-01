@@ -16,7 +16,9 @@ import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -103,6 +105,38 @@ public class GlobalExceptionHandler {
         return R.fail(ResultCode.NOT_FOUND);
     }
 
+    /**
+     * 常见原因：仅注册了 multipart 的后端版本上却以 application/json 调用；或反向。
+     * 当前技能包上传同时支持 multipart 与 JSON（Base64），仍不匹配时请核对路径与 Content-Type。
+     */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<R<Void>> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException e,
+                                                              HttpServletRequest request) {
+        log.warn("Unsupported media type traceId={} uri={}: {}",
+                TraceLogging.traceIdOrDash(), request.getRequestURI(), e.getMessage());
+        String msg = "Content-Type 与接口不匹配。技能包上传请用 multipart/form-data（字段 file），"
+                + "或 application/json（字段 file / fileBase64 为文件 Base64）；并确保后端已更新至支持 JSON 的版本。";
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(R.fail(ResultCode.PARAM_ERROR, msg));
+    }
+
+    @ExceptionHandler(DataAccessException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public R<Void> handleDataAccess(DataAccessException e, HttpServletRequest request) {
+        String root = e.getMostSpecificCause() == null ? "" : String.valueOf(e.getMostSpecificCause().getMessage());
+        log.error("Data access error traceId={} uri={}: {}",
+                TraceLogging.traceIdOrDash(),
+                request.getRequestURI(),
+                abbreviateLogMessage(root, 2000),
+                e);
+        if (root.contains("Unknown column")
+                || root.contains("doesn't exist")
+                || root.contains("does not exist")) {
+            return R.fail(ResultCode.INTERNAL_ERROR,
+                    "数据库表结构可能未更新，请执行 sql/migrations 中的增量脚本或在目标环境启用 Flyway 迁移");
+        }
+        return R.fail(ResultCode.INTERNAL_ERROR, "数据访问失败，请稍后重试");
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public R<Void> handleDataIntegrity(DataIntegrityViolationException e, HttpServletRequest request) {
@@ -135,7 +169,8 @@ public class GlobalExceptionHandler {
     }
 
     private static HttpStatus resolveHttpStatus(int code) {
-        if (code == ResultCode.PARAM_ERROR.getCode()) {
+        if (code == ResultCode.PARAM_ERROR.getCode()
+                || code == ResultCode.GATEWAY_API_KEY_REQUIRED.getCode()) {
             return HttpStatus.BAD_REQUEST;
         }
         if (code == ResultCode.UNAUTHORIZED.getCode()

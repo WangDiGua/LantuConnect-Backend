@@ -2,6 +2,9 @@ package com.lantu.connect.gateway.service;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Base64;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
@@ -19,5 +22,13 @@ class SkillPackUploadServiceTest {
     void sanitizeUrlForDescription_preservesPort() {
         assertEquals("http://host.example:8080/path/pkg.zip",
                 SkillPackUploadService.sanitizeUrlForDescription("http://host.example:8080/path/pkg.zip?q=1"));
+    }
+
+    @Test
+    void decodeUploadBase64_acceptsDataUrlPrefix() {
+        byte[] raw = new byte[]{1, 2, 3};
+        String b64 = Base64.getEncoder().encodeToString(raw);
+        assertArrayEquals(raw, SkillPackUploadService.decodeUploadBase64(b64));
+        assertArrayEquals(raw, SkillPackUploadService.decodeUploadBase64("data:application/zip;base64," + b64));
     }
 }

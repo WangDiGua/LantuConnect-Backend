@@ -2,7 +2,10 @@
 # application-prod.yml — 生产环境叠加配置（需 SPRING_PROFILES_ACTIVE=prod）
 #
 # 与主配置合并后覆盖：Swagger 关闭、安全默认值收紧、数据源 URL 默认开启 SSL 等
-# 仍需通过环境变量注入：JWT_SECRET、DB_*、SSL_KEY_STORE_PASSWORD、LANTU_ENCRYPTION_KEY 等
+# 仍需通过环境变量注入：JWT_SECRET、DB_*、SSL_KEY_STORE_PASSWORD、LANTU_ENCRYPTION_KEY、
+# SKILLSMP_API_KEY（技能在线市场，见 https://skillsmp.com/settings/api ）；
+# SKILL_MIRROR_CATALOG_URL（自建技能目录 JSON，国内 OSS）；SKILL_CATALOG_HTTP_PROXY_*（出访代理）；
+# SKILL_GITHUB_ZIP_MIRROR_*（GitHub zip 镜像前缀）等
 # =============================================================================
 
 server:

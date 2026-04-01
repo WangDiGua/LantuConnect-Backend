@@ -28,6 +28,11 @@ server:
 spring:
   application:
     name: nexusai-connect
+  config:
+    import:
+      - optional:classpath:skill-external-catalog.yml
+      # 本地覆盖（api-key 等），文件见 .gitignore，勿提交仓库
+      - optional:classpath:application-local.yml
   # 配合 spring-boot-devtools：本地改代码并编译后自动重启，无需每次手动停启进程
   devtools:
     restart:
@@ -47,10 +52,10 @@ spring:
       leak-detection-threshold: ${HIKARI_LEAK_DETECTION_MS:0}
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      # host: ${REDIS_HOST:192.168.5.130}
-      port: ${REDIS_PORT:6379}
-      # password: ${REDIS_PASSWORD:redispassword}
+      # host: ${REDIS_HOST:localhost}
+      host: ${REDIS_HOST:192.168.5.130}
+      # port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:redispassword}
       # 无密码时不要配置 password。若 Redis 有密码，可在此增加：password: ${REDIS_PASSWORD}
   servlet:
     multipart:
@@ -65,6 +70,10 @@ spring:
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
     virtual-host: ${RABBITMQ_VHOST:/}
+    # 本机未起 RabbitMQ 时可设为 false，避免监听容器反复报错（生产勿关）
+    listener:
+      simple:
+        auto-startup: ${RABBITMQ_LISTENER_AUTO_STARTUP:true}
   task:
     execution:
       pool:
@@ -189,14 +198,24 @@ lantu:
   # 技能包从 URL 拉取：SSRF 防护、大小与超时（allowed-host-suffixes 非空时仅允许匹配主机）
   skill-pack-import:
     max-bytes: 26214400
-    connect-timeout-seconds: 15
+    # 跨境/弱网易 connect timed out，可适当加大（或通过 SKILL_PACK_IMPORT_CONNECT_TIMEOUT 覆盖）
+    connect-timeout-seconds: ${SKILL_PACK_IMPORT_CONNECT_TIMEOUT:45}
     read-timeout-seconds: 90
     # 跟随 Location 的最大次数（不含最终 200 响应）
     max-redirects: 5
+    # GitHub 等直连易 Connection reset，可适当重试（每次请求独立计数）
+    fetch-retries: 3
+    fetch-retry-delay-ms: 1000
     https-only: ${SKILL_PACK_IMPORT_HTTPS_ONLY:true}
     allowed-host-suffixes: [ ]
     # 为 true 时必须配置 allowed-host-suffixes（缓解 DNS 重绑定类 SSRF）
     require-allowed-host-suffixes: ${SKILL_PACK_IMPORT_REQUIRE_SUFFIX:false}
+    # Git HTTPS 浅克隆（*.git 或 github/gitlab/bitbucket 的 /owner/repo）；关闭则仅 HTTP 下载制品
+    git-clone-enabled: ${SKILL_PACK_GIT_CLONE_ENABLED:true}
+    git-clone-timeout-seconds: 120
+    git-clone-allow-bare-repo-paths: true
+    git-bare-repo-host-suffixes: [ github.com, www.github.com, gitlab.com, www.gitlab.com, bitbucket.org, www.bitbucket.org, gitee.com, www.gitee.com ]
+    git-clone-max-unpacked-bytes: 41943040
 
 # -----------------------------------------------------------------------------
 # Resilience4j：熔断 / 限流 / 重试 / 舱壁 / 时限；实例名与 @CircuitBreaker(name="mcpInvoke") 等对应

@@ -1,6 +1,7 @@
 package com.lantu.connect.gateway.controller;
 
 import com.lantu.connect.common.result.PageResult;
+import com.lantu.connect.common.security.GatewayAuthDetails;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
@@ -52,9 +53,8 @@ public class SdkGatewayController {
     public R<PageResult<ResourceCatalogItemVO>> catalog(ResourceCatalogQueryRequest request,
                                                         @Parameter(description = "应用API Key")
                                                         @RequestHeader(value = "X-Api-Key") String apiKeyRaw) {
-        ensureApiKeyPresent(apiKeyRaw);
         Long userId = resolveTrustedUserId();
-        ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
+        ApiKey apiKey = requireSdkApiKey(apiKeyRaw);
         return R.ok(unifiedGatewayService.catalog(request, apiKey, userId));
     }
 
@@ -65,9 +65,8 @@ public class SdkGatewayController {
                                                @RequestParam(value = "include", required = false) String include,
                                                @Parameter(description = "应用API Key")
                                                @RequestHeader(value = "X-Api-Key") String apiKeyRaw) {
-        ensureApiKeyPresent(apiKeyRaw);
         Long userId = resolveTrustedUserId();
-        ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
+        ApiKey apiKey = requireSdkApiKey(apiKeyRaw);
         return R.ok(unifiedGatewayService.getByTypeAndId(type, id, include, apiKey, userId));
     }
 
@@ -76,9 +75,8 @@ public class SdkGatewayController {
     public R<ResourceResolveVO> resolve(@Valid @RequestBody ResourceResolveRequest request,
                                         @Parameter(description = "应用API Key")
                                         @RequestHeader(value = "X-Api-Key") String apiKeyRaw) {
-        ensureApiKeyPresent(apiKeyRaw);
         Long userId = resolveTrustedUserId();
-        ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
+        ApiKey apiKey = requireSdkApiKey(apiKeyRaw);
         return R.ok(unifiedGatewayService.resolve(request, apiKey, userId));
     }
 
@@ -91,9 +89,8 @@ public class SdkGatewayController {
                                     @RequestHeader(value = "X-Api-Key") String apiKeyRaw,
                                     @Valid @RequestBody InvokeRequest request,
                                     HttpServletRequest httpRequest) {
-        ensureApiKeyPresent(apiKeyRaw);
         Long userId = resolveTrustedUserId();
-        ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
+        ApiKey apiKey = requireSdkApiKey(apiKeyRaw);
         String resolvedTraceId = StringUtils.hasText(traceId) ? traceId.trim() : UUID.randomUUID().toString();
         InvokeResponse data = unifiedGatewayService.invoke(userId, resolvedTraceId, httpRequest.getRemoteAddr(), request, apiKey);
         R<InvokeResponse> body = GatewayInvokeResponseSupport.wrap(data);
@@ -112,9 +109,8 @@ public class SdkGatewayController {
                                                               @RequestHeader(value = "X-Api-Key") String apiKeyRaw,
                                                               @Valid @RequestBody InvokeRequest request,
                                                               HttpServletRequest httpRequest) {
-        ensureApiKeyPresent(apiKeyRaw);
         Long userId = resolveTrustedUserId();
-        ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
+        ApiKey apiKey = requireSdkApiKey(apiKeyRaw);
         String resolvedTraceId = StringUtils.hasText(traceId) ? traceId.trim() : UUID.randomUUID().toString();
         StreamingResponseBody body = outputStream -> unifiedGatewayService.invokeStream(
                 userId, resolvedTraceId, httpRequest.getRemoteAddr(), request, apiKey, outputStream);
@@ -124,10 +120,15 @@ public class SdkGatewayController {
                 .body(body);
     }
 
-    private static void ensureApiKeyPresent(String apiKeyRaw) {
+    private ApiKey requireSdkApiKey(String apiKeyRaw) {
         if (!StringUtils.hasText(apiKeyRaw)) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "SDK 调用必须提供 X-Api-Key");
         }
+        ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
+        if (apiKey == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "API Key 无效或已停用");
+        }
+        return apiKey;
     }
 
     /**
@@ -139,8 +140,13 @@ public class SdkGatewayController {
             return null;
         }
         String principal = String.valueOf(auth.getPrincipal()).trim();
-        if (!StringUtils.hasText(principal) || "api-key".equalsIgnoreCase(principal)
-                || "sandbox-token".equalsIgnoreCase(principal)) {
+        if (!StringUtils.hasText(principal) || "sandbox-token".equalsIgnoreCase(principal)) {
+            return null;
+        }
+        if ("api-key".equalsIgnoreCase(principal)) {
+            if (auth.getDetails() instanceof GatewayAuthDetails d && d.ownerUserId() != null) {
+                return d.ownerUserId();
+            }
             return null;
         }
         try {

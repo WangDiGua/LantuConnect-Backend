@@ -1,6 +1,7 @@
 package com.lantu.connect.gateway.controller;
 
 import com.lantu.connect.common.exception.BusinessException;
+import com.lantu.connect.common.security.GatewayAuthDetails;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.gateway.dto.InvokeRequest;
 import com.lantu.connect.gateway.dto.InvokeResponse;
@@ -21,6 +22,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.util.Collections;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -88,6 +90,41 @@ class SdkGatewayControllerTest {
         verify(unifiedGatewayService).invoke(any(), traceIdCaptor.capture(), any(), any(), eq(apiKey));
         String traceId = traceIdCaptor.getValue();
         assertEquals(true, traceId != null && !traceId.isBlank());
+    }
+
+    @Test
+    void shouldUseTrustedUserIdFromGatewayAuthDetailsWhenApiKeyPrincipal() {
+        InvokeRequest request = new InvokeRequest();
+        request.setResourceType("mcp");
+        request.setResourceId("9");
+        request.setPayload(Map.of("x", 1));
+        ApiKey apiKey = new ApiKey();
+        apiKey.setId("k1");
+        when(apiKeyScopeService.authenticateOrNull("raw-key")).thenReturn(apiKey);
+        when(unifiedGatewayService.invoke(any(), any(), any(), any(), any()))
+                .thenReturn(InvokeResponse.builder()
+                        .requestId("req-1")
+                        .traceId("trace-1")
+                        .resourceType("mcp")
+                        .resourceId("9")
+                        .status("success")
+                        .statusCode(200)
+                        .latencyMs(9L)
+                        .body("{}")
+                        .build());
+
+        UsernamePasswordAuthenticationToken auth =
+                new UsernamePasswordAuthenticationToken("api-key", null, Collections.emptyList());
+        auth.setDetails(new GatewayAuthDetails(77L));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+        try {
+            MockHttpServletRequest req = new MockHttpServletRequest();
+            req.setRemoteAddr("127.0.0.1");
+            sdkGatewayController.invoke(null, "raw-key", request, req);
+            verify(unifiedGatewayService).invoke(eq(77L), any(), any(), any(), eq(apiKey));
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 
     @Test

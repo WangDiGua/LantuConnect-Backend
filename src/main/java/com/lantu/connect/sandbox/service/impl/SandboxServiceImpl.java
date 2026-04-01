@@ -45,6 +45,9 @@ public class SandboxServiceImpl implements SandboxService {
         }
         ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
         if (apiKey == null) {
+            if (StringUtils.hasText(apiKeyRaw)) {
+                throw new BusinessException(ResultCode.UNAUTHORIZED, "API Key 无效或已停用");
+            }
             throw new BusinessException(ResultCode.UNAUTHORIZED, "创建沙箱会话必须提供 X-Api-Key");
         }
 

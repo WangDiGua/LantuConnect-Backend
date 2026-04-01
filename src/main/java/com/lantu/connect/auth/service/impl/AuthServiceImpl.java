@@ -27,6 +27,8 @@ import com.lantu.connect.common.session.SessionGeoEnrichmentService;
 import com.lantu.connect.common.session.SessionTrackerService;
 import com.lantu.connect.common.util.JwtUtil;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
@@ -62,6 +64,9 @@ import java.security.SecureRandom;
 public class AuthServiceImpl implements AuthService {
 
     private static final String REFRESH_USED_PREFIX = "token:refresh:";
+
+    /** 同一 refresh 并发刷新时缓存新发 token 对，供另一请求复用（避免 React StrictMode 等双次请求误杀）。 */
+    private static final String REFRESH_PAIR_PREFIX = "token:refresh:pair:";
     private static final String USER_PREF_PREFIX = "lantu:user:pref:";
     private static final String SMS_RATE_PREFIX = "sms:ratelimit:";
 
@@ -82,6 +87,7 @@ public class AuthServiceImpl implements AuthService {
     private final TransactionTemplate transactionTemplate;
     private final SystemNotificationFacade systemNotificationFacade;
     private final RedisAuthRateLimiter redisAuthRateLimiter;
+    private final ObjectMapper objectMapper;
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -182,10 +188,16 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ResultCode.REFRESH_TOKEN_INVALID);
         }
 
-        String usedKey = REFRESH_USED_PREFIX + sha256(refreshToken);
-        Boolean firstUse = redisTemplate.opsForValue().setIfAbsent(usedKey, "1", Duration.ofDays(7));
-        if (!Boolean.TRUE.equals(firstUse)) {
-            throw new BusinessException(ResultCode.REFRESH_TOKEN_INVALID, "Refresh Token 已被使用");
+        String tokenHash = sha256(refreshToken);
+        String usedKey = REFRESH_USED_PREFIX + tokenHash;
+        String pairKey = REFRESH_PAIR_PREFIX + tokenHash;
+
+        String cachedPair = redisTemplate.opsForValue().get(pairKey);
+        if (StringUtils.hasText(cachedPair)) {
+            TokenResponse fromCache = parseCachedRefreshPair(cachedPair);
+            if (fromCache != null) {
+                return fromCache;
+            }
         }
 
         Claims claims;
@@ -221,13 +233,72 @@ public class AuthServiceImpl implements AuthService {
             sessionGeoEnrichmentService.enqueueLocationLookup(sid, clientIp);
         }
 
-        String newAccessToken = jwtUtil.generateAccessToken(userId, username, Map.of("role", roleCode, "sid", sid));
-        String newRefreshToken = jwtUtil.generateRefreshToken(userId, username);
+        boolean markedUsed = false;
+        try {
+            Boolean firstUse = redisTemplate.opsForValue().setIfAbsent(usedKey, "1", Duration.ofDays(7));
+            if (!Boolean.TRUE.equals(firstUse)) {
+                TokenResponse waited = waitForConcurrentRefreshPair(pairKey);
+                if (waited != null) {
+                    return waited;
+                }
+                throw new BusinessException(ResultCode.REFRESH_TOKEN_INVALID, "Refresh Token 已被使用");
+            }
+            markedUsed = true;
 
-        return TokenResponse.builder()
-                .token(newAccessToken)
-                .refreshToken(newRefreshToken)
-                .build();
+            String newAccessToken = jwtUtil.generateAccessToken(userId, username, Map.of("role", roleCode, "sid", sid));
+            String newRefreshToken = jwtUtil.generateRefreshToken(userId, username);
+            TokenResponse out = TokenResponse.builder()
+                    .token(newAccessToken)
+                    .refreshToken(newRefreshToken)
+                    .build();
+            try {
+                redisTemplate.opsForValue().set(pairKey, objectMapper.writeValueAsString(out), Duration.ofSeconds(120));
+            } catch (JsonProcessingException e) {
+                throw new BusinessException(ResultCode.INTERNAL_ERROR, "Token 序列化失败");
+            }
+            return out;
+        } catch (BusinessException e) {
+            if (markedUsed) {
+                redisTemplate.delete(usedKey);
+            }
+            throw e;
+        } catch (RuntimeException e) {
+            if (markedUsed) {
+                redisTemplate.delete(usedKey);
+            }
+            throw e;
+        }
+    }
+
+    private TokenResponse parseCachedRefreshPair(String json) {
+        try {
+            return objectMapper.readValue(json, TokenResponse.class);
+        } catch (Exception e) {
+            log.debug("refresh pair cache parse failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 另一请求已占用 refresh 单次消费位但可能正在写入 pair；短暂等待，避免并发 refresh 导致误退出。
+     */
+    private TokenResponse waitForConcurrentRefreshPair(String pairKey) {
+        for (int i = 0; i < 15; i++) {
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            String cached = redisTemplate.opsForValue().get(pairKey);
+            if (StringUtils.hasText(cached)) {
+                TokenResponse parsed = parseCachedRefreshPair(cached);
+                if (parsed != null) {
+                    return parsed;
+                }
+            }
+        }
+        return null;
     }
 
     @Override

@@ -22,6 +22,12 @@ public enum ResultCode {
     UNSUPPORTED_FILE_TYPE(1007, "不支持的文件类型"),
     FILE_SIZE_EXCEEDED(1008, "文件大小超过限制"),
 
+    /**
+     * 已登录但本条网关能力仍须绑定有效 X-Api-Key（如应用启动链接、或非资源发布者调用他人资源）。
+     * 与 {@link #UNAUTHORIZED} 区分：避免前端将「缺 Key」误当作登录失效。
+     */
+    GATEWAY_API_KEY_REQUIRED(1009, "须提供有效的 X-Api-Key"),
+
     TOKEN_EXPIRED(2001, "Token 已过期"),
     REFRESH_TOKEN_INVALID(2002, "Refresh Token 无效"),
     ACCOUNT_LOCKED(2003, "账户已锁定"),

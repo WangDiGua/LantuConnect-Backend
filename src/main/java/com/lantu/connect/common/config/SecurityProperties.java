@@ -21,8 +21,10 @@ public class SecurityProperties {
     private boolean jwtEnabled = true;
 
     /**
-     * 当请求无有效 Bearer 时，是否仍允许使用 X-User-Id（默认 false，避免头注入风险）。
+     * 原意用于旧版「仅 X-User-Id」联调；当前 JwtAuthenticationFilter 未读取此开关，无 Bearer 且无有效 X-Api-Key
+     * 时一律未认证。勿依赖此项作为安全边界。
      */
+    @Deprecated(since = "1.0.0", forRemoval = false)
     private boolean allowHeaderUserIdFallback = false;
 
     /**

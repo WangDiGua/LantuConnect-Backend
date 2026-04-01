@@ -281,11 +281,13 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     }
 
     /**
-     * 按 type/id 解析资源，统一执行 RBAC 与 scope 双层鉴权。
+     * 目录 GET /catalog/resources/{type}/{id}：允许仅登录（无 Key）返回展示用元数据；
+     * 应用真实 URL 仍由 {@link #issueAppLaunchTicket} 在无 Key 时剥离。
+     * POST {@link #resolve} 须带有效 X-Api-Key（内部 action {@code resolve}）。
      */
     @Override
     public ResourceResolveVO getByTypeAndId(String resourceType, String resourceId, String include, ApiKey apiKey, Long userId) {
-        return getByTypeAndId(resourceType, resourceId, null, include, apiKey, userId, "resolve");
+        return getByTypeAndId(resourceType, resourceId, null, include, apiKey, userId, "catalog_read");
     }
 
     private ResourceResolveVO getByTypeAndId(String resourceType, String resourceId, String requestedVersion,
@@ -293,16 +295,19 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         if (userId == null && apiKey == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "资源解析需要登录态或 API Key");
         }
+        if ("resolve".equalsIgnoreCase(action) && apiKey == null) {
+            throw new BusinessException(ResultCode.GATEWAY_API_KEY_REQUIRED, "资源解析须提供有效的 X-Api-Key");
+        }
         String type = requireType(resourceType);
         Long id = parseId(resourceId);
         if (TYPE_APP.equals(type)) {
             if (userId == null) {
                 throw new BusinessException(ResultCode.UNAUTHORIZED, "应用访问需要登录态");
             }
-            if (apiKey == null) {
-                throw new BusinessException(ResultCode.UNAUTHORIZED, "应用访问必须绑定并提供 X-Api-Key");
+            // 浏览器仅 JWT：允许拉取展示用元数据；真实 app_url 与 launch 票据仅在携带本人 API Key 时下发（见 issueAppLaunchTicket）。
+            if (apiKey != null) {
+                ensureAppKeyOwnedByUser(apiKey, userId);
             }
-            ensureAppKeyOwnedByUser(apiKey, userId);
         }
         if (userId != null) {
             gatewayUserPermissionService.ensureAccess(userId, type);
@@ -340,13 +345,16 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
      */
     @Override
     public InvokeResponse invoke(Long userId, String traceId, String ip, InvokeRequest request, ApiKey apiKey) {
-        if (apiKey == null) {
-            throw new BusinessException(ResultCode.UNAUTHORIZED, "调用网关必须提供 X-Api-Key");
-        }
         String reqId = UUID.randomUUID().toString();
         String type = requireType(request.getResourceType());
         ensureSkillNotInvokable(type);
         Long id = parseId(request.getResourceId());
+        if (apiKey == null) {
+            if (userId == null) {
+                throw new BusinessException(ResultCode.UNAUTHORIZED, "调用网关需要登录或有效的 X-Api-Key");
+            }
+            throw new BusinessException(ResultCode.GATEWAY_API_KEY_REQUIRED, "统一网关调用须提供有效的 X-Api-Key");
+        }
         ResourceResolveVO resolved = getByTypeAndId(type, String.valueOf(id), request.getVersion(), null, apiKey, userId, "invoke");
         ensurePublishedForInvoke(resolved);
         ensureNotCircuitOpen(type, resolved.getResourceCode());
@@ -367,8 +375,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         GatewayGovernanceService.InvokeGovernanceLease governanceLease = null;
         try {
             governanceLease = gatewayGovernanceService.applyPreInvoke(userId, apiKey, type, id, 1);
-            ProtocolInvokeContext protoCtx = ProtocolInvokeContext.of(
-                    apiKey.getId(), id, userId);
+            ProtocolInvokeContext protoCtx = ProtocolInvokeContext.of(apiKey.getId(), id, userId);
             ProtocolInvokeResult resp = protocolInvokerRegistry.invoke(
                     protocol,
                     resolved.getEndpoint(),
@@ -472,9 +479,6 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                              InvokeRequest request,
                              ApiKey apiKey,
                              OutputStream responseBody) {
-        if (apiKey == null) {
-            throw new BusinessException(ResultCode.UNAUTHORIZED, "调用网关必须提供 X-Api-Key");
-        }
         if (responseBody == null) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "响应流不能为空");
         }
@@ -482,6 +486,12 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         String type = requireType(request.getResourceType());
         ensureSkillNotInvokable(type);
         Long id = parseId(request.getResourceId());
+        if (apiKey == null) {
+            if (userId == null) {
+                throw new BusinessException(ResultCode.UNAUTHORIZED, "调用网关需要登录或有效的 X-Api-Key");
+            }
+            throw new BusinessException(ResultCode.GATEWAY_API_KEY_REQUIRED, "统一网关调用须提供有效的 X-Api-Key");
+        }
         ResourceResolveVO resolved = getByTypeAndId(type, String.valueOf(id), request.getVersion(), null, apiKey, userId, "invoke");
         ensurePublishedForInvoke(resolved);
         ensureNotCircuitOpen(type, resolved.getResourceCode());
@@ -790,7 +800,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             return resolved;
         }
         if (apiKey == null || !StringUtils.hasText(apiKey.getId())) {
-            throw new BusinessException(ResultCode.UNAUTHORIZED, "应用访问必须绑定并提供 X-Api-Key");
+            resolved.setEndpoint(null);
+            resolved.setLaunchUrl(null);
+            resolved.setLaunchToken(null);
+            return resolved;
         }
         if (!StringUtils.hasText(resolved.getEndpoint())) {
             return resolved;
@@ -811,7 +824,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
     private static void ensureAppKeyOwnedByUser(ApiKey apiKey, Long userId) {
         if (apiKey == null || userId == null) {
-            throw new BusinessException(ResultCode.UNAUTHORIZED, "应用访问缺少有效身份");
+            throw new BusinessException(ResultCode.GATEWAY_API_KEY_REQUIRED, "应用访问须提供本人有效的 X-Api-Key");
         }
         if (!"user".equalsIgnoreCase(apiKey.getOwnerType())) {
             throw new BusinessException(ResultCode.FORBIDDEN, "应用访问仅支持用户级 API Key");

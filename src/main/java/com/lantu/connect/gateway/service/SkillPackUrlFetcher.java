@@ -4,6 +4,8 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.gateway.config.SkillPackImportProperties;
 import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -11,7 +13,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.http.HttpClient;
@@ -19,21 +20,24 @@ import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.List;
 import java.util.Locale;
 
 /**
- * 受 SSRF 约束的 HTTP GET，用于拉取技能 zip 字节。
+ * 受 SSRF 约束的 HTTP GET，用于拉取技能 zip 字节；支持将 Git HTTPS 仓库浅克隆为 zip。
  */
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class SkillPackUrlFetcher {
 
-    private final SkillPackImportProperties properties;
-    private HttpClient httpClient;
+    private static final String UA_APP = "NexusAI-Connect-SkillPackImport/1.0";
+    private static final String UA_BROWSERISH =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-    public SkillPackUrlFetcher(SkillPackImportProperties properties) {
-        this.properties = properties;
-    }
+    private final SkillPackImportProperties properties;
+    private final SkillPackRemoteUriValidator remoteUriValidator;
+    private final GitSkillPackCloner gitSkillPackCloner;
+    private HttpClient httpClient;
 
     @PostConstruct
     void initHttpClient() {
@@ -46,42 +50,34 @@ public class SkillPackUrlFetcher {
     public record FetchedPack(byte[] bytes, String filenameForStorage) {}
 
     public FetchedPack fetch(String urlRaw) {
-        ensureHostSuffixPolicy();
+        remoteUriValidator.assertHostSuffixPolicyConfigured();
         if (!StringUtils.hasText(urlRaw)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "url 不能为空");
         }
         String trimmed = urlRaw.trim();
-        URI current;
+        URI initial;
         try {
-            current = new URI(trimmed);
+            initial = new URI(trimmed);
         } catch (URISyntaxException e) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "url 格式无效");
         }
-        if (current.getRawUserInfo() != null) {
+        if (initial.getRawUserInfo() != null) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "不允许在 url 中带用户信息");
         }
+        if (gitSkillPackCloner.shouldGitClone(initial)) {
+            remoteUriValidator.assertUriSafeForRemote(initial);
+            return gitSkillPackCloner.cloneShallowToFetchedPack(trimmed);
+        }
+
+        URI current = initial;
         int maxRedirects = Math.max(0, properties.getMaxRedirects());
         long maxBytes = Math.max(1024L, properties.getMaxBytes());
         int readSec = Math.max(5, properties.getReadTimeoutSeconds());
         int redirectsFollowed = 0;
 
         while (true) {
-            validateRequestUrl(current);
-            HttpRequest req = HttpRequest.newBuilder(current)
-                    .timeout(Duration.ofSeconds(readSec))
-                    .header("User-Agent", "NexusAI-Connect-SkillPackImport/1.0")
-                    .header("Accept", "application/zip, application/octet-stream, */*")
-                    .GET()
-                    .build();
-            HttpResponse<InputStream> resp;
-            try {
-                resp = httpClient.send(req, HttpResponse.BodyHandlers.ofInputStream());
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new BusinessException(ResultCode.PARAM_ERROR, "拉取 url 已中断");
-            } catch (IOException e) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "拉取 url 失败: " + e.getMessage());
-            }
+            remoteUriValidator.assertUriSafeForRemote(current);
+            HttpResponse<InputStream> resp = sendGetWithRetries(current, readSec);
             int code = resp.statusCode();
             if (code >= 300 && code < 400) {
                 if (redirectsFollowed >= maxRedirects) {
@@ -112,21 +108,77 @@ public class SkillPackUrlFetcher {
                 byte[] data = readLimited(in, maxBytes);
                 return new FetchedPack(data, fname);
             } catch (IOException e) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "读取响应体失败: " + e.getMessage());
+                throw new BusinessException(ResultCode.PARAM_ERROR, packFetchIoMessage(e).replaceFirst(
+                        "^拉取 url 失败: ", "读取响应体失败: "));
             }
         }
     }
 
-    private void ensureHostSuffixPolicy() {
-        if (!properties.isRequireAllowedHostSuffixes()) {
-            return;
+    private HttpResponse<InputStream> sendGetWithRetries(URI uri, int readTimeoutSec) {
+        int extra = Math.max(0, properties.getFetchRetries());
+        int attempts = 1 + extra;
+        long delayMs = Math.max(0, properties.getFetchRetryDelayMs());
+        for (int attempt = 1; attempt <= attempts; attempt++) {
+            String userAgent = attempt == 1 ? UA_APP : UA_BROWSERISH;
+            HttpRequest req = HttpRequest.newBuilder(uri)
+                    .timeout(Duration.ofSeconds(readTimeoutSec))
+                    .header("User-Agent", userAgent)
+                    .header("Accept",
+                            "application/zip, application/x-7z-compressed, application/x-rar-compressed, "
+                                    + "application/gzip, application/x-gzip, application/x-tar, "
+                                    + "text/markdown, application/octet-stream, */*")
+                    .header("Accept-Language", "en-US,en;q=0.9")
+                    .GET()
+                    .build();
+            try {
+                return httpClient.send(req, HttpResponse.BodyHandlers.ofInputStream());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new BusinessException(ResultCode.PARAM_ERROR, "拉取 url 已中断");
+            } catch (IOException e) {
+                if (attempt < attempts && isRetryableNetworkError(e)) {
+                    log.warn("技能包 GET {} 第 {}/{} 次 IO 失败，{}ms 后重试: {}",
+                            uri.getHost(), attempt, attempts, delayMs, e.getMessage());
+                    if (delayMs > 0) {
+                        try {
+                            Thread.sleep(delayMs);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            throw new BusinessException(ResultCode.PARAM_ERROR, "拉取 url 已中断");
+                        }
+                    }
+                    continue;
+                }
+                throw new BusinessException(ResultCode.PARAM_ERROR, packFetchIoMessage(e));
+            }
         }
-        List<String> s = properties.getAllowedHostSuffixes();
-        boolean any = s != null && s.stream().anyMatch(x -> x != null && !x.isBlank());
-        if (!any) {
-            throw new BusinessException(ResultCode.PARAM_ERROR,
-                    "已启用 require-allowed-host-suffixes，但未配置有效的 lantu.skill-pack-import.allowed-host-suffixes");
+        throw new BusinessException(ResultCode.PARAM_ERROR, "拉取 url 失败: 已达重试上限");
+    }
+
+    private static boolean isRetryableNetworkError(IOException e) {
+        String m = e.getMessage();
+        if (m == null) {
+            return true;
         }
+        String l = m.toLowerCase(Locale.ROOT);
+        return l.contains("connection reset")
+                || l.contains("connection refused")
+                || l.contains("broken pipe")
+                || l.contains("connection timed out")
+                || l.contains("timed out")
+                || l.contains("forcibly closed")
+                || l.contains("failed to respond")
+                || l.contains("unexpected end of stream");
+    }
+
+    private static String packFetchIoMessage(IOException e) {
+        String core = "拉取 url 失败: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+        String lm = e.getMessage() == null ? "" : e.getMessage().toLowerCase(Locale.ROOT);
+        if (lm.contains("connection reset") || lm.contains("broken pipe") || lm.contains("forcibly closed")) {
+            return core + "。直连 GitHub 等源在国内易受 RST 影响：可在「技能在线市场」配置 github-zip-mirror 使用镜像前缀，"
+                    + "或换用国内可访问的 zip 直链；亦可调大 lantu.skill-pack-import.fetch-retries / connect-timeout-seconds。";
+        }
+        return core;
     }
 
     private static void drainAndClose(InputStream in) {
@@ -141,58 +193,6 @@ public class SkillPackUrlFetcher {
 
     private static long contentLength(HttpHeaders headers) {
         return headers.firstValueAsLong("content-length").orElse(-1L);
-    }
-
-    private void validateRequestUrl(URI uri) {
-        String scheme = uri.getScheme();
-        if (scheme == null) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "url 须包含协议");
-        }
-        String s = scheme.toLowerCase(Locale.ROOT);
-        if (properties.isHttpsOnly() && !"https".equals(s)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "仅允许 https（可在配置 lantu.skill-pack-import.https-only=false 关闭）");
-        }
-        if (!"https".equals(s) && !"http".equals(s)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "仅支持 http/https");
-        }
-        String host = uri.getHost();
-        if (!StringUtils.hasText(host)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "url 缺少主机名");
-        }
-        String h = host.toLowerCase(Locale.ROOT);
-        if ("localhost".equals(h) || h.endsWith(".localhost")) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "禁止访问本地主机");
-        }
-        List<String> suffixes = properties.getAllowedHostSuffixes();
-        if (suffixes != null && !suffixes.isEmpty()) {
-            boolean ok = false;
-            for (String suf : suffixes) {
-                if (suf == null || suf.isBlank()) {
-                    continue;
-                }
-                String sl = suf.trim().toLowerCase(Locale.ROOT);
-                if (h.equals(sl) || h.endsWith("." + sl)) {
-                    ok = true;
-                    break;
-                }
-            }
-            if (!ok) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "主机不在允许列表（lantu.skill-pack-import.allowed-host-suffixes）");
-            }
-        }
-        try {
-            InetAddress[] addrs = InetAddress.getAllByName(host);
-            for (InetAddress a : addrs) {
-                if (a.isLoopbackAddress() || a.isLinkLocalAddress() || a.isSiteLocalAddress()
-                        || a.isAnyLocalAddress() || a.isMulticastAddress()) {
-                    throw new BusinessException(ResultCode.PARAM_ERROR, "禁止访问内网或保留地址");
-                }
-            }
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "无法解析主机: " + e.getMessage());
-        }
     }
 
     private static URI resolveRedirect(URI base, String location) {
@@ -216,8 +216,12 @@ public class SkillPackUrlFetcher {
         }
         int slash = path.lastIndexOf('/');
         String last = slash >= 0 ? path.substring(slash + 1) : path;
-        if (!StringUtils.hasText(last) || !last.toLowerCase(Locale.ROOT).endsWith(".zip")) {
-            return "skill-pack.zip";
+        String ll = last.toLowerCase(Locale.ROOT);
+        if (!StringUtils.hasText(last)
+                || !(ll.endsWith(".zip") || ll.endsWith(".7z") || ll.endsWith(".rar")
+                || ll.endsWith(".tgz") || ll.endsWith(".tar.gz") || ll.endsWith(".tar")
+                || ll.endsWith(".md") || ll.endsWith(".gz"))) {
+            return "skill-pack.bin";
         }
         return last;
     }

@@ -1,6 +1,7 @@
 package com.lantu.connect.dashboard.controller;
 
 import com.lantu.connect.common.result.R;
+import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.security.RequirePermission;
 import com.lantu.connect.dashboard.dto.AdminOverviewVO;
 import com.lantu.connect.dashboard.dto.AdminRealtimeData;
@@ -11,6 +12,7 @@ import com.lantu.connect.dashboard.dto.UserWorkspaceVO;
 import com.lantu.connect.dashboard.service.DashboardService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.util.StringUtils;
 
 import java.util.Map;
 
@@ -68,7 +70,29 @@ public class DashboardController {
     }
 
     @GetMapping("/user-dashboard")
-    public R<UserDashboardData> userDashboard(@RequestHeader("X-User-Id") Long userId) {
+    public R<UserDashboardData> userDashboard(@RequestHeader("X-User-Id") String userIdHeader) {
+        Long userId = parseOptionalUserId(userIdHeader);
+        if (userId == null) {
+            return R.fail(ResultCode.PARAM_ERROR, "无效的 X-User-Id");
+        }
         return R.ok(dashboardService.userDashboard(userId));
+    }
+
+    /**
+     * 解析可选用户头：空、undefined、null、非数字均视为未登录上下文（返回 null）。
+     */
+    private static Long parseOptionalUserId(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        String t = raw.trim();
+        if ("undefined".equalsIgnoreCase(t) || "null".equalsIgnoreCase(t)) {
+            return null;
+        }
+        try {
+            return Long.parseLong(t);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

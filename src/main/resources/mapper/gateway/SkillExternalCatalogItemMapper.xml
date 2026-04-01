@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lantu.connect.gateway.mapper.SkillExternalCatalogItemMapper">
+
+    <insert id="upsertBatch">
+        INSERT INTO `t_skill_external_catalog_item`
+        (`dedupe_key`, `external_id`, `name`, `summary`, `pack_url`, `license_note`, `source_url`, `stars`, `sync_batch`)
+        VALUES
+        <foreach collection="list" item="e" separator=",">
+            (#{e.dedupeKey}, #{e.externalId}, #{e.name}, #{e.summary}, #{e.packUrl}, #{e.licenseNote},
+             #{e.sourceUrl}, #{e.stars}, #{e.syncBatch})
+        </foreach>
+        ON DUPLICATE KEY UPDATE
+            `external_id` = VALUES(`external_id`),
+            `name` = VALUES(`name`),
+            `summary` = VALUES(`summary`),
+            `pack_url` = VALUES(`pack_url`),
+            `license_note` = VALUES(`license_note`),
+            `source_url` = VALUES(`source_url`),
+            `stars` = VALUES(`stars`),
+            `sync_batch` = VALUES(`sync_batch`)
+    </insert>
+
+    <delete id="deleteWhereSyncBatchLt">
+        DELETE FROM `t_skill_external_catalog_item` WHERE `sync_batch` &lt; #{batch}
+    </delete>
+
+    <select id="countKeyword" resultType="long">
+        SELECT COUNT(1) FROM `t_skill_external_catalog_item`
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                LOWER(`name`) LIKE CONCAT('%', #{keyword}, '%')
+                OR LOWER(IFNULL(`summary`, '')) LIKE CONCAT('%', #{keyword}, '%')
+                OR LOWER(`pack_url`) LIKE CONCAT('%', #{keyword}, '%')
+                OR LOWER(IFNULL(`source_url`, '')) LIKE CONCAT('%', #{keyword}, '%')
+                OR LOWER(`external_id`) LIKE CONCAT('%', #{keyword}, '%')
+                OR LOWER(IFNULL(`license_note`, '')) LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
+    </select>
+
+    <select id="selectKeywordPage" resultType="com.lantu.connect.gateway.entity.SkillExternalCatalogItem">
+        SELECT `dedupe_key`, `external_id`, `name`, `summary`, `pack_url`, `license_note`, `source_url`, `stars`,
+               `sync_batch`, `create_time`, `update_time`
+        FROM `t_skill_external_catalog_item`
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                LOWER(`name`) LIKE CONCAT('%', #{keyword}, '%')
+                OR LOWER(IFNULL(`summary`, '')) LIKE CONCAT('%', #{keyword}, '%')
+                OR LOWER(`pack_url`) LIKE CONCAT('%', #{keyword}, '%')
+                OR LOWER(IFNULL(`source_url`, '')) LIKE CONCAT('%', #{keyword}, '%')
+                OR LOWER(`external_id`) LIKE CONCAT('%', #{keyword}, '%')
+                OR LOWER(IFNULL(`license_note`, '')) LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
+        ORDER BY IFNULL(`stars`, 0) DESC, `name` ASC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+</mapper>

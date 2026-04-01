@@ -8,6 +8,8 @@ import com.lantu.connect.gateway.dto.ResourceManageVO;
 import com.lantu.connect.gateway.dto.ResourceUpsertRequest;
 import com.lantu.connect.gateway.service.support.AnthropicSkillPackValidator;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
+import com.lantu.connect.gateway.service.support.SkillPackArchiveNormalizer;
+import com.lantu.connect.gateway.service.support.SkillPackFolderConvention;
 import com.lantu.connect.gateway.service.support.SkillPackValidationStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -18,6 +20,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.Base64;
 import java.net.URISyntaxException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -41,16 +44,50 @@ public class SkillPackUploadService {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证");
         }
         if (file == null || file.isEmpty()) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "请上传 zip 文件");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "请上传技能包文件");
         }
-        final byte[] zipBytes;
+        final byte[] rawBytes;
         try {
-            zipBytes = file.getBytes();
+            rawBytes = file.getBytes();
         } catch (IOException e) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "读取文件失败");
         }
-        final String filename = file.getOriginalFilename();
-        return transactionTemplate.execute(status -> ingestPack(operatorUserId, zipBytes, filename, resourceIdOpt, "internal", "由技能包上传创建"));
+        return uploadPackBytes(operatorUserId, rawBytes, file.getOriginalFilename(), resourceIdOpt);
+    }
+
+    /**
+     * 与 {@link #uploadPack} 相同处理链，入参为原始字节（如 JSON Body 中的 Base64 解码结果）。
+     */
+    public ResourceManageVO uploadPackBytes(Long operatorUserId, byte[] rawBytes, String filenameHint, Long resourceIdOpt) {
+        if (operatorUserId == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证");
+        }
+        if (rawBytes == null || rawBytes.length == 0) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "请上传技能包文件");
+        }
+        byte[] normalizedZip = SkillPackArchiveNormalizer.normalizeToSkillZip(rawBytes, filenameHint);
+        String storageName = SkillPackArchiveNormalizer.normalizeStorageFilename(filenameHint);
+        final byte[] zipBytes = SkillPackFolderConvention.ensureRootSkillMd(normalizedZip, storageName);
+        return transactionTemplate.execute(status -> ingestPack(operatorUserId, zipBytes, storageName, resourceIdOpt, "internal", "由技能包上传创建"));
+    }
+
+    /**
+     * 解析前端 Base64（可选 data URL 前缀）。
+     */
+    public static byte[] decodeUploadBase64(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "file 内容为空");
+        }
+        String s = raw.trim();
+        int comma = s.indexOf(',');
+        if (s.startsWith("data:") && comma > 0) {
+            s = s.substring(comma + 1).trim();
+        }
+        try {
+            return Base64.getDecoder().decode(s);
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "file 不是有效的 Base64");
+        }
     }
 
     /**
@@ -62,9 +99,12 @@ public class SkillPackUploadService {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证");
         }
         SkillPackUrlFetcher.FetchedPack fetched = skillPackUrlFetcher.fetch(url);
+        byte[] normalizedZip = SkillPackArchiveNormalizer.normalizeToSkillZip(fetched.bytes(), fetched.filenameForStorage());
+        String storageName = SkillPackArchiveNormalizer.normalizeStorageFilename(fetched.filenameForStorage());
+        final byte[] zipBytes = SkillPackFolderConvention.ensureRootSkillMd(normalizedZip, storageName);
         String safeRef = truncateUrlForDesc(sanitizeUrlForDescription(url.trim()));
         String desc = "由 URL 导入: " + safeRef;
-        return transactionTemplate.execute(status -> ingestPack(operatorUserId, fetched.bytes(), fetched.filenameForStorage(), resourceIdOpt, "cloud", desc));
+        return transactionTemplate.execute(status -> ingestPack(operatorUserId, zipBytes, storageName, resourceIdOpt, "cloud", desc));
     }
 
     private ResourceManageVO ingestPack(Long operatorUserId, byte[] zipBytes, String originalFilename,

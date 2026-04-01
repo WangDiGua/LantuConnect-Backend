@@ -58,7 +58,8 @@ class ResourceRegistryControllerWebMvcTest {
         properties.setJwtEnabled(true);
         properties.setAllowHeaderUserIdFallback(false);
         when(sessionRevocationRegistry.isRevoked(any())).thenReturn(false);
-        JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtUtil, blacklist, sessionRevocationRegistry, properties);
+        JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(
+                jwtUtil, blacklist, sessionRevocationRegistry, properties, apiKeyScopeService);
         UnassignedUserAccessFilter unassignedFilter = new UnassignedUserAccessFilter(userRoleRelMapper, properties);
 
         Claims claims = mock(Claims.class);

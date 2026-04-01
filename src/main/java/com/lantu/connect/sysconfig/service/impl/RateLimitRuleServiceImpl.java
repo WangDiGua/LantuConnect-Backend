@@ -10,6 +10,7 @@ import com.lantu.connect.sysconfig.dto.RateLimitRuleCreateRequest;
 import com.lantu.connect.sysconfig.dto.RateLimitRuleUpdateRequest;
 import com.lantu.connect.sysconfig.entity.RateLimitRule;
 import com.lantu.connect.sysconfig.mapper.RateLimitRuleMapper;
+import com.lantu.connect.sysconfig.service.PathRateLimitRuleCache;
 import com.lantu.connect.sysconfig.service.RateLimitRuleService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ import java.time.LocalDateTime;
 public class RateLimitRuleServiceImpl implements RateLimitRuleService {
 
     private final RateLimitRuleMapper rateLimitRuleMapper;
+    private final PathRateLimitRuleCache pathRateLimitRuleCache;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -48,6 +50,7 @@ public class RateLimitRuleServiceImpl implements RateLimitRuleService {
         entity.setCreateTime(now);
         entity.setUpdateTime(now);
         rateLimitRuleMapper.insert(entity);
+        pathRateLimitRuleCache.invalidate();
         return entity.getId();
     }
 
@@ -75,6 +78,7 @@ public class RateLimitRuleServiceImpl implements RateLimitRuleService {
         }
         existing.setUpdateTime(LocalDateTime.now());
         rateLimitRuleMapper.updateById(existing);
+        pathRateLimitRuleCache.invalidate();
     }
 
     @Override
@@ -84,6 +88,7 @@ public class RateLimitRuleServiceImpl implements RateLimitRuleService {
             throw new BusinessException(ResultCode.NOT_FOUND);
         }
         rateLimitRuleMapper.deleteById(id);
+        pathRateLimitRuleCache.invalidate();
     }
 
     @Override

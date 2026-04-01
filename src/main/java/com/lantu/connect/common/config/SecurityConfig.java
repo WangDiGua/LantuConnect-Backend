@@ -4,8 +4,12 @@ import com.lantu.connect.auth.mapper.UserRoleRelMapper;
 import com.lantu.connect.auth.support.AccessTokenBlacklist;
 import com.lantu.connect.auth.support.SessionRevocationRegistry;
 import com.lantu.connect.common.filter.JwtAuthenticationFilter;
+import com.lantu.connect.common.filter.PathRateLimitWebFilter;
 import com.lantu.connect.common.filter.UnassignedUserAccessFilter;
+import com.lantu.connect.common.web.ClientIpResolver;
+import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.common.idempotency.IdempotencyFilter;
+import com.lantu.connect.sysconfig.service.PathRateLimitRuleCache;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.util.JsonStringEscaper;
 import com.lantu.connect.common.util.JwtUtil;
@@ -23,6 +27,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -52,6 +57,7 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http,
+                                           PathRateLimitWebFilter pathRateLimitWebFilter,
                                            JwtAuthenticationFilter jwtAuthenticationFilter,
                                            UnassignedUserAccessFilter unassignedUserAccessFilter,
                                            IdempotencyFilter idempotencyFilter) throws Exception {
@@ -95,17 +101,27 @@ public class SecurityConfig {
                         .requestMatchers(permitPatterns).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(pathRateLimitWebFilter, JwtAuthenticationFilter.class)
                 .addFilterAfter(unassignedUserAccessFilter, JwtAuthenticationFilter.class)
                 .addFilterAfter(idempotencyFilter, UnassignedUserAccessFilter.class);
         return http.build();
     }
 
     @Bean
+    public PathRateLimitWebFilter pathRateLimitWebFilter(PathRateLimitRuleCache pathRateLimitRuleCache,
+                                                         ClientIpResolver clientIpResolver,
+                                                         StringRedisTemplate stringRedisTemplate) {
+        return new PathRateLimitWebFilter(pathRateLimitRuleCache, clientIpResolver, stringRedisTemplate);
+    }
+
+    @Bean
     public JwtAuthenticationFilter jwtAuthenticationFilter(JwtUtil jwtUtil,
                                                            AccessTokenBlacklist accessTokenBlacklist,
                                                            SessionRevocationRegistry sessionRevocationRegistry,
-                                                           SecurityProperties securityProperties) {
-        return new JwtAuthenticationFilter(jwtUtil, accessTokenBlacklist, sessionRevocationRegistry, securityProperties);
+                                                           SecurityProperties securityProperties,
+                                                           ApiKeyScopeService apiKeyScopeService) {
+        return new JwtAuthenticationFilter(
+                jwtUtil, accessTokenBlacklist, sessionRevocationRegistry, securityProperties, apiKeyScopeService);
     }
 
     @Bean
