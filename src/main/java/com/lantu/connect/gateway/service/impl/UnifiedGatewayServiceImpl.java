@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.exception.BusinessException;
+import com.lantu.connect.common.web.ServletContextPathUtil;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.dashboard.dto.ExploreHubData;
@@ -80,6 +81,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private final ApiKeyScopeService apiKeyScopeService;
     private final GatewayUserPermissionService gatewayUserPermissionService;
     private final ResourceInvokeGrantService resourceInvokeGrantService;
+
+    @Value("${server.servlet.context-path:/regis}")
+    private String servletContextPath;
+
     private final AppLaunchTokenService appLaunchTokenService;
     private final GatewayGovernanceService gatewayGovernanceService;
     private final ProtocolInvokerRegistry protocolInvokerRegistry;
@@ -716,7 +721,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         boolean skillPublic = truthySkillPublic(ext.get("is_public"));
         String endpointOut = StringUtils.hasText(artifactUri) ? artifactUri.trim() : null;
         if (!skillPublic && StringUtils.hasText(artifactUri)) {
-            spec.put("artifactDownloadApi", "/api/resource-center/resources/" + id + "/skill-artifact");
+            spec.put("artifactDownloadApi",
+                    ServletContextPathUtil.join(servletContextPath, "/resource-center/resources/" + id + "/skill-artifact"));
             endpointOut = null;
         }
         return ResourceResolveVO.builder()

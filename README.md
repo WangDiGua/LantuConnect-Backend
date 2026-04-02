@@ -75,26 +75,20 @@ mysql -u root -p < sql/lantu_connect.sql
 
 ### 2. 配置说明
 
-配置已收敛为 **单一** `src/main/resources/application.yml`（文末以 `---` 定义 **`dev` profile**）。已不再使用 `application-dev.yml` / `application-prod.yml` 分文件；默认**不加** `spring.profiles.active` 时为上线向默认值。
+主配置为 `src/main/resources/application.yml`：**结构 + `${环境变量:默认}` 占位**；文末 `---` 为 **`dev` profile**。具体填法见 **`application-database.example.yml`**（复制为 **`application-database.yml`** 后按需修改，已 gitignore）。
 
-| 项 | 默认值 / 说明 |
-|----|----------------|
-| 数据库 | `DB_HOST`/`DB_PORT`/`DB_NAME` 默认 `localhost:3306` / `lantu_connect` |
-| 账号 | `DB_USER` / `DB_PASSWORD` 默认 `root` / `root` |
-| Redis | `REDIS_HOST` / `REDIS_PORT` 默认 `localhost` / `6379`（无密码可不配 `password`） |
-| RabbitMQ | `RABBITMQ_*`；**本地无 Rabbit 时**建议 `SPRING_PROFILES_ACTIVE=dev`（profile 内可将 `RABBITMQ_LISTENER_AUTO_STARTUP` 置为 `false`）或保证 Broker 已启动 |
-| JWT | `JWT_SECRET` 未设置时使用文件内开发用默认值；**生产务必改为环境变量** |
-| HTTPS | `REQUIRE_HTTPS=true` 时启用通道安全与 HSTS（见 `lantu.security.require-https`） |
-| Prometheus | 默认 `PERMIT_PROMETHEUS_WITHOUT_AUTH=false`，`/actuator/prometheus` 需鉴权；本地或受控内网裸拉取可设 `true` |
-| 敏感加解密 | `LANTU_ENCRYPTION_KEY` 覆盖默认密钥；生产禁止使用开发占位值 |
-| 生产 API 文档 | 默认关闭 SpringDoc；本地可 `EXPOSE_API_DOCS=true` |
-| 反向代理 | 置于 Nginx/Ingress 后可设 `TRUST_PROXY_FORWARDED_HEADERS=true` 以正确限流与审计客户端 IP |
-| MySQL TLS | 生产向可设 `DB_USE_SSL=true`；本机无证书时可设 `DB_USE_SSL=false` |
-| 日志 | `LOG_LEVEL_LANTU` 默认 `info`；排查 MyBatis 逐条 SQL 时可设 `LOG_LEVEL_MYBATIS=debug`（高流量慎用） |
-| 连接池 | `HIKARI_MAX_POOL_SIZE` / `HIKARI_MIN_IDLE` / `HIKARI_CONNECTION_TIMEOUT_MS` 等见 `application.yml` |
-| 技能外部目录 | `skill-external-catalog.yml`（由 `spring.config.import` 可选加载） |
+| 项 | 说明 |
+|----|------|
+| 推荐本地 | 对照 **application-database.example.yml** 维护 **application-database.yml**（库、Redis、RabbitMQ、JWT、`lantu.*`、`file.*`、`cors.*`、日志等） |
+| 环境变量 | 占位键名见 `application.yml`；Docker/K8s 可只注入变量、不写覆盖文件 |
+| 列表项 | 如 `lantu.api-deprecation.*-patterns`、`skill-pack-import.allowed-host-suffixes` 须在 YAML 中写多行列表（见 example） |
+| 技能外部目录 | `skill-external-catalog.yml`（`spring.config.import` 可选加载） |
 
-更敏感的本地覆盖可放在 **已被 .gitignore 忽略** 的 `application-local.yml` 中。
+可选：`application-local.yml`（已 gitignore）用于零散覆盖。
+
+**常规做法**：维护 **`application-database.yml`**／对照 **`application-database.example.yml`**，覆盖库表、Redis、JWT、`lantu.*`、`file.*`、`cors.*` 等所有业务向配置。
+
+也可用 **`.env`** + Docker Compose；Spring 不直接读取 `.env`，需由 Compose 或 shell `export` 注入为环境变量。
 
 **本地推荐启动示例（Windows PowerShell）：**
 
@@ -122,13 +116,13 @@ mvnw.cmd spring-boot:run -DskipTests
 
 服务启动后访问：
 
-- API 基础路径：`http://localhost:8080/api`
-- Swagger 文档：`http://localhost:8080/api/swagger-ui.html`
-- Actuator：`http://localhost:8080/api/actuator/health`
+- API 基础路径：`http://localhost:8080/regis`
+- Swagger 文档：`http://localhost:8080/regis/swagger-ui.html`
+- Actuator：`http://localhost:8080/regis/actuator/health`
 
 ## 资源中心与技能包（摘要）
 
-- **REST 前缀**：`/api/resource-center/resources`（见 `ResourceRegistryController`）：资源 CRUD、提审、版本、技能包上传与导入 URL 等。
+- **REST 前缀**：`/regis/resource-center/resources`（见 `ResourceRegistryController`）：资源 CRUD、提审、版本、技能包上传与导入 URL 等。
 - **技能包**：支持 multipart / JSON 元数据上传、HTTPS URL 导入、大文件 **分片断点续传**（`.../skills/package-upload/chunk/*`）；入库前 **安全扫描**（`SkillArtifactSafetyValidator`），语义与清单见 **Anthropic 子集校验**。
 - **skillRoot**：表 `t_resource_skill_ext.skill_root_path` 表示 zip 内子树根路径，用于子树校验与 resolve 规格中的 `skillRootPath`。
 - **制品存储**：`file.storage-type` 为 `local`（默认上传目录）或 `minio`；大文件分片会话目录默认为 `{upload-dir}/.skill-chunk-sessions/{uploadId}/`。
@@ -145,34 +139,34 @@ docker-compose up -d
 
 `docker-compose` **不会**强绑 `SPRING_PROFILES_ACTIVE=prod`；需本地联调可在环境或 `.env` 中设 `SPRING_PROFILES_ACTIVE=dev`。
 
-仓库内 `prometheus.yml` 默认抓取 `/api/actuator/prometheus`。自默认安全策略起该路径**不再匿名**：请在应用环境设置 `PERMIT_PROMETHEUS_WITHOUT_AUTH=true`（仅信任网络时，例如 `docker-compose` 可先 `export` 该变量再 `up`），或为 Prometheus 配置带 `Authorization: Bearer …` 的抓取，并将应用侧保持默认 `false`。详见 [docs/security-hardening.md](docs/security-hardening.md)。
+仓库内 `prometheus.yml` 默认抓取 `/regis/actuator/prometheus`。自默认安全策略起该路径**不再匿名**：请在应用环境设置 `PERMIT_PROMETHEUS_WITHOUT_AUTH=true`（仅信任网络时，例如 `docker-compose` 可先 `export` 该变量再 `up`），或为 Prometheus 配置带 `Authorization: Bearer …` 的抓取，并将应用侧保持默认 `false`。详见 [docs/security-hardening.md](docs/security-hardening.md)。
 
 ## API 概览
 
 | 模块 | 路径前缀 | 说明 |
 |------|----------|------|
-| 认证 | `/api/auth` | 登录、注册、JWT 刷新、密码修改 |
-| 资源中心 | `/api/resource-center/resources` | Agent/Skill/MCP/App/Dataset 等资源注册、审核、版本、**技能包上传/分片** |
-| Agent | `/api/agents` | Agent CRUD + 版本发布/回滚 |
-| Skill | `/api/v1/skills` | Skill CRUD + 调用（与资源中心 skill 并存时对齐以前端联调文档为准） |
-| MCP Server | `/api/v1/mcp-servers` | MCP 服务注册与 CRUD |
-| 应用 | `/api/v1/apps` | 智能应用 CRUD |
-| 数据集 | `/api/v1/datasets` | 数据集 CRUD + 权限申请 |
-| 提供商 | `/api/v1/providers` | 服务提供商 CRUD |
-| 分类 | `/api/v1/categories` | 分类树 CRUD |
-| 标签 | `/api/tags` | 标签管理 + 批量创建 |
-| 用户管理 | `/api/user-mgmt` | 用户/角色/API Key/Token/组织架构 |
-| 监控 | `/api/monitoring` | KPI、调用日志、告警、链路追踪 |
-| 健康检查 | `/api/health` | 健康配置 + 熔断器管理 |
-| 系统配置 | `/api/system-config` | 模型/限流/参数/安全/审计日志 |
-| 配额 | `/api/quotas` | 配额管理 |
-| 仪表盘 | `/api/dashboard` | 管理概览 + 用量统计 |
-| 审核 | `/api/audit` | Agent/Skill 审核流程 |
-| 评论 | `/api/reviews` | 评分评论 + 有用标记 |
-| 用户活动 | `/api/user` | 使用记录、收藏、个人统计 |
-| 用户设置 | `/api/user-settings` | 工作区设置、个人 API Key |
-| 通知 | `/api/notifications` | 通知列表、未读数、已读标记 |
-| 文件 | `/api/files` | 文件上传 |
+| 认证 | `/regis/auth` | 登录、注册、JWT 刷新、密码修改 |
+| 资源中心 | `/regis/resource-center/resources` | Agent/Skill/MCP/App/Dataset 等资源注册、审核、版本、**技能包上传/分片** |
+| Agent | `/regis/agents` | Agent CRUD + 版本发布/回滚 |
+| Skill | `/regis/v1/skills` | Skill CRUD + 调用（与资源中心 skill 并存时对齐以前端联调文档为准） |
+| MCP Server | `/regis/v1/mcp-servers` | MCP 服务注册与 CRUD |
+| 应用 | `/regis/v1/apps` | 智能应用 CRUD |
+| 数据集 | `/regis/v1/datasets` | 数据集 CRUD + 权限申请 |
+| 提供商 | `/regis/v1/providers` | 服务提供商 CRUD |
+| 分类 | `/regis/v1/categories` | 分类树 CRUD |
+| 标签 | `/regis/tags` | 标签管理 + 批量创建 |
+| 用户管理 | `/regis/user-mgmt` | 用户/角色/API Key/Token/组织架构 |
+| 监控 | `/regis/monitoring` | KPI、调用日志、告警、链路追踪 |
+| 健康检查 | `/regis/health` | 健康配置 + 熔断器管理 |
+| 系统配置 | `/regis/system-config` | 模型/限流/参数/安全/审计日志 |
+| 配额 | `/regis/quotas` | 配额管理 |
+| 仪表盘 | `/regis/dashboard` | 管理概览 + 用量统计 |
+| 审核 | `/regis/audit` | Agent/Skill 审核流程 |
+| 评论 | `/regis/reviews` | 评分评论 + 有用标记 |
+| 用户活动 | `/regis/user` | 使用记录、收藏、个人统计 |
+| 用户设置 | `/regis/user-settings` | 工作区设置、个人 API Key |
+| 通知 | `/regis/notifications` | 通知列表、未读数、已读标记 |
+| 文件 | `/regis/files` | 文件上传 |
 
 ## License
 

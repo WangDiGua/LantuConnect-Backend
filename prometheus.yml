@@ -6,6 +6,6 @@ global:
 
 scrape_configs:
   - job_name: 'nexusai-connect'
-    metrics_path: '/api/actuator/prometheus'
+    metrics_path: '/regis/actuator/prometheus'
     static_configs:
       - targets: ['app:8080']

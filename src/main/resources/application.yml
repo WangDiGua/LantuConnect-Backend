@@ -1,42 +1,30 @@
 # =============================================================================
-# application.yml — 唯一主配置（运维单文件维护）
+# application.yml — 结构与占位默认值（env / 命令行可覆盖）
 #
-# 生效顺序：命令行参数 > 环境变量 > 本文件默认值。可选 profile：dev（本地放宽，见文末 ---）
-# 默认不加启动参数即按「上线向」运行。本机无 RabbitMQ 或要强开 Swagger 时请设 SPRING_PROFILES_ACTIVE=dev
+# 真实推荐配置请编辑「复制后的」application-database.yml；模板见：
+#   application-database.example.yml（逐项示例与说明，已入库）
 #
-# 【运维常用环境变量】DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD DB_USE_SSL
-#   REDIS_HOST REDIS_PORT REDIS_PASSWORD
-#   RABBITMQ_HOST RABBITMQ_PORT RABBITMQ_USER RABBITMQ_PASSWORD RABBITMQ_LISTENER_AUTO_STARTUP
-#   JWT_SECRET LANTU_ENCRYPTION_KEY FIELD_ENCRYPTION_KEY
-#   FILE_UPLOAD_DIR FILE_STORAGE_TYPE MINIO_*  CORS_ORIGINS SSL_ENABLED
-# 文件内默认密钥仅供首次部署，上线前请改为环境变量注入并轮换。
-#
-# 【日志】MDC traceId；搜 [gateway.invoke]、AccessLogFilter
+# 加载：主文件 → optional application-local.yml → optional application-database.yml（后者优先）
 # =============================================================================
 
-# -----------------------------------------------------------------------------
-# HTTP：context-path /api；TLS 由网关/本机二选一（默认关闭，便于无证书直启）
-# -----------------------------------------------------------------------------
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
   servlet:
-    context-path: /api
+    context-path: ${SERVER_CONTEXT_PATH:/regis}
   ssl:
     enabled: ${SSL_ENABLED:false}
     key-store: ${SSL_KEY_STORE:classpath:keystore.p12}
     key-store-password: ${SSL_KEY_STORE_PASSWORD:}
     key-store-type: ${SSL_KEY_STORE_TYPE:PKCS12}
 
-# -----------------------------------------------------------------------------
-# Spring Boot：应用名、数据源、Redis、上传、消息队列、异步线程池、Flyway 等
-# -----------------------------------------------------------------------------
 spring:
   application:
-    name: nexusai-connect
+    name: ${SPRING_APPLICATION_NAME:nexusai-connect}
   config:
     import:
       - optional:classpath:skill-external-catalog.yml
       - optional:classpath:application-local.yml
+      - optional:classpath:application-database.yml
   devtools:
     restart:
       enabled: ${DEVTOOLS_RESTART_ENABLED:false}
@@ -50,24 +38,20 @@ spring:
       minimum-idle: ${HIKARI_MIN_IDLE:8}
       connection-timeout: ${HIKARI_CONNECTION_TIMEOUT_MS:30000}
       max-lifetime: ${HIKARI_MAX_LIFETIME_MS:1800000}
-      # 开发排查连接泄漏时可设为 6000～60000；生产保持 0
       leak-detection-threshold: ${HIKARI_LEAK_DETECTION_MS:0}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
-      # host: ${REDIS_HOST:192.168.5.130}
       port: ${REDIS_PORT:6379}
-      # 与公司其它系统共用同一 Redis 实例时，与运维约定独立逻辑库（默认 0）可显著降低撞 key 概率
       database: ${REDIS_DB:0}
-      # password: ${REDIS_PASSWORD:redispassword}
-      # 无密码时不要配置 password。若 Redis 有密码，可在此增加：password: ${REDIS_PASSWORD}
+      # 有密码时取消注释：password: ${REDIS_PASSWORD}
   servlet:
     multipart:
-      max-file-size: 100MB
-      max-request-size: 120MB
+      max-file-size: ${MULTIPART_MAX_FILE_SIZE:100MB}
+      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:120MB}
   jackson:
-    time-zone: Asia/Shanghai
-    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: ${JACKSON_TIMEZONE:Asia/Shanghai}
+    date-format: ${JACKSON_DATE_FORMAT:yyyy-MM-dd HH:mm:ss}
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
@@ -80,84 +64,63 @@ spring:
   task:
     execution:
       pool:
-        core-size: 8
-        max-size: 32
-        queue-capacity: 200
+        core-size: ${TASK_EXEC_POOL_CORE_SIZE:8}
+        max-size: ${TASK_EXEC_POOL_MAX_SIZE:32}
+        queue-capacity: ${TASK_EXEC_POOL_QUEUE_CAPACITY:200}
   flyway:
-    # 既有库请先在目标环境执行 sql/lantu_connect.sql 与 sql/migrations/*.sql，再设 FLYWAY_ENABLED=true 做版本钉扎
     enabled: ${FLYWAY_ENABLED:false}
     locations: classpath:db/migration
     baseline-on-migrate: true
     baseline-version: 0
 
-# -----------------------------------------------------------------------------
-# MyBatis-Plus：XML 映射路径、驼峰列名、逻辑删除取值
-# -----------------------------------------------------------------------------
 mybatis-plus:
   mapper-locations: classpath:mapper/**/*.xml
   configuration:
     map-underscore-to-camel-case: true
   global-config:
     db-config:
-      # MySQL 保留字列名（如 t_security_setting.key / value）需反引号包裹
       column-format: "`%s`"
       logic-delete-value: 1
       logic-not-delete-value: 0
 
-# -----------------------------------------------------------------------------
-# JWT：双 Token；access-token-expiry / refresh-token-expiry 单位为秒
-# 生产必须用环境变量 JWT_SECRET（≥32 字符）；JWT_SECRET 为空白时由代码使用内置仅开发用兜底
-# -----------------------------------------------------------------------------
 jwt:
   secret: ${JWT_SECRET:W9aAj8Gelv5D1BORiXMfx6LTYomqypuJHkIwK2ES3dhsbngPNFtcZ7rQz40UVC}
-  access-token-expiry: 7200
-  refresh-token-expiry: 604800
+  access-token-expiry: ${JWT_ACCESS_TOKEN_EXPIRY_SECONDS:7200}
+  refresh-token-expiry: ${JWT_REFRESH_TOKEN_EXPIRY_SECONDS:604800}
 
-# 会话列表地理位置（公网 IP 调用 ip-api.com，内网显示「局域网」；无外网时可设 enabled: false）
 geoip:
-  enabled: true
-  timeout-ms: 2000
+  enabled: ${GEOIP_ENABLED:true}
+  timeout-ms: ${GEOIP_TIMEOUT_MS:2000}
 
-# =============================================================================
-# lantu.* — 业务域安全、集成、日志开关、契约、幂等、技能包导入等（非 Spring 自有前缀）
-# =============================================================================
 lantu:
   encryption:
     key: ${LANTU_ENCRYPTION_KEY:bCJgWT36frAQZsUvui7ze0dYO92DcVGHwNkn8XoK5lPtqEya}
   security:
-    jwt-enabled: true
+    jwt-enabled: ${LANTU_SECURITY_JWT_ENABLED:true}
     allow-insecure-local-database-credentials: ${ALLOW_INSECURE_LOCAL_DB_CREDS:false}
-    allow-header-user-id-fallback: false
+    allow-header-user-id-fallback: ${LANTU_ALLOW_HEADER_USER_ID_FALLBACK:false}
     require-https: ${REQUIRE_HTTPS:false}
-    # 默认 false：/actuator/prometheus 需 JWT。本地/Docker 裸拉取指标可设 true（生产建议鉴权或内网隔离）
     permit-prometheus-without-auth: ${PERMIT_PROMETHEUS_WITHOUT_AUTH:false}
     expose-api-docs: ${EXPOSE_API_DOCS:false}
     trust-proxy-forwarded-headers: ${TRUST_PROXY_FORWARDED_HEADERS:false}
     rate-limit:
-      login-per-ip-per-minute: 50
-      login-per-username-per-minute: 25
-      register-per-ip-per-hour: 40
-      captcha-per-ip-per-minute: 45
-      send-sms-per-ip-per-hour: 30
+      login-per-ip-per-minute: ${LANTU_RL_LOGIN_PER_IP_MINUTE:50}
+      login-per-username-per-minute: ${LANTU_RL_LOGIN_PER_USERNAME_MINUTE:25}
+      register-per-ip-per-hour: ${LANTU_RL_REGISTER_PER_IP_HOUR:40}
+      captcha-per-ip-per-minute: ${LANTU_RL_CAPTCHA_PER_IP_MINUTE:45}
+      send-sms-per-ip-per-hour: ${LANTU_RL_SMS_PER_IP_HOUR:30}
     encryption-key: ${FIELD_ENCRYPTION_KEY:hVe1vQCXF4x0criksOqtS98bEmUJAHK76jdWMglp}
-  # 网关 HTTP 语义：invoke 在上游失败时是否映射为 4xx/5xx（默认 true，AccessLog 与 ALB 可据此聚合）
   gateway:
     invoke-http-status-reflects-upstream: ${INVOKE_HTTP_STATUS_REFLECTS_UPSTREAM:true}
   logging:
-    # 网关 invoke / invoke-stream：成功后是否打 INFO（默认 false）
     gateway-invoke-log-success: ${GATEWAY_INVOKE_LOG_SUCCESS:false}
-    # 是否在日志中附带请求 payload 截断（默认 false；勿对大密钥/生产大 body 开启）
     gateway-invoke-log-payload-preview: ${GATEWAY_INVOKE_LOG_PAYLOAD_PREVIEW:false}
-    # 失败日志中响应 body 预览最大字符数
-    gateway-invoke-body-preview-max: 1024
-    # payload 预览最大字符数（仅当 gateway-invoke-log-payload-preview=true）
-    gateway-invoke-payload-preview-max: 300
-    # 错误响应体预览：超过该字节则仅打占位符（0 表示不限制）；非流式接口仍受 ContentCachingResponseWrapper 整段缓存约束
-    access-log-error-body-max-bytes: 262144
-    # 请求 URI 含以下任一片段时不写错误 response 预览（如 /auth/login 返回 token）
-    access-log-skip-error-body-path-fragments: /auth/login,/auth/refresh,/auth/register
+    gateway-invoke-body-preview-max: ${GATEWAY_INVOKE_BODY_PREVIEW_MAX:1024}
+    gateway-invoke-payload-preview-max: ${GATEWAY_INVOKE_PAYLOAD_PREVIEW_MAX:300}
+    access-log-error-body-max-bytes: ${ACCESS_LOG_ERROR_BODY_MAX_BYTES:262144}
+    access-log-skip-error-body-path-fragments: ${ACCESS_LOG_SKIP_ERROR_BODY_PATH_FRAGMENTS:/auth/login,/auth/refresh,/auth/register}
   api-deprecation:
-    enabled: true
+    enabled: ${LANTU_API_DEPRECATION_ENABLED:true}
     deprecated-patterns:
       - /v1/**
       - /agents/**
@@ -165,59 +128,52 @@ lantu:
       - /v1/**
       - /agents/**
   system:
-    # network/apply、acl/publish 为模拟响应；false 时在代码中接真实下发逻辑
-    integration-mock: true
+    integration-mock: ${LANTU_SYSTEM_INTEGRATION_MOCK:true}
   integration:
     network-api-url: ${NETWORK_API_URL:}
     acl-api-url: ${ACL_API_URL:}
     mcp-allow-http: ${MCP_ALLOW_HTTP:false}
     mcp-allow-local-targets: ${MCP_ALLOW_LOCAL_TARGETS:false}
-    # MCP HTTP（Streamable）常见要求同时接受 JSON 与 SSE；与上游不符时再改
-    mcp-http-accept: application/json, text/event-stream
-    # 应用（app）启动令牌有效期（秒）：用于后端签发 launchToken/launchUrl 后一次性跳转
-    app-launch-token-ttl-seconds: 300
-    # MCP：同一 X-Api-Key 多次 /invoke 间复用上游 Mcp-Session-Id 的 Redis TTL（分钟，代码内 clamp 5–1440）
-    mcp-session-ttl-minutes: 45
-    # MCP HTTP 失败重试次数（每次请求独立；会话头在重试前会从 Redis 再读）
-    mcp-invoke-retries: 1
-    # OAuth2 client_credentials 请求令牌端点超时（秒）
+    mcp-http-accept: ${MCP_HTTP_ACCEPT:application/json, text/event-stream}
+    app-launch-token-ttl-seconds: ${APP_LAUNCH_TOKEN_TTL_SECONDS:300}
+    mcp-session-ttl-minutes: ${MCP_SESSION_TTL_MINUTES:45}
+    mcp-invoke-retries: ${MCP_INVOKE_RETRIES:1}
     oauth2:
-      connect-timeout-sec: 15
+      connect-timeout-sec: ${OAUTH2_CONNECT_TIMEOUT_SEC:15}
   notification:
     sms-enabled: ${NOTIFICATION_SMS_ENABLED:false}
     email-enabled: ${NOTIFICATION_EMAIL_ENABLED:false}
   contract:
-    freeze-version: 2026-03-contract-v1
-    freeze-effective-date: 2026-03-24
+    freeze-version: ${LANTU_CONTRACT_FREEZE_VERSION:2026-03-contract-v1}
+    freeze-effective-date: ${LANTU_CONTRACT_FREEZE_EFFECTIVE_DATE:2026-03-24}
   idempotency:
-    enabled: true
-    processing-ttl-seconds: 60
-    success-ttl-seconds: 86400
-  # 技能包从 URL 拉取：SSRF 防护、大小与超时（allowed-host-suffixes 非空时仅允许匹配主机）
+    enabled: ${LANTU_IDEMPOTENCY_ENABLED:true}
+    processing-ttl-seconds: ${LANTU_IDEMPOTENCY_PROCESSING_TTL_SECONDS:60}
+    success-ttl-seconds: ${LANTU_IDEMPOTENCY_SUCCESS_TTL_SECONDS:86400}
   skill-pack-import:
-    max-bytes: 26214400
-    # 跨境/弱网易 connect timed out，可适当加大（或通过 SKILL_PACK_IMPORT_CONNECT_TIMEOUT 覆盖）
+    max-bytes: ${SKILL_PACK_IMPORT_MAX_BYTES:26214400}
     connect-timeout-seconds: ${SKILL_PACK_IMPORT_CONNECT_TIMEOUT:45}
-    read-timeout-seconds: 90
-    # 跟随 Location 的最大次数（不含最终 200 响应）
-    max-redirects: 5
-    # GitHub 等直连易 Connection reset，可适当重试（每次请求独立计数）
-    fetch-retries: 3
-    fetch-retry-delay-ms: 1000
+    read-timeout-seconds: ${SKILL_PACK_IMPORT_READ_TIMEOUT_SECONDS:90}
+    max-redirects: ${SKILL_PACK_IMPORT_MAX_REDIRECTS:5}
+    fetch-retries: ${SKILL_PACK_IMPORT_FETCH_RETRIES:3}
+    fetch-retry-delay-ms: ${SKILL_PACK_IMPORT_FETCH_RETRY_DELAY_MS:1000}
     https-only: ${SKILL_PACK_IMPORT_HTTPS_ONLY:true}
     allowed-host-suffixes: [ ]
-    # 为 true 时必须配置 allowed-host-suffixes（缓解 DNS 重绑定类 SSRF）
     require-allowed-host-suffixes: ${SKILL_PACK_IMPORT_REQUIRE_SUFFIX:false}
-    # Git HTTPS 浅克隆（*.git 或 github/gitlab/bitbucket 的 /owner/repo）；关闭则仅 HTTP 下载制品
     git-clone-enabled: ${SKILL_PACK_GIT_CLONE_ENABLED:true}
-    git-clone-timeout-seconds: 120
-    git-clone-allow-bare-repo-paths: true
-    git-bare-repo-host-suffixes: [ github.com, www.github.com, gitlab.com, www.gitlab.com, bitbucket.org, www.bitbucket.org, gitee.com, www.gitee.com ]
-    git-clone-max-unpacked-bytes: 41943040
+    git-clone-timeout-seconds: ${SKILL_PACK_GIT_CLONE_TIMEOUT_SECONDS:120}
+    git-clone-allow-bare-repo-paths: ${SKILL_PACK_GIT_CLONE_ALLOW_BARE:true}
+    git-bare-repo-host-suffixes:
+      - github.com
+      - www.github.com
+      - gitlab.com
+      - www.gitlab.com
+      - bitbucket.org
+      - www.bitbucket.org
+      - gitee.com
+      - www.gitee.com
+    git-clone-max-unpacked-bytes: ${SKILL_PACK_GIT_CLONE_MAX_UNPACKED_BYTES:41943040}
 
-# -----------------------------------------------------------------------------
-# Resilience4j：熔断 / 限流 / 重试 / 舱壁 / 时限；实例名与 @CircuitBreaker(name="mcpInvoke") 等对应
-# -----------------------------------------------------------------------------
 resilience4j:
   circuitbreaker:
     configs:
@@ -334,16 +290,10 @@ resilience4j:
       mcpInvoke:
         base-config: default
 
-# 文件与技能包制品存储：storage-type=local（默认，落盘到 upload-dir）或 minio（对象存储，需配置 minio.*）
-# -----------------------------------------------------------------------------
-# 本地上传目录或 MinIO；artifact 与上传接口共用 storage-type
-# 本机开发：SPRING_PROFILES_ACTIVE=dev（文末 profile 覆盖 upload-dir 等）
-# -----------------------------------------------------------------------------
 file:
   upload-dir: ${FILE_UPLOAD_DIR:/data/nexusai/uploads}
-  max-size-mb: 50
-  allowed-types: pdf,docx,csv,json,parquet,xlsx,jpg,jpeg,png,gif,svg
-  # 存储模式 local | minio：上传与技能包下载均只使用当前模式（artifact_uri 须与该模式一致，不混合回退）
+  max-size-mb: ${FILE_MAX_SIZE_MB:50}
+  allowed-types: ${FILE_ALLOWED_TYPES:pdf,docx,csv,json,parquet,xlsx,jpg,jpeg,png,gif,svg}
   storage-type: ${FILE_STORAGE_TYPE:local}
   minio:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
@@ -351,16 +301,10 @@ file:
     secret-key: ${MINIO_SECRET_KEY:minioadmin}
     bucket: ${MINIO_BUCKET:nexusai-connect}
 
-# -----------------------------------------------------------------------------
-# 浏览器 CORS：多个来源用逗号分隔；relax-localhost=true 时额外允许 localhost/127.0.0.1 任意端口（Vite 等）
-# -----------------------------------------------------------------------------
 cors:
   allowed-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:5173}
   relax-localhost: ${CORS_RELAX_LOCALHOST:true}
 
-# -----------------------------------------------------------------------------
-# OpenAPI 3 / Swagger UI 路径（是否匿名由 Security 与 lantu.security.expose-api-docs 决定）
-# -----------------------------------------------------------------------------
 springdoc:
   api-docs:
     path: /v3/api-docs
@@ -369,9 +313,6 @@ springdoc:
     path: /swagger-ui.html
     enabled: ${SPRINGDOC_UI_ENABLED:false}
 
-# -----------------------------------------------------------------------------
-# Actuator：健康、信息、Prometheus 指标；prometheus 是否匿名见 lantu.security.permit-prometheus-without-auth
-# -----------------------------------------------------------------------------
 management:
   endpoints:
     web:
@@ -382,18 +323,12 @@ management:
       prometheus:
         enabled: true
 
-# -----------------------------------------------------------------------------
-# Logback 细粒度见 logback-spring.xml
-# -----------------------------------------------------------------------------
 logging:
   level:
     com.lantu.connect: ${LOG_LEVEL_LANTU:info}
     com.lantu.connect.common.mybatis: ${LOG_LEVEL_MYBATIS:info}
     org.springframework.web: ${LOG_LEVEL_SPRING_WEB:info}
 
-# =============================================================================
-# profile: dev — 本地开发（SPRING_PROFILES_ACTIVE=dev）
-# =============================================================================
 ---
 spring:
   config:

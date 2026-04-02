@@ -3,6 +3,7 @@ package com.lantu.connect.gateway.security;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.exception.BusinessException;
+import com.lantu.connect.common.web.ServletContextPathUtil;
 import com.lantu.connect.common.result.ResultCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,6 +30,9 @@ public class AppLaunchTokenService {
     @Value("${lantu.integration.app-launch-token-ttl-seconds:300}")
     private long ttlSeconds;
 
+    @Value("${server.servlet.context-path:/regis}")
+    private String servletContextPath;
+
     public LaunchTicket issue(Long resourceId, String appUrl, String apiKeyId, Long userId) {
         if (resourceId == null || !StringUtils.hasText(appUrl) || !StringUtils.hasText(apiKeyId)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "应用启动参数不完整");
@@ -43,7 +47,7 @@ public class AppLaunchTokenService {
         }
         long ttl = Math.max(30L, Math.min(1800L, ttlSeconds));
         stringRedisTemplate.opsForValue().set(KEY_PREFIX + token, payload, Duration.ofSeconds(ttl));
-        return new LaunchTicket(token, "/api/catalog/apps/launch?token=" + token);
+        return new LaunchTicket(token, ServletContextPathUtil.join(servletContextPath, "/catalog/apps/launch") + "?token=" + token);
     }
 
     public AppLaunchClaims consume(String token) {
