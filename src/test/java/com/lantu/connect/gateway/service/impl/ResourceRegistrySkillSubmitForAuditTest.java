@@ -19,7 +19,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -56,16 +55,18 @@ class ResourceRegistrySkillSubmitForAuditTest {
     private ResourceRegistryServiceImpl resourceRegistryService;
 
     @Test
-    void submitForAuditRejectsSkillWhenPackNotValid() {
+    void submitForAuditAllowsSkillWhenArtifactPresentEvenIfPackInvalid() {
         long uid = 1L;
         long rid = 99L;
         when(platformRoleMapper.selectRolesByUserId(uid)).thenReturn(List.of());
         stubResourceQueries(rid, uid, "invalid");
         when(jdbcTemplate.queryForObject(contains("t_audit_item"), eq(Integer.class), any(), any())).thenReturn(0);
+        doReturn(1).when(jdbcTemplate).update(anyString(), any(Object[].class));
+        when(jdbcTemplate.queryForList(anyString())).thenReturn(List.of());
 
-        assertThrows(BusinessException.class, () -> resourceRegistryService.submitForAudit(uid, rid));
+        resourceRegistryService.submitForAudit(uid, rid);
 
-        verify(jdbcTemplate, never()).update(
+        verify(jdbcTemplate, atLeastOnce()).update(
                 contains("UPDATE t_resource SET status"),
                 eq(ResourceLifecycleStateMachine.STATUS_PENDING_REVIEW),
                 eq(rid));

@@ -55,6 +55,8 @@ public class ResourceUpsertRequest {
     private Map<String, Object> manifest;
     /** 入口文档相对路径，如 SKILL.md。 */
     private String entryDoc;
+    /** zip 内技能根目录（可选），与上传 skillRoot 一致。 */
+    private String skillRootPath;
     private Long parentResourceId;
     private String displayTemplate;
     private Map<String, Object> parametersSchema;

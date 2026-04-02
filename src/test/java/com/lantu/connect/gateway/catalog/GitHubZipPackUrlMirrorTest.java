@@ -27,4 +27,22 @@ class GitHubZipPackUrlMirrorTest {
         String out = mirror.applyIfConfigured(u, cfg);
         assertThat(out).startsWith("https://gh-proxy.test/https%3A%2F%2Fgithub.com%2Fo%2Fr%2Farchive%2Frefs%2Fheads%2Fmain.zip");
     }
+
+    @Test
+    void relativePrefixIsIgnored() {
+        SkillExternalCatalogProperties.GithubZipMirror cfg = new SkillExternalCatalogProperties.GithubZipMirror();
+        cfg.setMode("prefix-encoded");
+        cfg.setPrefix("admin");
+        String u = "https://github.com/o/r/archive/refs/heads/main.zip";
+        assertThat(mirror.applyIfConfigured(u, cfg)).isEqualTo(u);
+    }
+
+    @Test
+    void repairsMistakenRelativePrefixEncoded() {
+        String broken = "admin/https%3A%2F%2Fgithub.com%2Fo%2Fr%2Farchive%2Frefs%2Fheads%2Fmain.zip";
+        SkillExternalCatalogProperties.GithubZipMirror cfg = new SkillExternalCatalogProperties.GithubZipMirror();
+        cfg.setMode("none");
+        assertThat(mirror.applyIfConfigured(broken, cfg))
+                .isEqualTo("https://github.com/o/r/archive/refs/heads/main.zip");
+    }
 }

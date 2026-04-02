@@ -2,6 +2,7 @@ package com.lantu.connect.gateway.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.lantu.connect.common.result.PageResult;
+import com.lantu.connect.gateway.catalog.GitHubZipPackUrlMirror;
 import com.lantu.connect.gateway.catalog.SkillExternalCatalogDedupeKeys;
 import com.lantu.connect.gateway.config.SkillExternalCatalogProperties;
 import com.lantu.connect.gateway.dto.SkillExternalCatalogItemVO;
@@ -199,11 +200,13 @@ public class SkillExternalCatalogPersistenceService {
     }
 
     private static SkillExternalCatalogItemVO toVo(SkillExternalCatalogItem e) {
+        String pack = e.getPackUrl() != null ? e.getPackUrl() : "";
+        pack = GitHubZipPackUrlMirror.repairAccidentalRelativeMirrorPrefix(pack);
         return SkillExternalCatalogItemVO.builder()
                 .id(e.getExternalId())
                 .name(e.getName())
                 .summary(e.getSummary())
-                .packUrl(e.getPackUrl())
+                .packUrl(pack)
                 .licenseNote(e.getLicenseNote())
                 .sourceUrl(e.getSourceUrl())
                 .stars(e.getStars())

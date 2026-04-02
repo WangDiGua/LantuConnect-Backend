@@ -679,7 +679,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private ResourceResolveVO resolveSkill(Map<String, Object> base, String version) {
         Long id = longValue(base.get("id"));
         Map<String, Object> ext = queryOne("""
-                        SELECT skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, spec_json, parameters_schema, is_public
+                        SELECT skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, spec_json, parameters_schema, is_public, pack_validation_status, skill_root_path
                         FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
                         """,
                 id);
@@ -704,6 +704,12 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         }
         if (StringUtils.hasText(valueOf(ext.get("artifact_sha256")))) {
             spec.put("artifactSha256", valueOf(ext.get("artifact_sha256")).trim());
+        }
+        if (StringUtils.hasText(valueOf(ext.get("pack_validation_status")))) {
+            spec.put("packValidationStatus", valueOf(ext.get("pack_validation_status")).trim().toLowerCase(Locale.ROOT));
+        }
+        if (StringUtils.hasText(valueOf(ext.get("skill_root_path")))) {
+            spec.put("skillRootPath", valueOf(ext.get("skill_root_path")).trim());
         }
         spec.put("packFormat", valueOf(ext.get("skill_type")));
         String artifactUri = valueOf(ext.get("artifact_uri"));

@@ -52,6 +52,8 @@ public class ResourceManageVO {
     private String packValidationStatus;
     private LocalDateTime packValidatedAt;
     private String packValidationMessage;
+    /** zip 内技能根（语义校验子树）；空表示整包 */
+    private String skillRootPath;
     private Long parentResourceId;
     private String displayTemplate;
     private Map<String, Object> parametersSchema;

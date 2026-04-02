@@ -25,4 +25,10 @@ public class SkillPackJsonUploadRequest {
     private String filename;
 
     private Long resourceId;
+
+    /**
+     * zip 内技能根目录（可选）：仅对该子树做 Anthropic 单包语义校验；制品仍保存完整 zip。
+     */
+    @Size(max = 512)
+    private String skillRoot;
 }

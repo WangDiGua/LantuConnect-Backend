@@ -13,6 +13,7 @@ import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -109,6 +110,19 @@ public class GlobalExceptionHandler {
      * 常见原因：仅注册了 multipart 的后端版本上却以 application/json 调用；或反向。
      * 当前技能包上传同时支持 multipart 与 JSON（Base64），仍不匹配时请核对路径与 Content-Type。
      */
+    /**
+     * 常见于前端误将 multipart 发成 JSON（如 file 被序列化为空对象），或字段类型与 DTO 不符。
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public R<Void> handleMessageNotReadable(HttpMessageNotReadableException e, HttpServletRequest request) {
+        log.warn("HTTP message not readable traceId={} uri={}: {}",
+                TraceLogging.traceIdOrDash(), request.getRequestURI(), abbreviateLogMessage(e.getMessage(), 500));
+        String msg = "请求体无法解析。技能包上传请使用 multipart/form-data（字段 file 为文件二进制），"
+                + "或使用 application/json 且字段 file / fileBase64 为 Base64 字符串；勿将 file 传为 JSON 对象。";
+        return R.fail(ResultCode.PARAM_ERROR, msg);
+    }
+
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<R<Void>> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException e,
                                                               HttpServletRequest request) {

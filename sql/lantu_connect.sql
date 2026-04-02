@@ -971,6 +971,7 @@ CREATE TABLE `t_resource_skill_ext`  (
   `pack_validation_status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'none' COMMENT 'none/pending/valid/invalid',
   `pack_validated_at` datetime NULL DEFAULT NULL,
   `pack_validation_message` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
+  `skill_root_path` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT 'zip内技能根子目录，语义校验作用域',
   PRIMARY KEY (`resource_id`) USING BTREE,
   INDEX `idx_skill_ext_parent`(`parent_resource_id` ASC) USING BTREE,
   INDEX `idx_skill_pack_validation`(`pack_validation_status` ASC) USING BTREE,
@@ -980,7 +981,7 @@ CREATE TABLE `t_resource_skill_ext`  (
 -- ----------------------------
 -- Records of t_resource_skill_ext
 -- ----------------------------
-INSERT INTO `t_resource_skill_ext` VALUES (31, 'anthropic_v1', 'https://example.com/skills/demo-skill-pack.zip', NULL, '{\"name\": \"demo-skill-pack\", \"version\": \"1.0.0\"}', 'SKILL.md', 'TOOL', NULL, NULL, NULL, NULL, 1, 10, 'valid', NULL, NULL);
+INSERT INTO `t_resource_skill_ext` VALUES (31, 'anthropic_v1', 'https://example.com/skills/demo-skill-pack.zip', NULL, '{\"name\": \"demo-skill-pack\", \"version\": \"1.0.0\"}', 'SKILL.md', 'TOOL', NULL, NULL, NULL, NULL, 1, 10, 'valid', NULL, NULL, NULL);
 
 -- ----------------------------
 -- Table structure for t_resource_tag_rel

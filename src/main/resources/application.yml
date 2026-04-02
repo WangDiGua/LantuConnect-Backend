@@ -1,26 +1,31 @@
 # =============================================================================
-# application.yml — NexusAI Connect 主配置（默认 profile，偏本地与联调）
+# application.yml — 唯一主配置（运维单文件维护）
 #
-# 【配置怎么生效】优先级从高到低：
-#   命令行参数 → 操作系统环境变量 → application-{profile}.yml → 本文件
-#   激活生产：启动参数或环境变量 SPRING_PROFILES_ACTIVE=prod（叠加 application-prod.yml）
+# 生效顺序：命令行参数 > 环境变量 > 本文件默认值。可选 profile：dev（本地放宽，见文末 ---）
+# 默认不加启动参数即按「上线向」运行。本机无 RabbitMQ 或要强开 Swagger 时请设 SPRING_PROFILES_ACTIVE=dev
 #
-# 【环境变量速查】数据库/缓存/密钥（详见各小节）
-#   DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD
-#   REDIS_HOST REDIS_PORT  （可选 REDIS_PASSWORD）
-#   JWT_SECRET  LANTU_ENCRYPTION_KEY  MCP_ALLOW_HTTP
-#   ALLOW_INSECURE_LOCAL_DB_CREDS  GATEWAY_INVOKE_LOG_SUCCESS 等
+# 【运维常用环境变量】DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD DB_USE_SSL
+#   REDIS_HOST REDIS_PORT REDIS_PASSWORD
+#   RABBITMQ_HOST RABBITMQ_PORT RABBITMQ_USER RABBITMQ_PASSWORD RABBITMQ_LISTENER_AUTO_STARTUP
+#   JWT_SECRET LANTU_ENCRYPTION_KEY FIELD_ENCRYPTION_KEY
+#   FILE_UPLOAD_DIR FILE_STORAGE_TYPE MINIO_*  CORS_ORIGINS SSL_ENABLED
+# 文件内默认密钥仅供首次部署，上线前请改为环境变量注入并轮换。
 #
-# 【日志与排障】MDC 键 traceId 由 TraceIdFilter 注入；业务可搜 [gateway.invoke]、AccessLogFilter 的 >>>
+# 【日志】MDC traceId；搜 [gateway.invoke]、AccessLogFilter
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# HTTP：全局 Servlet 路径前缀 /api（例：http://主机:8080/api/actuator/health）
+# HTTP：context-path /api；TLS 由网关/本机二选一（默认关闭，便于无证书直启）
 # -----------------------------------------------------------------------------
 server:
   port: 8080
   servlet:
     context-path: /api
+  ssl:
+    enabled: ${SSL_ENABLED:false}
+    key-store: ${SSL_KEY_STORE:classpath:keystore.p12}
+    key-store-password: ${SSL_KEY_STORE_PASSWORD:}
+    key-store-type: ${SSL_KEY_STORE_TYPE:PKCS12}
 
 # -----------------------------------------------------------------------------
 # Spring Boot：应用名、数据源、Redis、上传、消息队列、异步线程池、Flyway 等
@@ -31,15 +36,12 @@ spring:
   config:
     import:
       - optional:classpath:skill-external-catalog.yml
-      # 本地覆盖（api-key 等），文件见 .gitignore，勿提交仓库
       - optional:classpath:application-local.yml
-  # 配合 spring-boot-devtools：本地改代码并编译后自动重启，无需每次手动停启进程
   devtools:
     restart:
-      enabled: true
+      enabled: ${DEVTOOLS_RESTART_ENABLED:false}
   datasource:
-    # MySQL JDBC；本地默认 localhost:3306 / lantu_connect；生产请 useSSL 与账号策略见 application-prod.yml
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:lantu_connect}?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:lantu_connect}?useUnicode=true&characterEncoding=UTF-8&useSSL=${DB_USE_SSL:false}&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=${DB_ALLOW_PUBLIC_KEY_RETRIEVAL:true}
     username: ${DB_USER:root}
     password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -52,10 +54,10 @@ spring:
       leak-detection-threshold: ${HIKARI_LEAK_DETECTION_MS:0}
   data:
     redis:
-      # host: ${REDIS_HOST:localhost}
-      host: ${REDIS_HOST:192.168.5.130}
-      # port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:redispassword}
+      host: ${REDIS_HOST:localhost}
+      # host: ${REDIS_HOST:192.168.5.130}
+      port: ${REDIS_PORT:6379}
+      # password: ${REDIS_PASSWORD:redispassword}
       # 无密码时不要配置 password。若 Redis 有密码，可在此增加：password: ${REDIS_PASSWORD}
   servlet:
     multipart:
@@ -70,7 +72,6 @@ spring:
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
     virtual-host: ${RABBITMQ_VHOST:/}
-    # 本机未起 RabbitMQ 时可设为 false，避免监听容器反复报错（生产勿关）
     listener:
       simple:
         auto-startup: ${RABBITMQ_LISTENER_AUTO_STARTUP:true}
@@ -106,7 +107,7 @@ mybatis-plus:
 # 生产必须用环境变量 JWT_SECRET（≥32 字符）；JWT_SECRET 为空白时由代码使用内置仅开发用兜底
 # -----------------------------------------------------------------------------
 jwt:
-  secret: ${JWT_SECRET:Lc-dev-z9QmK4vR7nX2pW8hYtSbAeUgOiJ5wFxC3jHlMnP6qR0sT1uVkxY7bNd-local-only}
+  secret: ${JWT_SECRET:W9aAj8Gelv5D1BORiXMfx6LTYomqypuJHkIwK2ES3dhsbngPNFtcZ7rQz40UVC}
   access-token-expiry: 7200
   refresh-token-expiry: 604800
 
@@ -119,19 +120,16 @@ geoip:
 # lantu.* — 业务域安全、集成、日志开关、契约、幂等、技能包导入等（非 Spring 自有前缀）
 # =============================================================================
 lantu:
-  # 敏感字段加解密主密钥；空则依赖代码策略；生产请设 LANTU_ENCRYPTION_KEY（长度建议 ≥32）
   encryption:
-    key: ${LANTU_ENCRYPTION_KEY:}
+    key: ${LANTU_ENCRYPTION_KEY:bCJgWT36frAQZsUvui7ze0dYO92DcVGHwNkn8XoK5lPtqEya}
   security:
     jwt-enabled: true
-    # 本地 true：允许 root/弱口令数据源（仅开发）；生产见 application-prod.yml
-    allow-insecure-local-database-credentials: ${ALLOW_INSECURE_LOCAL_DB_CREDS:true}
+    allow-insecure-local-database-credentials: ${ALLOW_INSECURE_LOCAL_DB_CREDS:false}
     allow-header-user-id-fallback: false
     require-https: ${REQUIRE_HTTPS:false}
     # 默认 false：/actuator/prometheus 需 JWT。本地/Docker 裸拉取指标可设 true（生产建议鉴权或内网隔离）
     permit-prometheus-without-auth: ${PERMIT_PROMETHEUS_WITHOUT_AUTH:false}
-    expose-api-docs: ${EXPOSE_API_DOCS:true}
-    # 仅在 Nginx/Ingress 等可信代理后设为 true，否则勿信任 X-Forwarded-For
+    expose-api-docs: ${EXPOSE_API_DOCS:false}
     trust-proxy-forwarded-headers: ${TRUST_PROXY_FORWARDED_HEADERS:false}
     rate-limit:
       login-per-ip-per-minute: 50
@@ -139,7 +137,7 @@ lantu:
       register-per-ip-per-hour: 40
       captcha-per-ip-per-minute: 45
       send-sms-per-ip-per-hour: 30
-    encryption-key: ${FIELD_ENCRYPTION_KEY:}
+    encryption-key: ${FIELD_ENCRYPTION_KEY:hVe1vQCXF4x0criksOqtS98bEmUJAHK76jdWMglp}
   # 网关 HTTP 语义：invoke 在上游失败时是否映射为 4xx/5xx（默认 true，AccessLog 与 ALB 可据此聚合）
   gateway:
     invoke-http-status-reflects-upstream: ${INVOKE_HTTP_STATUS_REFLECTS_UPSTREAM:true}
@@ -170,10 +168,8 @@ lantu:
   integration:
     network-api-url: ${NETWORK_API_URL:}
     acl-api-url: ${ACL_API_URL:}
-    # MCP 出站是否允许 http://（默认 true 便于本机联调；生产请叠 prod profile 或设 MCP_ALLOW_HTTP=false）
-    mcp-allow-http: ${MCP_ALLOW_HTTP:true}
-    # MCP 出站是否允许 localhost/127.0.0.1/私网解析（默认 true 本机联调；生产设 MCP_ALLOW_LOCAL_TARGETS=false）
-    mcp-allow-local-targets: ${MCP_ALLOW_LOCAL_TARGETS:true}
+    mcp-allow-http: ${MCP_ALLOW_HTTP:false}
+    mcp-allow-local-targets: ${MCP_ALLOW_LOCAL_TARGETS:false}
     # MCP HTTP（Streamable）常见要求同时接受 JSON 与 SSE；与上游不符时再改
     mcp-http-accept: application/json, text/event-stream
     # 应用（app）启动令牌有效期（秒）：用于后端签发 launchToken/launchUrl 后一次性跳转
@@ -339,6 +335,7 @@ resilience4j:
 # 文件与技能包制品存储：storage-type=local（默认，落盘到 upload-dir）或 minio（对象存储，需配置 minio.*）
 # -----------------------------------------------------------------------------
 # 本地上传目录或 MinIO；artifact 与上传接口共用 storage-type
+# 本机开发：SPRING_PROFILES_ACTIVE=dev（文末 profile 覆盖 upload-dir 等）
 # -----------------------------------------------------------------------------
 file:
   upload-dir: ${FILE_UPLOAD_DIR:/data/nexusai/uploads}
@@ -365,8 +362,10 @@ cors:
 springdoc:
   api-docs:
     path: /v3/api-docs
+    enabled: ${SPRINGDOC_ENABLED:false}
   swagger-ui:
     path: /swagger-ui.html
+    enabled: ${SPRINGDOC_UI_ENABLED:false}
 
 # -----------------------------------------------------------------------------
 # Actuator：健康、信息、Prometheus 指标；prometheus 是否匿名见 lantu.security.permit-prometheus-without-auth
@@ -382,9 +381,49 @@ management:
         enabled: true
 
 # -----------------------------------------------------------------------------
-# Logback 根日志级别补充（细粒度见 logback-spring.xml 的 springProfile dev/prod/default）
+# Logback 细粒度见 logback-spring.xml
 # -----------------------------------------------------------------------------
 logging:
   level:
     com.lantu.connect: ${LOG_LEVEL_LANTU:info}
     com.lantu.connect.common.mybatis: ${LOG_LEVEL_MYBATIS:info}
+    org.springframework.web: ${LOG_LEVEL_SPRING_WEB:info}
+
+# =============================================================================
+# profile: dev — 本地开发（SPRING_PROFILES_ACTIVE=dev）
+# =============================================================================
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  devtools:
+    restart:
+      enabled: true
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: ${RABBITMQ_LISTENER_AUTO_STARTUP:false}
+
+file:
+  upload-dir: ${FILE_UPLOAD_DIR:D:/LantuConnect/LantuConnect-Backend/skills_local_data}
+
+lantu:
+  security:
+    allow-insecure-local-database-credentials: true
+    expose-api-docs: true
+    require-https: false
+  integration:
+    mcp-allow-http: true
+    mcp-allow-local-targets: true
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
+logging:
+  level:
+    com.lantu.connect: debug
+    org.springframework.web: info

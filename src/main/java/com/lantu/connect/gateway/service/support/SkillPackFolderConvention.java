@@ -46,7 +46,8 @@ public final class SkillPackFolderConvention {
                     }
                     entryCount++;
                     if (entryCount > AnthropicSkillPackValidator.MAX_ENTRIES) {
-                        throw new BusinessException(ResultCode.PARAM_ERROR, "zip 内条目过多");
+                        throw new BusinessException(ResultCode.PARAM_ERROR,
+                                "zip 内文件过多（上限 " + AnthropicSkillPackValidator.MAX_ENTRIES + "）");
                     }
                     String name = normalizeEntryName(entry.getName());
                     if (name == null) {

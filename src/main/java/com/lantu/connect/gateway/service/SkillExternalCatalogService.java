@@ -8,6 +8,8 @@ import com.lantu.connect.gateway.catalog.SkillCatalogMirrorClient;
 import com.lantu.connect.gateway.catalog.SkillExternalCatalogDedupeKeys;
 import com.lantu.connect.gateway.config.SkillExternalCatalogProperties;
 import com.lantu.connect.gateway.dto.SkillExternalCatalogItemVO;
+import com.lantu.connect.gateway.skillhub.SkillHubCatalogClient;
+import com.lantu.connect.gateway.skillhub.dto.SkillHubSearchSkillJson;
 import com.lantu.connect.gateway.skillsmp.GitHubRepoRef;
 import com.lantu.connect.gateway.skillsmp.SkillsMpCatalogClient;
 import com.lantu.connect.gateway.skillsmp.dto.SkillsMpSkillJson;
@@ -29,7 +31,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 技能在线市场：SkillsMP + 自建镜像 JSON + YAML；出站代理与 GitHub zip 镜像由配置完成。
+ * 技能在线市场：SkillHub（默认）+ SkillsMP + 多地址 JSON 镜像 + YAML；出站代理与 GitHub zip 镜像由配置完成。
  */
 @Service
 @RequiredArgsConstructor
@@ -39,8 +41,11 @@ public class SkillExternalCatalogService {
     private static final String LICENSE_SKILLSMP = "数据来自 SkillsMP（多关键词搜索、按星标聚合）。"
             + "ZIP 默认指向 GitHub 分支源码包；若已配置 github-zip-mirror 则展示为镜像 URL。"
             + "仅当仓库根目录含 SKILL.md 时「从 URL 导入」易一次成功。";
+    private static final String LICENSE_SKILLHUB = "数据来自 SkillHub 公开搜索 API（agentskillhub.dev 等；sourceIdentifier+slug 推导 GitHub 树路径）。"
+            + "ZIP 为仓库默认分支整包；子目录技能请以直链 zip 或平台导出为准。";
 
     private final SkillExternalCatalogRuntimeConfigService runtimeConfigService;
+    private final SkillHubCatalogClient skillHubCatalogClient;
     private final SkillsMpCatalogClient skillsMpCatalogClient;
     private final SkillCatalogMirrorClient skillCatalogMirrorClient;
     private final GitHubZipPackUrlMirror gitHubZipPackUrlMirror;
@@ -82,16 +87,15 @@ public class SkillExternalCatalogService {
     }
 
     /**
-     * 供库镜像同步：拉取 SkillsMP ∪ 镜像；空或失败返回空列表，不抛错。
+     * 供库镜像同步：按 {@link SkillExternalCatalogProperties#getRemoteCatalogMode()} 拉取远程目录；空或失败返回空列表，不抛错。
      */
     public List<SkillExternalCatalogItemVO> tryBuildRemoteSnapshotForDb(SkillExternalCatalogProperties properties) {
         try {
-            List<SkillExternalCatalogItemVO> mp = rewritePacks(properties, fetchSkillsMpDeduped(properties));
-            List<SkillExternalCatalogItemVO> mirror = rewritePacks(properties, fetchMirrorSafe(properties));
-            List<SkillExternalCatalogItemVO> merged = mergeRemoteByPack(mp, mirror);
-            if (merged.isEmpty()) {
+            List<SkillExternalCatalogItemVO> raw = collectRemoteUnrewritten(properties);
+            if (raw.isEmpty()) {
                 return List.of();
             }
+            List<SkillExternalCatalogItemVO> merged = rewritePacks(properties, raw);
             return sortByStarsDesc(merged);
         } catch (BusinessException e) {
             log.warn("技能市场远程拉取失败（保留库内数据）: {}", e.getMessage());
@@ -209,27 +213,42 @@ public class SkillExternalCatalogService {
         }
     }
 
-    /** skillsmp 模式：SkillsMP ∪ 镜像 JSON，去重后重写 zip 链接 */
+    /** 动态源：按 remote-catalog-mode 选取 SkillHub / SkillsMP / 镜像之一或合并，再重写 zip 链接 */
     private List<SkillExternalCatalogItemVO> fetchDynamicOnly(SkillExternalCatalogProperties properties) {
-        List<SkillExternalCatalogItemVO> mp = rewritePacks(properties, fetchSkillsMpDeduped(properties));
-        List<SkillExternalCatalogItemVO> mirror = rewritePacks(properties, fetchMirrorSafe(properties));
-        List<SkillExternalCatalogItemVO> out = mergeRemoteByPack(mp, mirror);
+        List<SkillExternalCatalogItemVO> out = rewritePacks(properties, collectRemoteUnrewritten(properties));
         if (out.isEmpty()) {
-            throw new BusinessException(ResultCode.EXTERNAL_SERVICE_ERROR,
-                    "未获得任何市场条目：可开启 skillsmp.enabled 并配置 SKILLSMP_API_KEY，"
-                            + "或配置 mirror-catalog-url 指向国内可访问的 JSON，或使用 provider=static。");
+            throwEmptyDynamicCatalog(properties);
         }
         return out;
     }
 
+    /**
+     * 空结果时按生效方式给出明确提示（避免「仅 SkillHub」用户误以为需要 SkillsMP Key）。
+     */
+    private static void throwEmptyDynamicCatalog(SkillExternalCatalogProperties properties) {
+        String mode = normalizeRemoteCatalogMode(properties.getRemoteCatalogMode());
+        String msg = switch (mode) {
+            case "SKILLHUB_ONLY" ->
+                    "未获得任何市场条目（当前为「仅 SkillHub」）。SkillHub 公开搜索接口不需要 SkillsMP API Key。"
+                            + "请检查：① 市场配置中已开启 SkillHub；② baseUrl 从本机/服务器可访问（必要时配置出站代理）；"
+                            + "③ Discovery 关键词每条至少 2 个字符；④ 查看日志中是否有 SkillHub HTTP 错误。";
+            case "SKILLSMP_ONLY" ->
+                    "未获得任何市场条目（当前为「仅 SkillsMP」）。请配置有效的 SkillsMP API Key、开启 SkillsMP，并确认 baseUrl 与网络可达。";
+            case "MIRROR_ONLY" ->
+                    "未获得任何市场条目（当前为「仅镜像」）。请填写可访问的 mirrorCatalogUrl / mirrorCatalogUrls 或 catalogHttpSources。";
+            default ->
+                    "未获得任何市场条目（多源合并）。请至少保证其一可用：SkillHub 开启且可访问、SkillsMP 开启且已配置 Key、或已配置镜像 URL；"
+                            + "也可改为单一来源便于排查，或将 provider 设为 static 仅使用静态条目。";
+        };
+        throw new BusinessException(ResultCode.EXTERNAL_SERVICE_ERROR, msg);
+    }
+
     private List<SkillExternalCatalogItemVO> fetchMerged(SkillExternalCatalogProperties properties) {
         List<SkillExternalCatalogItemVO> yaml = rewritePacks(properties, staticEntriesOnly(properties));
-        List<SkillExternalCatalogItemVO> mp = rewritePacks(properties, fetchSkillsMpDeduped(properties));
-        List<SkillExternalCatalogItemVO> mirror = rewritePacks(properties, fetchMirrorSafe(properties));
-        List<SkillExternalCatalogItemVO> remote = mergeRemoteByPack(mp, mirror);
+        List<SkillExternalCatalogItemVO> remote = rewritePacks(properties, collectRemoteUnrewritten(properties));
         if (remote.isEmpty() && yaml.isEmpty()) {
             throw new BusinessException(ResultCode.EXTERNAL_SERVICE_ERROR,
-                    "合并结果为空：请配置 YAML entries、SkillsMP 或 mirror-catalog-url 至少其一。");
+                    "合并结果为空：请配置 remote-catalog-mode 与对应源，或 YAML entries。");
         }
         if (remote.isEmpty()) {
             return sortByStarsDesc(yaml);
@@ -240,17 +259,169 @@ public class SkillExternalCatalogService {
         return sortByStarsDesc(mergeByPackUrl(yaml, remote));
     }
 
+    /**
+     * 未 rewrite 的远程条目；按 {@link SkillExternalCatalogProperties#getRemoteCatalogMode()} 决定单源或合并。
+     * 单源模式下<strong>只</strong>请求对应远端，避免「仅 SkillHub」仍误打 SkillsMP 配额与日志噪音。
+     */
+    private List<SkillExternalCatalogItemVO> collectRemoteUnrewritten(SkillExternalCatalogProperties properties) {
+        String mode = normalizeRemoteCatalogMode(properties.getRemoteCatalogMode());
+        return switch (mode) {
+            case "SKILLHUB_ONLY" -> fetchSkillHubDeduped(properties);
+            case "SKILLSMP_ONLY" -> fetchSkillsMpDeduped(properties);
+            case "MIRROR_ONLY" -> fetchMirrorSafe(properties);
+            default -> {
+                List<SkillExternalCatalogItemVO> hub = fetchSkillHubDeduped(properties);
+                List<SkillExternalCatalogItemVO> mp = fetchSkillsMpDeduped(properties);
+                List<SkillExternalCatalogItemVO> mirror = fetchMirrorSafe(properties);
+                yield mergeRemoteByPack(mergeRemoteByPack(hub, mp), mirror);
+            }
+        };
+    }
+
+    private static String normalizeRemoteCatalogMode(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return "MERGED";
+        }
+        String u = raw.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+        return switch (u) {
+            case "SKILLHUB_ONLY", "SKILLSMP_ONLY", "MIRROR_ONLY", "MERGED" -> u;
+            default -> "MERGED";
+        };
+    }
+
     private List<SkillExternalCatalogItemVO> fetchMirrorSafe(SkillExternalCatalogProperties properties) {
-        if (!StringUtils.hasText(properties.getMirrorCatalogUrl())) {
+        List<SkillExternalCatalogProperties.CatalogHttpSource> sources = resolvedCatalogHttpSources(properties);
+        if (sources.isEmpty()) {
             return List.of();
         }
-        try {
-            return skillCatalogMirrorClient.fetchList(
-                    properties.getMirrorCatalogUrl(), properties.getOutboundHttpProxy());
-        } catch (BusinessException e) {
-            log.warn("镜像技能目录不可用（已跳过）: {}", e.getMessage());
+        List<SkillExternalCatalogItemVO> merged = List.of();
+        for (SkillExternalCatalogProperties.CatalogHttpSource src : sources) {
+            try {
+                List<SkillExternalCatalogItemVO> part = skillCatalogMirrorClient.fetchList(
+                        src.getUrl(),
+                        src.getFormat(),
+                        properties.getOutboundHttpProxy());
+                merged = mergeRemoteByPack(merged, part);
+            } catch (BusinessException e) {
+                log.warn("镜像技能目录不可用（已跳过）{} [{}]: {}", src.getUrl(), src.getFormat(), e.getMessage());
+            }
+        }
+        return merged;
+    }
+
+    /**
+     * mirror-catalog-url、mirror-catalog-urls 与 catalog-http-sources 合并；同一 URL 仅保留首次出现的 format。
+     */
+    static List<SkillExternalCatalogProperties.CatalogHttpSource> resolvedCatalogHttpSources(
+            SkillExternalCatalogProperties properties) {
+        LinkedHashMap<String, SkillExternalCatalogProperties.CatalogHttpSource> byUrl = new LinkedHashMap<>();
+        if (StringUtils.hasText(properties.getMirrorCatalogUrl())) {
+            putSourceIfAbsent(byUrl, properties.getMirrorCatalogUrl().trim(), "AUTO");
+        }
+        if (properties.getMirrorCatalogUrls() != null) {
+            for (String raw : properties.getMirrorCatalogUrls()) {
+                if (StringUtils.hasText(raw)) {
+                    putSourceIfAbsent(byUrl, raw.trim(), "AUTO");
+                }
+            }
+        }
+        if (properties.getCatalogHttpSources() != null) {
+            for (SkillExternalCatalogProperties.CatalogHttpSource cs : properties.getCatalogHttpSources()) {
+                if (cs == null || !StringUtils.hasText(cs.getUrl())) {
+                    continue;
+                }
+                String fmt = StringUtils.hasText(cs.getFormat()) ? cs.getFormat().trim() : "AUTO";
+                putSourceIfAbsent(byUrl, cs.getUrl().trim(), fmt);
+            }
+        }
+        return new ArrayList<>(byUrl.values());
+    }
+
+    private static void putSourceIfAbsent(
+            LinkedHashMap<String, SkillExternalCatalogProperties.CatalogHttpSource> byUrl,
+            String url,
+            String format) {
+        byUrl.putIfAbsent(url, catalogSource(url, format));
+    }
+
+    private static SkillExternalCatalogProperties.CatalogHttpSource catalogSource(String url, String format) {
+        SkillExternalCatalogProperties.CatalogHttpSource s = new SkillExternalCatalogProperties.CatalogHttpSource();
+        s.setUrl(url);
+        s.setFormat(format);
+        return s;
+    }
+
+    /**
+     * SkillHub 多词搜索（/api/v1/search）；单词失败不中断；未启用时返回空列表。
+     */
+    private List<SkillExternalCatalogItemVO> fetchSkillHubDeduped(SkillExternalCatalogProperties properties) {
+        SkillExternalCatalogProperties.SkillHub cfg = properties.getSkillhub();
+        if (cfg == null || !cfg.isEnabled()) {
             return List.of();
         }
+        List<String> queries = cfg.getDiscoveryQueries();
+        if (queries == null || queries.isEmpty()) {
+            queries = SkillExternalCatalogProperties.defaultDiscoveryQueries();
+        }
+        int cap = Math.max(1, cfg.getMaxQueriesPerRequest());
+        List<String> useQueries = queries.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .filter(q -> q.length() >= 2)
+                .distinct()
+                .limit(cap)
+                .collect(Collectors.toList());
+        if (useQueries.isEmpty()) {
+            return List.of();
+        }
+        Map<String, SkillExternalCatalogItemVO> byDedupeKey = new HashMap<>();
+        int limit = Math.min(10, Math.max(1, cfg.getLimitPerQuery()));
+        String branch = StringUtils.hasText(cfg.getGithubDefaultBranch()) ? cfg.getGithubDefaultBranch().trim() : "main";
+        for (String q : useQueries) {
+            try {
+                List<SkillHubSearchSkillJson> skills = skillHubCatalogClient.search(properties, q, limit);
+                for (SkillHubSearchSkillJson s : skills) {
+                    mergeSkillHubIntoMap(byDedupeKey, s, branch);
+                }
+            } catch (Exception e) {
+                log.warn("SkillHub 搜索词 [{}] 跳过: {}", q, e.getMessage());
+            }
+        }
+        return new ArrayList<>(byDedupeKey.values());
+    }
+
+    private void mergeSkillHubIntoMap(Map<String, SkillExternalCatalogItemVO> byDedupeKey, SkillHubSearchSkillJson s, String branch) {
+        if (s == null || !StringUtils.hasText(s.getSourceIdentifier()) || !StringUtils.hasText(s.getSlug())) {
+            return;
+        }
+        String sid = s.getSourceIdentifier().trim();
+        if (!sid.contains("/")) {
+            return;
+        }
+        String slug = s.getSlug().trim();
+        String b = StringUtils.hasText(branch) ? branch : "main";
+        String treeUrl = String.format(Locale.ROOT, "https://github.com/%s/tree/%s/%s", sid, b, slug);
+        Optional<GitHubRepoRef> refOpt = GitHubRepoRef.parse(treeUrl);
+        if (refOpt.isEmpty()) {
+            return;
+        }
+        GitHubRepoRef ref = refOpt.get();
+        String packUrl = ref.defaultBranchArchiveZip(b);
+        String name = StringUtils.hasText(s.getName()) ? s.getName().trim() : slug;
+        String id = (sid.replace('/', '-') + "-" + slug).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9\\-]", "-");
+        String summary = StringUtils.hasText(s.getDescription()) ? s.getDescription().trim() : null;
+        Integer stars = s.getTotalInstalls();
+        SkillExternalCatalogItemVO vo = SkillExternalCatalogItemVO.builder()
+                .id(id)
+                .name(name)
+                .summary(summary)
+                .packUrl(packUrl)
+                .licenseNote(LICENSE_SKILLHUB)
+                .sourceUrl(treeUrl)
+                .stars(stars)
+                .build();
+        String dedupe = SkillExternalCatalogDedupeKeys.fromVo(vo);
+        byDedupeKey.merge(dedupe, vo, SkillExternalCatalogService::higherStars);
     }
 
     /**
@@ -279,7 +450,7 @@ public class SkillExternalCatalogService {
         if (useQueries.isEmpty()) {
             return List.of();
         }
-        Map<String, SkillExternalCatalogItemVO> byRepo = new HashMap<>();
+        Map<String, SkillExternalCatalogItemVO> byDedupeKey = new HashMap<>();
         String sortBy = StringUtils.hasText(cfg.getSortBy()) ? cfg.getSortBy().trim() : "stars";
         int limit = Math.min(100, Math.max(1, cfg.getLimitPerQuery()));
         String branch = StringUtils.hasText(cfg.getGithubDefaultBranch()) ? cfg.getGithubDefaultBranch().trim() : "main";
@@ -288,16 +459,16 @@ public class SkillExternalCatalogService {
             try {
                 List<SkillsMpSkillJson> skills = skillsMpCatalogClient.searchPage(properties, q, 1, limit, sortBy);
                 for (SkillsMpSkillJson s : skills) {
-                    mergeSkillIntoMap(byRepo, s, branch);
+                    mergeSkillIntoMap(byDedupeKey, s, branch);
                 }
             } catch (BusinessException e) {
                 log.warn("SkillsMP 搜索词 [{}] 跳过: {}", q, e.getMessage());
             }
         }
-        return new ArrayList<>(byRepo.values());
+        return new ArrayList<>(byDedupeKey.values());
     }
 
-    private void mergeSkillIntoMap(Map<String, SkillExternalCatalogItemVO> byRepo, SkillsMpSkillJson s, String branch) {
+    private void mergeSkillIntoMap(Map<String, SkillExternalCatalogItemVO> byDedupeKey, SkillsMpSkillJson s, String branch) {
         if (s == null) {
             return;
         }
@@ -306,7 +477,6 @@ public class SkillExternalCatalogService {
             return;
         }
         GitHubRepoRef ref = refOpt.get();
-        String key = ref.dedupeKey();
         String packUrl = ref.defaultBranchArchiveZip(branch);
         String id = StringUtils.hasText(s.getId())
                 ? s.getId().trim()
@@ -330,11 +500,8 @@ public class SkillExternalCatalogService {
                 .stars(s.getStars())
                 .build();
 
-        byRepo.merge(key, vo, (a, b) -> {
-            int sa = a.getStars() == null ? 0 : a.getStars();
-            int sb = b.getStars() == null ? 0 : b.getStars();
-            return sb > sa ? b : a;
-        });
+        String dedupe = SkillExternalCatalogDedupeKeys.fromVo(vo);
+        byDedupeKey.merge(dedupe, vo, SkillExternalCatalogService::higherStars);
     }
 
     private List<SkillExternalCatalogItemVO> staticEntriesOnly(SkillExternalCatalogProperties properties) {

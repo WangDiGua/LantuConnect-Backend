@@ -52,6 +52,9 @@ logs/
 # --- Redis ---
 dump.rdb
 
+# --- Local skill pack / upload dir (profile dev / FILE_UPLOAD_DIR) ---
+skills_local_data/
+
 # --- Misc ---
 *.bak
 *.tmp

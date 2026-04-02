@@ -153,7 +153,8 @@ public final class SkillPackArchiveNormalizer {
                 }
                 entryCount++;
                 if (entryCount > AnthropicSkillPackValidator.MAX_ENTRIES) {
-                    throw new BusinessException(ResultCode.PARAM_ERROR, "7z 内条目过多");
+                    throw new BusinessException(ResultCode.PARAM_ERROR,
+                            "7z 内文件过多（上限 " + AnthropicSkillPackValidator.MAX_ENTRIES + "）");
                 }
                 String normalized = normalizeEntryName(entry.getName());
                 if (normalized == null) {
@@ -199,7 +200,8 @@ public final class SkillPackArchiveNormalizer {
                 }
                 entryCount++;
                 if (entryCount > AnthropicSkillPackValidator.MAX_ENTRIES) {
-                    throw new BusinessException(ResultCode.PARAM_ERROR, "rar 内条目过多");
+                    throw new BusinessException(ResultCode.PARAM_ERROR,
+                            "rar 内文件过多（上限 " + AnthropicSkillPackValidator.MAX_ENTRIES + "）");
                 }
                 String nameRaw = fh.getFileName().trim().replace('\\', '/');
                 String normalized = normalizeEntryName(nameRaw);
@@ -331,7 +333,8 @@ public final class SkillPackArchiveNormalizer {
                 }
                 entryCount++;
                 if (entryCount > AnthropicSkillPackValidator.MAX_ENTRIES) {
-                    throw new BusinessException(ResultCode.PARAM_ERROR, "tar 内条目过多");
+                    throw new BusinessException(ResultCode.PARAM_ERROR,
+                            "tar 内文件过多（上限 " + AnthropicSkillPackValidator.MAX_ENTRIES + "）");
                 }
                 String normalized = normalizeEntryName(entry.getName());
                 if (normalized == null) {

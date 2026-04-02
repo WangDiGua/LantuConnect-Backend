@@ -19,7 +19,8 @@ public final class AnthropicSkillPackValidator {
     public static final int MAX_ZIP_BYTES = 100 * 1024 * 1024;
     public static final int MAX_UNCOMPRESSED_TOTAL = 40 * 1024 * 1024;
     public static final int MAX_ENTRY_BYTES = 20 * 1024 * 1024;
-    public static final int MAX_ENTRIES = 3000;
+    /** 归档内「文件」条数上限（目录占位项不计入），防止恶意超大清单拖死扫描。 */
+    public static final int MAX_ENTRIES = 20_000;
     public static final int MAX_SKILL_MD_BYTES = 512 * 1024;
 
     public record PackValidationOutcome(boolean valid, String message, Map<String, Object> manifest, String entryDoc) {
@@ -49,13 +50,13 @@ public final class AnthropicSkillPackValidator {
             byte[] skillMd = null;
             String skillEntryName = null;
             while ((entry = zis.getNextEntry()) != null) {
-                entryCount++;
-                if (entryCount > MAX_ENTRIES) {
-                    return PackValidationOutcome.invalid("zip 内条目过多");
-                }
                 if (entry.isDirectory()) {
                     zis.closeEntry();
                     continue;
+                }
+                entryCount++;
+                if (entryCount > MAX_ENTRIES) {
+                    return PackValidationOutcome.invalid("zip 内文件过多（上限 " + MAX_ENTRIES + "）");
                 }
                 String name = normalizeEntryName(entry.getName());
                 if (name == null) {

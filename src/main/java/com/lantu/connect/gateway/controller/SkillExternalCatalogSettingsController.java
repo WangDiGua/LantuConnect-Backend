@@ -6,6 +6,7 @@ import com.lantu.connect.common.security.RequirePermission;
 import com.lantu.connect.gateway.config.SkillExternalCatalogProperties;
 import com.lantu.connect.gateway.dto.SkillExternalCatalogSettingsResponse;
 import com.lantu.connect.gateway.service.SkillExternalCatalogRuntimeConfigService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,7 +28,10 @@ public class SkillExternalCatalogSettingsController {
 
     @GetMapping("/settings")
     @RequirePermission("system:config")
-    public R<SkillExternalCatalogSettingsResponse> getSettings() {
+    public R<SkillExternalCatalogSettingsResponse> getSettings(HttpServletResponse response) {
+        // 避免管理员保存后浏览器/反向代理仍返回旧 JSON，导致前端表单未刷新
+        response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+        response.setHeader("Pragma", "no-cache");
         return R.ok(runtimeConfigService.getForAdmin());
     }
 

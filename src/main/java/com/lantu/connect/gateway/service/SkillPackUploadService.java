@@ -8,8 +8,11 @@ import com.lantu.connect.gateway.dto.ResourceManageVO;
 import com.lantu.connect.gateway.dto.ResourceUpsertRequest;
 import com.lantu.connect.gateway.service.support.AnthropicSkillPackValidator;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
+import com.lantu.connect.gateway.service.support.SkillArtifactSafetyValidator;
 import com.lantu.connect.gateway.service.support.SkillPackArchiveNormalizer;
 import com.lantu.connect.gateway.service.support.SkillPackFolderConvention;
+import com.lantu.connect.gateway.service.support.SkillPackSkillRootPath;
+import com.lantu.connect.gateway.service.support.SkillPackSubpathExtractor;
 import com.lantu.connect.gateway.service.support.SkillPackValidationStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -39,7 +42,7 @@ public class SkillPackUploadService {
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
 
-    public ResourceManageVO uploadPack(Long operatorUserId, MultipartFile file, Long resourceIdOpt) {
+    public ResourceManageVO uploadPack(Long operatorUserId, MultipartFile file, Long resourceIdOpt, String skillRootRaw) {
         if (operatorUserId == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证");
         }
@@ -52,23 +55,25 @@ public class SkillPackUploadService {
         } catch (IOException e) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "读取文件失败");
         }
-        return uploadPackBytes(operatorUserId, rawBytes, file.getOriginalFilename(), resourceIdOpt);
+        return uploadPackBytes(operatorUserId, rawBytes, file.getOriginalFilename(), resourceIdOpt, skillRootRaw);
     }
 
     /**
      * 与 {@link #uploadPack} 相同处理链，入参为原始字节（如 JSON Body 中的 Base64 解码结果）。
      */
-    public ResourceManageVO uploadPackBytes(Long operatorUserId, byte[] rawBytes, String filenameHint, Long resourceIdOpt) {
+    public ResourceManageVO uploadPackBytes(Long operatorUserId, byte[] rawBytes, String filenameHint, Long resourceIdOpt, String skillRootRaw) {
         if (operatorUserId == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证");
         }
         if (rawBytes == null || rawBytes.length == 0) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "请上传技能包文件");
         }
+        String skillRootNormalized = SkillPackSkillRootPath.normalizeOrNull(skillRootRaw);
         byte[] normalizedZip = SkillPackArchiveNormalizer.normalizeToSkillZip(rawBytes, filenameHint);
         String storageName = SkillPackArchiveNormalizer.normalizeStorageFilename(filenameHint);
         final byte[] zipBytes = SkillPackFolderConvention.ensureRootSkillMd(normalizedZip, storageName);
-        return transactionTemplate.execute(status -> ingestPack(operatorUserId, zipBytes, storageName, resourceIdOpt, "internal", "由技能包上传创建"));
+        SkillArtifactSafetyValidator.validateOrThrow(zipBytes);
+        return transactionTemplate.execute(status -> ingestPack(operatorUserId, zipBytes, storageName, resourceIdOpt, "internal", "由技能包上传创建", skillRootNormalized));
     }
 
     /**
@@ -94,22 +99,29 @@ public class SkillPackUploadService {
      * 从公网 URL 拉取 zip，校验与落库逻辑与 {@link #uploadPack} 一致；新建资源时 {@code sourceType} 为 {@code cloud}。
      * HTTP 在事务外执行，避免长时间占用数据库连接。
      */
-    public ResourceManageVO importPackFromUrl(Long operatorUserId, String url, Long resourceIdOpt) {
+    public ResourceManageVO importPackFromUrl(Long operatorUserId, String url, Long resourceIdOpt, String skillRootRaw) {
         if (operatorUserId == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证");
         }
+        String skillRootNormalized = SkillPackSkillRootPath.normalizeOrNull(skillRootRaw);
         SkillPackUrlFetcher.FetchedPack fetched = skillPackUrlFetcher.fetch(url);
         byte[] normalizedZip = SkillPackArchiveNormalizer.normalizeToSkillZip(fetched.bytes(), fetched.filenameForStorage());
         String storageName = SkillPackArchiveNormalizer.normalizeStorageFilename(fetched.filenameForStorage());
         final byte[] zipBytes = SkillPackFolderConvention.ensureRootSkillMd(normalizedZip, storageName);
+        SkillArtifactSafetyValidator.validateOrThrow(zipBytes);
         String safeRef = truncateUrlForDesc(sanitizeUrlForDescription(url.trim()));
         String desc = "由 URL 导入: " + safeRef;
-        return transactionTemplate.execute(status -> ingestPack(operatorUserId, zipBytes, storageName, resourceIdOpt, "cloud", desc));
+        return transactionTemplate.execute(status -> ingestPack(operatorUserId, zipBytes, storageName, resourceIdOpt, "cloud", desc, skillRootNormalized));
     }
 
     private ResourceManageVO ingestPack(Long operatorUserId, byte[] zipBytes, String originalFilename,
-                                        Long resourceIdOpt, String sourceTypeForCreate, String descriptionForCreate) {
-        AnthropicSkillPackValidator.PackValidationOutcome outcome = AnthropicSkillPackValidator.validate(zipBytes);
+                                        Long resourceIdOpt, String sourceTypeForCreate, String descriptionForCreate,
+                                        String skillRootNormalized) {
+        byte[] anthropicTarget = skillRootNormalized == null
+                ? zipBytes
+                : SkillPackSubpathExtractor.extractSubtree(zipBytes, skillRootNormalized);
+        byte[] anthropicZip = SkillPackFolderConvention.ensureRootSkillMd(anthropicTarget, originalFilename);
+        AnthropicSkillPackValidator.PackValidationOutcome outcome = AnthropicSkillPackValidator.validate(anthropicZip);
         String shaHex = sha256Hex(zipBytes);
         String storedPath = fileStorageService.storeSkillPack(zipBytes, originalFilename);
         Map<String, Object> manifest = new LinkedHashMap<>(outcome.manifest());
@@ -134,7 +146,7 @@ public class SkillPackUploadService {
             req.setManifest(manifest);
             req.setEntryDoc(outcome.entryDoc());
             ResourceManageVO vo = resourceRegistryService.create(operatorUserId, req);
-            applyPackValidationAfterUpload(vo.getId(), outcome);
+            applyPackValidationAfterUpload(vo.getId(), outcome, skillRootNormalized);
             resourceRegistryService.recomputeCurrentVersionSnapshot(operatorUserId, vo.getId());
             return resourceRegistryService.getById(operatorUserId, vo.getId());
         }
@@ -144,7 +156,7 @@ public class SkillPackUploadService {
             throw new BusinessException(ResultCode.PARAM_ERROR, "resourceId 须为 skill 类型资源");
         }
         ResourceLifecycleStateMachine.ensureEditable(existing.getStatus());
-        writeManifestAndArtifact(resourceIdOpt, storedPath, shaHex, manifest, outcome.entryDoc(), outcome);
+        writeManifestAndArtifact(resourceIdOpt, storedPath, shaHex, manifest, outcome.entryDoc(), outcome, skillRootNormalized);
         resourceRegistryService.recomputeCurrentVersionSnapshot(operatorUserId, resourceIdOpt);
         return resourceRegistryService.getById(operatorUserId, resourceIdOpt);
     }
@@ -188,19 +200,23 @@ public class SkillPackUploadService {
         return url.substring(0, 500) + "...";
     }
 
-    private void applyPackValidationAfterUpload(Long resourceId, AnthropicSkillPackValidator.PackValidationOutcome outcome) {
+    private void applyPackValidationAfterUpload(Long resourceId, AnthropicSkillPackValidator.PackValidationOutcome outcome,
+                                                String skillRootNormalized) {
         jdbcTemplate.update("""
                         UPDATE t_resource_skill_ext
-                        SET pack_validation_status = ?, pack_validated_at = NOW(), pack_validation_message = ?
+                        SET pack_validation_status = ?, pack_validated_at = NOW(), pack_validation_message = ?,
+                            skill_root_path = ?
                         WHERE resource_id = ?
                         """,
                 outcome.valid() ? SkillPackValidationStatus.VALID : SkillPackValidationStatus.INVALID,
                 outcome.valid() ? null : truncateMessage(outcome.message()),
+                skillRootNormalized,
                 resourceId);
     }
 
     private void writeManifestAndArtifact(Long resourceId, String uri, String shaHex, Map<String, Object> manifest,
-                                          String entryDoc, AnthropicSkillPackValidator.PackValidationOutcome outcome) {
+                                          String entryDoc, AnthropicSkillPackValidator.PackValidationOutcome outcome,
+                                          String skillRootNormalized) {
         String manifestJson;
         try {
             manifestJson = objectMapper.writeValueAsString(manifest);
@@ -210,7 +226,8 @@ public class SkillPackUploadService {
         jdbcTemplate.update("""
                         UPDATE t_resource_skill_ext
                         SET artifact_uri = ?, artifact_sha256 = ?, manifest_json = CAST(? AS JSON), entry_doc = ?,
-                            pack_validation_status = ?, pack_validated_at = NOW(), pack_validation_message = ?
+                            pack_validation_status = ?, pack_validated_at = NOW(), pack_validation_message = ?,
+                            skill_root_path = ?
                         WHERE resource_id = ?
                         """,
                 uri,
@@ -219,6 +236,7 @@ public class SkillPackUploadService {
                 entryDoc,
                 outcome.valid() ? SkillPackValidationStatus.VALID : SkillPackValidationStatus.INVALID,
                 outcome.valid() ? null : truncateMessage(outcome.message()),
+                skillRootNormalized,
                 resourceId);
     }
 

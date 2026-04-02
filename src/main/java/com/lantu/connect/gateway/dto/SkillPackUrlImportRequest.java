@@ -18,4 +18,8 @@ public class SkillPackUrlImportRequest {
      * 已存在的 skill 资源 id 时，拉包后覆盖该资源制品（须可编辑状态）。
      */
     private Long resourceId;
+
+    /** 见 {@link SkillPackJsonUploadRequest#getSkillRoot()} */
+    @Size(max = 512)
+    private String skillRoot;
 }

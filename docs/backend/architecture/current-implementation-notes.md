@@ -23,7 +23,7 @@
 
 ## 4. 技能扩展与包校验
 
-- 表 **`t_resource_skill_ext`** 含技能包校验相关列（如 `pack_validation_status`、`pack_validation_checked_at`、`pack_validation_error_message` 等）；历史库若缺列，参见 [`sql/migrations/20260401_skill_pack_validation.sql`](../../../sql/migrations/20260401_skill_pack_validation.sql)。
+- 表 **`t_resource_skill_ext`** 含技能包校验与技能根路径列：`pack_validation_status`、`pack_validated_at`、`pack_validation_message`、`skill_root_path` 等；历史库若缺列，依次参见 [`sql/migrations/20260401_skill_pack_validation.sql`](../../../sql/migrations/20260401_skill_pack_validation.sql)、[`sql/migrations/20260402_skill_skill_root_path.sql`](../../../sql/migrations/20260402_skill_skill_root_path.sql)（或 Flyway `V4`/`V5`）。
 
 ## 5. 运行与健康检查
 

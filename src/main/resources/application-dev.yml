@@ -1,7 +1,0 @@
-# =============================================================================
-# application-dev.yml — 开发 profile 叠加（SPRING_PROFILES_ACTIVE=dev）
-# 仅示例：提高 com.lantu.connect 日志级别；完整 dev 行为见 logback-spring.xml 中 springProfile=dev 一节
-# =============================================================================
-logging:
-  level:
-    com.lantu.connect: debug

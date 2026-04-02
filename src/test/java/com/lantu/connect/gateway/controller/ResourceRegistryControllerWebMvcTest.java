@@ -15,6 +15,7 @@ import com.lantu.connect.gateway.dto.ResourceVersionVO;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.SkillArtifactDownloadService;
+import com.lantu.connect.gateway.service.SkillPackChunkedUploadService;
 import com.lantu.connect.gateway.service.SkillPackUploadService;
 import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +41,7 @@ class ResourceRegistryControllerWebMvcTest {
     private MockMvc mockMvc;
     private ResourceRegistryService resourceRegistryService;
     private SkillPackUploadService skillPackUploadService;
+    private SkillPackChunkedUploadService skillPackChunkedUploadService;
     private SkillArtifactDownloadService skillArtifactDownloadService;
     private ApiKeyScopeService apiKeyScopeService;
 
@@ -47,6 +49,7 @@ class ResourceRegistryControllerWebMvcTest {
     void setUp() {
         resourceRegistryService = mock(ResourceRegistryService.class);
         skillPackUploadService = mock(SkillPackUploadService.class);
+        skillPackChunkedUploadService = mock(SkillPackChunkedUploadService.class);
         skillArtifactDownloadService = mock(SkillArtifactDownloadService.class);
         apiKeyScopeService = mock(ApiKeyScopeService.class);
         JwtUtil jwtUtil = mock(JwtUtil.class);
@@ -91,7 +94,7 @@ class ResourceRegistryControllerWebMvcTest {
 
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new ResourceRegistryController(
-                        resourceRegistryService, skillPackUploadService, skillArtifactDownloadService, apiKeyScopeService))
+                        resourceRegistryService, skillPackUploadService, skillPackChunkedUploadService, skillArtifactDownloadService, apiKeyScopeService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .addFilters(jwtFilter, unassignedFilter)
                 .build();

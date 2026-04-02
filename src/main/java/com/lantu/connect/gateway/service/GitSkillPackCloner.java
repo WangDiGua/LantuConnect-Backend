@@ -198,7 +198,8 @@ public class GitSkillPackCloner {
                 BasicFileAttributes attrs = Files.readAttributes(file, BasicFileAttributes.class);
                 entryCount++;
                 if (entryCount > AnthropicSkillPackValidator.MAX_ENTRIES) {
-                    throw new BusinessException(ResultCode.PARAM_ERROR, "克隆仓库内文件过多");
+                    throw new BusinessException(ResultCode.PARAM_ERROR,
+                            "克隆仓库内文件过多（上限 " + AnthropicSkillPackValidator.MAX_ENTRIES + "）");
                 }
                 String rel = root.relativize(file).toString().replace('\\', '/');
                 String normalized = normalizeEntryName(rel);

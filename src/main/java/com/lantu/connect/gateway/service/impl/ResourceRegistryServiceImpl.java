@@ -18,6 +18,7 @@ import com.lantu.connect.gateway.protocol.McpOutboundHeaderBuilder;
 import com.lantu.connect.gateway.protocol.ProtocolInvokerRegistry;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
+import com.lantu.connect.gateway.service.support.SkillPackSkillRootPath;
 import com.lantu.connect.gateway.service.support.SkillPackValidationStatus;
 import com.lantu.connect.common.util.DeptScopeHelper;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
@@ -172,18 +173,13 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
         if ("skill".equals(row.resourceType())) {
             List<Map<String, Object>> se = jdbcTemplate.queryForList(
-                    "SELECT pack_validation_status, artifact_uri FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1",
+                    "SELECT artifact_uri FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1",
                     resourceId);
             if (se.isEmpty()) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "技能扩展信息不存在");
             }
-            String packStatus = stringValue(se.get(0).get("pack_validation_status"));
-            String normalizedPack = packStatus == null ? "" : packStatus.trim().toLowerCase(Locale.ROOT);
-            if (!SkillPackValidationStatus.VALID.equals(normalizedPack)) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "技能包未通过校验（pack_validation_status 须为 valid），请先上传有效 zip");
-            }
             if (!StringUtils.hasText(stringValue(se.get(0).get("artifact_uri")))) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "artifactUri 不能为空");
+                throw new BusinessException(ResultCode.PARAM_ERROR, "artifactUri 不能为空，请先上传技能包");
             }
         }
 
@@ -816,7 +812,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private void upsertSkillExt(Long resourceId, ResourceUpsertRequest request) {
         List<Map<String, Object>> existingRows = jdbcTemplate.queryForList("""
-                        SELECT artifact_uri, artifact_sha256, pack_validation_status, pack_validated_at, pack_validation_message
+                        SELECT artifact_uri, artifact_sha256, pack_validation_status, pack_validated_at, pack_validation_message, skill_root_path
                         FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
                         """,
                 resourceId);
@@ -824,15 +820,17 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         String newUri = StringUtils.hasText(request.getArtifactUri()) ? request.getArtifactUri().trim() : null;
         String newSha = StringUtils.hasText(request.getArtifactSha256()) ? request.getArtifactSha256().trim().toLowerCase(Locale.ROOT) : null;
 
+        boolean artifactChanged = true;
         String packStatus = SkillPackValidationStatus.NONE;
         Timestamp packValidatedAt = null;
         String packValidationMessage = null;
+        String existingSkillRoot = null;
         if (!existingRows.isEmpty()) {
             Map<String, Object> er = existingRows.get(0);
             String oldUri = stringValue(er.get("artifact_uri"));
             String oldSha = stringValue(er.get("artifact_sha256"));
             String oldShaNorm = StringUtils.hasText(oldSha) ? oldSha.trim().toLowerCase(Locale.ROOT) : null;
-            boolean artifactChanged = !Objects.equals(StringUtils.hasText(oldUri) ? oldUri.trim() : null, newUri)
+            artifactChanged = !Objects.equals(StringUtils.hasText(oldUri) ? oldUri.trim() : null, newUri)
                     || !Objects.equals(oldShaNorm, newSha);
             if (!artifactChanged) {
                 String ps = stringValue(er.get("pack_validation_status"));
@@ -840,6 +838,15 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 packValidatedAt = toSqlTimestamp(er.get("pack_validated_at"));
                 packValidationMessage = stringValue(er.get("pack_validation_message"));
             }
+            String erRoot = stringValue(er.get("skill_root_path"));
+            existingSkillRoot = StringUtils.hasText(erRoot) ? erRoot.trim() : null;
+        }
+
+        String skillRootPathVal = existingSkillRoot;
+        if (request.getSkillRootPath() != null) {
+            skillRootPathVal = SkillPackSkillRootPath.normalizeOrNull(request.getSkillRootPath());
+        } else if (artifactChanged && !existingRows.isEmpty()) {
+            skillRootPathVal = null;
         }
 
         String manifestJson = writeJson(defaultMap(request.getManifest()));
@@ -847,7 +854,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                         UPDATE t_resource_skill_ext
                         SET skill_type = ?, artifact_uri = ?, artifact_sha256 = ?, manifest_json = CAST(? AS JSON), entry_doc = ?,
                             mode = ?, parent_resource_id = ?, display_template = ?, spec_json = CAST(? AS JSON), parameters_schema = CAST(? AS JSON), is_public = ?, max_concurrency = ?,
-                            pack_validation_status = ?, pack_validated_at = ?, pack_validation_message = ?
+                            pack_validation_status = ?, pack_validated_at = ?, pack_validation_message = ?, skill_root_path = ?
                         WHERE resource_id = ?
                         """,
                 request.getSkillType().trim().toLowerCase(Locale.ROOT),
@@ -865,11 +872,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 packStatus,
                 packValidatedAt,
                 packValidationMessage,
+                skillRootPathVal,
                 resourceId);
         if (updated == 0) {
             jdbcTemplate.update("""
-                            INSERT INTO t_resource_skill_ext(resource_id, skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, mode, parent_resource_id, display_template, spec_json, parameters_schema, is_public, max_concurrency, pack_validation_status, pack_validated_at, pack_validation_message)
-                            VALUES(?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), ?, ?, ?, ?, ?)
+                            INSERT INTO t_resource_skill_ext(resource_id, skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, mode, parent_resource_id, display_template, spec_json, parameters_schema, is_public, max_concurrency, pack_validation_status, pack_validated_at, pack_validation_message, skill_root_path)
+                            VALUES(?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), ?, ?, ?, ?, ?, ?)
                             """,
                     resourceId,
                     request.getSkillType().trim().toLowerCase(Locale.ROOT),
@@ -886,7 +894,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     request.getMaxConcurrency() == null ? 10 : request.getMaxConcurrency(),
                     SkillPackValidationStatus.NONE,
                     null,
-                    null);
+                    null,
+                    SkillPackSkillRootPath.normalizeOrNull(request.getSkillRootPath()));
         }
     }
 
@@ -1238,6 +1247,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 if (StringUtils.hasText(request.getEntryDoc())) {
                     spec.put("entryDoc", request.getEntryDoc());
                 }
+                if (StringUtils.hasText(request.getSkillRootPath())) {
+                    String root = SkillPackSkillRootPath.normalizeOrNull(request.getSkillRootPath());
+                    if (root != null) {
+                        spec.put("skillRootPath", root);
+                    }
+                }
                 if (request.getSpec() != null && !request.getSpec().isEmpty()) {
                     spec.put("extra", request.getSpec());
                 }
@@ -1301,7 +1316,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             }
             case "skill" -> {
                 Map<String, Object> ext = jdbcTemplate.queryForList("""
-                                SELECT skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, spec_json, pack_validation_status
+                                SELECT skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, spec_json, pack_validation_status, skill_root_path
                                 FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
                                 """, resourceId)
                         .stream().findFirst().orElse(Map.of());
@@ -1322,6 +1337,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 }
                 if (StringUtils.hasText(stringValue(ext.get("pack_validation_status")))) {
                     spec.put("packValidationStatus", stringValue(ext.get("pack_validation_status")).trim().toLowerCase(Locale.ROOT));
+                }
+                if (StringUtils.hasText(stringValue(ext.get("skill_root_path")))) {
+                    spec.put("skillRootPath", stringValue(ext.get("skill_root_path")).trim());
                 }
                 Map<String, Object> extra = parseJsonMap(ext.get("spec_json"));
                 if (!extra.isEmpty()) {
@@ -1473,7 +1491,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     private void enrichSkillFields(ResourceManageVO vo, Long resourceId) {
         var rows = jdbcTemplate.queryForList("""
                         SELECT skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, mode, parent_resource_id, display_template, spec_json, parameters_schema, is_public, max_concurrency,
-                               pack_validation_status, pack_validated_at, pack_validation_message
+                               pack_validation_status, pack_validated_at, pack_validation_message, skill_root_path
                         FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
                         """,
                 resourceId);
@@ -1489,6 +1507,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         vo.setPackValidationStatus(stringValue(r.get("pack_validation_status")));
         vo.setPackValidatedAt(toDateTime(r.get("pack_validated_at")));
         vo.setPackValidationMessage(stringValue(r.get("pack_validation_message")));
+        vo.setSkillRootPath(stringValue(r.get("skill_root_path")));
         vo.setMode(stringValue(r.get("mode")));
         vo.setParentResourceId(longObject(r.get("parent_resource_id")));
         vo.setDisplayTemplate(stringValue(r.get("display_template")));

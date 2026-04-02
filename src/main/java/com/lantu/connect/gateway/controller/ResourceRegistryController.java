@@ -9,11 +9,15 @@ import com.lantu.connect.gateway.dto.ObservabilitySummaryVO;
 import com.lantu.connect.gateway.dto.ResourceUpsertRequest;
 import com.lantu.connect.gateway.dto.ResourceVersionCreateRequest;
 import com.lantu.connect.gateway.dto.ResourceVersionVO;
+import com.lantu.connect.gateway.dto.SkillPackChunkInitRequest;
+import com.lantu.connect.gateway.dto.SkillPackChunkInitResponse;
+import com.lantu.connect.gateway.dto.SkillPackChunkStatusResponse;
 import com.lantu.connect.gateway.dto.SkillPackJsonUploadRequest;
 import com.lantu.connect.gateway.dto.SkillPackUrlImportRequest;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.SkillArtifactDownloadService;
+import com.lantu.connect.gateway.service.SkillPackChunkedUploadService;
 import com.lantu.connect.gateway.service.SkillPackUploadService;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import jakarta.servlet.http.HttpServletResponse;
@@ -45,6 +49,7 @@ public class ResourceRegistryController {
 
     private final ResourceRegistryService resourceRegistryService;
     private final SkillPackUploadService skillPackUploadService;
+    private final SkillPackChunkedUploadService skillPackChunkedUploadService;
     private final SkillArtifactDownloadService skillArtifactDownloadService;
     private final ApiKeyScopeService apiKeyScopeService;
 
@@ -149,8 +154,9 @@ public class ResourceRegistryController {
     @AuditLog(action = "skill_pack_upload", resource = "resource-center")
     public R<ResourceManageVO> uploadSkillPackage(@RequestHeader("X-User-Id") Long userId,
                                                     @RequestParam("file") MultipartFile file,
-                                                    @RequestParam(value = "resourceId", required = false) Long resourceId) {
-        return R.ok(skillPackUploadService.uploadPack(userId, file, resourceId));
+                                                    @RequestParam(value = "resourceId", required = false) Long resourceId,
+                                                    @RequestParam(value = "skillRoot", required = false) String skillRoot) {
+        return R.ok(skillPackUploadService.uploadPack(userId, file, resourceId, skillRoot));
     }
 
     /**
@@ -162,7 +168,7 @@ public class ResourceRegistryController {
                                                       @Valid @RequestBody SkillPackJsonUploadRequest body) {
         byte[] raw = SkillPackUploadService.decodeUploadBase64(body.getFileBase64());
         String hint = body.getFilename();
-        return R.ok(skillPackUploadService.uploadPackBytes(userId, raw, hint, body.getResourceId()));
+        return R.ok(skillPackUploadService.uploadPackBytes(userId, raw, hint, body.getResourceId(), body.getSkillRoot()));
     }
 
     /**
@@ -172,7 +178,43 @@ public class ResourceRegistryController {
     @AuditLog(action = "skill_pack_import_url", resource = "resource-center")
     public R<ResourceManageVO> importSkillPackageFromUrl(@RequestHeader("X-User-Id") Long userId,
                                                          @Valid @RequestBody SkillPackUrlImportRequest body) {
-        return R.ok(skillPackUploadService.importPackFromUrl(userId, body.getUrl(), body.getResourceId()));
+        return R.ok(skillPackUploadService.importPackFromUrl(userId, body.getUrl(), body.getResourceId(), body.getSkillRoot()));
+    }
+
+    /** 分片上传初始化（断点续传）；每片大小见响应 chunkSize（通常为 4MB）。 */
+    @PostMapping(value = "/skills/package-upload/chunk/init", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public R<SkillPackChunkInitResponse> initSkillPackageChunkSession(@RequestHeader("X-User-Id") Long userId,
+                                                                       @Valid @RequestBody SkillPackChunkInitRequest body) {
+        return R.ok(skillPackChunkedUploadService.init(userId, body));
+    }
+
+    @GetMapping("/skills/package-upload/chunk/{uploadId}/status")
+    public R<SkillPackChunkStatusResponse> skillPackageChunkStatus(@RequestHeader("X-User-Id") Long userId,
+                                                                    @PathVariable String uploadId) {
+        return R.ok(skillPackChunkedUploadService.status(userId, uploadId));
+    }
+
+    @PostMapping(value = "/skills/package-upload/chunk/{uploadId}/{chunkIndex}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public R<Void> uploadSkillPackageChunk(@RequestHeader("X-User-Id") Long userId,
+                                           @PathVariable String uploadId,
+                                           @PathVariable int chunkIndex,
+                                           @RequestParam("file") MultipartFile file) throws IOException {
+        skillPackChunkedUploadService.putChunk(userId, uploadId, chunkIndex, file.getBytes());
+        return R.ok();
+    }
+
+    @PostMapping("/skills/package-upload/chunk/{uploadId}/complete")
+    @AuditLog(action = "skill_pack_upload", resource = "resource-center")
+    public R<ResourceManageVO> completeSkillPackageChunk(@RequestHeader("X-User-Id") Long userId,
+                                                         @PathVariable String uploadId) {
+        return R.ok(skillPackChunkedUploadService.complete(userId, uploadId));
+    }
+
+    @DeleteMapping("/skills/package-upload/chunk/{uploadId}")
+    public R<Void> abortSkillPackageChunk(@RequestHeader("X-User-Id") Long userId,
+                                          @PathVariable String uploadId) {
+        skillPackChunkedUploadService.abort(userId, uploadId);
+        return R.ok();
     }
 
     /**

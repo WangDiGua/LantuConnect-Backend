@@ -6,15 +6,14 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - SPRING_PROFILES_ACTIVE=prod
+      # 本地联调可设 SPRING_PROFILES_ACTIVE=dev；默认不加即用 application.yml 生产向默认值
       # 与 compose 内 Prometheus 联调时可设 true；默认 false 与 application 一致
       - PERMIT_PROMETHEUS_WITHOUT_AUTH=${PERMIT_PROMETHEUS_WITHOUT_AUTH:-false}
       - DB_USER=${DB_USER:-lantu}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_ALLOW_PUBLIC_KEY_RETRIEVAL=${DB_ALLOW_PUBLIC_KEY_RETRIEVAL:-false}
       - DB_USE_SSL=${DB_USE_SSL:-false}
-      - JWT_SECRET=${JWT_SECRET}
-      - LANTU_ENCRYPTION_KEY=${LANTU_ENCRYPTION_KEY}
+      # 需要自定义密钥时在 .env 中声明 JWT_SECRET、LANTU_ENCRYPTION_KEY（否则使用 application.yml 内建默认值）
       - SMS_ACCESS_KEY=${SMS_ACCESS_KEY}
       - SMS_SECRET=${SMS_SECRET}
       - MAIL_PASSWORD=${MAIL_PASSWORD}

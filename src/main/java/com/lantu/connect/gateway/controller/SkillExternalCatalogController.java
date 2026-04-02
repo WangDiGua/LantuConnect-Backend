@@ -5,6 +5,7 @@ import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.security.RequirePermission;
 import com.lantu.connect.gateway.dto.SkillExternalCatalogItemVO;
 import com.lantu.connect.gateway.service.SkillExternalCatalogService;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 统一资源中心 · 技能 · 在线市场：SkillsMP 聚合或静态配置（平台管理员）。
+ * 统一资源中心 · 技能 · 在线市场：SkillHub 公开搜索 + SkillsMP + 镜像 JSON + 静态配置（平台管理员）。
  */
 @RestController
 @RequestMapping("/resource-center/skill-external-catalog")
@@ -27,9 +28,12 @@ public class SkillExternalCatalogController {
     @GetMapping
     @RequirePermission("system:config")
     public R<PageResult<SkillExternalCatalogItemVO>> list(
+            HttpServletResponse response,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false, defaultValue = "1") int page,
             @RequestParam(required = false, defaultValue = "20") int pageSize) {
+        response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+        response.setHeader("Pragma", "no-cache");
         return R.ok(skillExternalCatalogService.listCatalogPage(keyword, page, pageSize));
     }
 }
