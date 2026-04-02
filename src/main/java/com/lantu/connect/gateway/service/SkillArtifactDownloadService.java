@@ -47,8 +47,8 @@ public class SkillArtifactDownloadService {
     private final FileStorageSupport fileStorageSupport;
 
     public void streamArtifact(Long resourceId, Long userId, ApiKey apiKey, HttpServletResponse response) throws java.io.IOException {
-        if (userId == null) {
-            throw new BusinessException(ResultCode.UNAUTHORIZED, "需要登录");
+        if (userId == null && apiKey == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "需要登录或提供 X-Api-Key");
         }
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                         SELECT r.resource_type, r.status, r.resource_code, r.created_by, se.artifact_uri, se.is_public

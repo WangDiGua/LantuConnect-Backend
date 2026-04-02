@@ -221,7 +221,7 @@ public class ResourceRegistryController {
      * 下载技能包（主要用于 isPublic=0 时在 resolve 中不直接返回 artifact URL 的场景）。
      */
     @GetMapping("/{id}/skill-artifact")
-    public void downloadSkillArtifact(@RequestHeader("X-User-Id") Long userId,
+    public void downloadSkillArtifact(@RequestHeader(value = "X-User-Id", required = false) Long userId,
                                       @RequestHeader(value = "X-Api-Key", required = false) String apiKeyRaw,
                                       @PathVariable Long id,
                                       HttpServletResponse response) throws IOException {

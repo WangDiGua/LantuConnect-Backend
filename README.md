@@ -75,22 +75,21 @@ mysql -u root -p < sql/lantu_connect.sql
 
 ### 2. 配置说明
 
-主配置为 `src/main/resources/application.yml`：**结构 + `${环境变量:默认}` 占位**；文末 `---` 为 **`dev` profile**。具体填法见 **`application-database.example.yml`**（复制为 **`application-database.yml`** 后按需修改，已 gitignore）。
+**唯一主配置**：`src/main/resources/application.yml` — **直接修改文件里的字面量**（库地址、账号、JWT、`lantu.*` 等）；文末 `---` 为 **`dev` profile`。
 
 | 项 | 说明 |
 |----|------|
-| 推荐本地 | 对照 **application-database.example.yml** 维护 **application-database.yml**（库、Redis、RabbitMQ、JWT、`lantu.*`、`file.*`、`cors.*`、日志等） |
-| 环境变量 | 占位键名见 `application.yml`；Docker/K8s 可只注入变量、不写覆盖文件 |
-| 列表项 | 如 `lantu.api-deprecation.*-patterns`、`skill-pack-import.allowed-host-suffixes` 须在 YAML 中写多行列表（见 example） |
+| Docker Compose | `docker-compose.yml` 已向 app 注入 `SPRING_DATASOURCE_*`、`SPRING_DATA_REDIS_*`、`SPRING_RABBITMQ_*` 等，连接服务名 `mysql` / `redis` / `rabbitmq`；`.env` 仍供 Compose 替换 |
+| 列表项 | `lantu.api-deprecation.*-patterns`、`skill-pack-import.*` 等均在 **`application.yml`** |
 | 技能外部目录 | `skill-external-catalog.yml`（`spring.config.import` 可选加载） |
-| 文件存储 | 默认 `FILE_STORAGE_TYPE=local`（本地上传目录）；对象存储见 MinIO 配置 |
-| RabbitMQ 监听 | 默认 `RABBITMQ_LISTENER_AUTO_STARTUP=false`（无 Broker 可启动）；**`docker-compose` 对 app 默认注入 `true`**（栈内有 Rabbit）；**`SPRING_PROFILES_ACTIVE=dev`** 时默认仍为 `false`，需要队列时请设 `RABBITMQ_LISTENER_AUTO_STARTUP=true` |
+| 文件存储 | 默认本地上传目录见 `file.upload-dir`；对象存储见 `file.minio` |
+| RabbitMQ 监听 | 默认 `false`（无 Broker 可启动）；**`docker-compose`** 对 app 默认 `SPRING_RABBITMQ_LISTENER_SIMPLE_AUTO_STARTUP=true` |
 
 可选：`application-local.yml`（已 gitignore）用于零散覆盖。
 
-**常规做法**：维护 **`application-database.yml`**／对照 **`application-database.example.yml`**，覆盖库表、Redis、JWT、`lantu.*`、`file.*`、`cors.*` 等所有业务向配置。
+部署到 K8s 等：可用 **标准 Spring 环境变量**（如 `SPRING_DATASOURCE_URL`）覆盖 `application.yml` 中的同名配置，无需改 YAML 文件。
 
-也可用 **`.env`** + Docker Compose；Spring 不直接读取 `.env`，需由 Compose 或 shell `export` 注入为环境变量。
+也可用 **`.env`** + Docker Compose；Spring 不直接读取 `.env`，由 Compose 注入容器环境变量。
 
 **本地推荐启动示例（Windows PowerShell）：**
 

@@ -1,78 +1,74 @@
 # =============================================================================
-# application.yml — 结构与占位默认值（env / 命令行可覆盖）
+# application.yml — 应用唯一主配置（库、Redis、密钥等均在本文修改）
 #
-# 真实推荐配置请编辑「复制后的」application-database.yml；模板见：
-#   application-database.example.yml（逐项示例与说明，已入库）
-#
-# 加载：主文件 → optional application-local.yml → optional application-database.yml（后者优先）
+# 另有两个可选 import（非必备）：skill-external-catalog.yml（外部技能目录）、
+# application-local.yml（本机零散覆盖，无则忽略）
 # =============================================================================
 
-server:
-  port: ${SERVER_PORT:8080}
-  servlet:
-    context-path: ${SERVER_CONTEXT_PATH:/regis}
-  ssl:
-    enabled: ${SSL_ENABLED:false}
-    key-store: ${SSL_KEY_STORE:classpath:keystore.p12}
-    key-store-password: ${SSL_KEY_STORE_PASSWORD:}
-    key-store-type: ${SSL_KEY_STORE_TYPE:PKCS12}
-
 spring:
-  application:
-    name: ${SPRING_APPLICATION_NAME:nexusai-connect}
   config:
     import:
       - optional:classpath:skill-external-catalog.yml
       - optional:classpath:application-local.yml
-      - optional:classpath:application-database.yml
+  application:
+    name: nexusai-connect
   devtools:
     restart:
-      enabled: ${DEVTOOLS_RESTART_ENABLED:false}
+      enabled: false
   datasource:
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:lantu_connect}?useUnicode=true&characterEncoding=UTF-8&useSSL=${DB_USE_SSL:false}&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=${DB_ALLOW_PUBLIC_KEY_RETRIEVAL:true}
-    username: ${DB_USER:root}
-    password: ${DB_PASSWORD:root}
+    url: jdbc:mysql://localhost:3306/lantu_connect?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: root
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:30}
-      minimum-idle: ${HIKARI_MIN_IDLE:8}
-      connection-timeout: ${HIKARI_CONNECTION_TIMEOUT_MS:30000}
-      max-lifetime: ${HIKARI_MAX_LIFETIME_MS:1800000}
-      leak-detection-threshold: ${HIKARI_LEAK_DETECTION_MS:0}
+      maximum-pool-size: 30
+      minimum-idle: 8
+      connection-timeout: 30000
+      max-lifetime: 1800000
+      leak-detection-threshold: 0
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      database: ${REDIS_DB:0}
-      # 有密码时取消注释：password: ${REDIS_PASSWORD}
+      host: localhost
+      port: 6379
+      database: 0
+      # password: 若 Redis 有密码在此填写
   servlet:
     multipart:
-      max-file-size: ${MULTIPART_MAX_FILE_SIZE:100MB}
-      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:120MB}
+      max-file-size: 100MB
+      max-request-size: 120MB
   jackson:
-    time-zone: ${JACKSON_TIMEZONE:Asia/Shanghai}
-    date-format: ${JACKSON_DATE_FORMAT:yyyy-MM-dd HH:mm:ss}
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
   rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USER:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
-    virtual-host: ${RABBITMQ_VHOST:/}
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    virtual-host: /
     listener:
       simple:
-        # 默认 false：本机可无 Rabbit；使用消息队列时请设为 true 或用 dev/docker-compose 提供的默认值
-        auto-startup: ${RABBITMQ_LISTENER_AUTO_STARTUP:false}
+        auto-startup: false
   task:
     execution:
       pool:
-        core-size: ${TASK_EXEC_POOL_CORE_SIZE:8}
-        max-size: ${TASK_EXEC_POOL_MAX_SIZE:32}
-        queue-capacity: ${TASK_EXEC_POOL_QUEUE_CAPACITY:200}
+        core-size: 8
+        max-size: 32
+        queue-capacity: 200
   flyway:
-    enabled: ${FLYWAY_ENABLED:false}
+    enabled: false
     locations: classpath:db/migration
     baseline-on-migrate: true
     baseline-version: 0
+
+server:
+  port: 8080
+  servlet:
+    context-path: /regis
+  ssl:
+    enabled: false
+    key-store: classpath:keystore.p12
+    key-store-password: ''
+    key-store-type: PKCS12
 
 mybatis-plus:
   mapper-locations: classpath:mapper/**/*.xml
@@ -85,43 +81,43 @@ mybatis-plus:
       logic-not-delete-value: 0
 
 jwt:
-  secret: ${JWT_SECRET:W9aAj8Gelv5D1BORiXMfx6LTYomqypuJHkIwK2ES3dhsbngPNFtcZ7rQz40UVC}
-  access-token-expiry: ${JWT_ACCESS_TOKEN_EXPIRY_SECONDS:7200}
-  refresh-token-expiry: ${JWT_REFRESH_TOKEN_EXPIRY_SECONDS:604800}
+  secret: W9aAj8Gelv5D1BORiXMfx6LTYomqypuJHkIwK2ES3dhsbngPNFtcZ7rQz40UVC
+  access-token-expiry: 7200
+  refresh-token-expiry: 604800
 
 geoip:
-  enabled: ${GEOIP_ENABLED:true}
-  timeout-ms: ${GEOIP_TIMEOUT_MS:2000}
+  enabled: true
+  timeout-ms: 2000
 
 lantu:
   encryption:
-    key: ${LANTU_ENCRYPTION_KEY:bCJgWT36frAQZsUvui7ze0dYO92DcVGHwNkn8XoK5lPtqEya}
+    key: bCJgWT36frAQZsUvui7ze0dYO92DcVGHwNkn8XoK5lPtqEya
   security:
-    jwt-enabled: ${LANTU_SECURITY_JWT_ENABLED:true}
-    allow-insecure-local-database-credentials: ${ALLOW_INSECURE_LOCAL_DB_CREDS:false}
-    allow-header-user-id-fallback: ${LANTU_ALLOW_HEADER_USER_ID_FALLBACK:false}
-    require-https: ${REQUIRE_HTTPS:false}
-    permit-prometheus-without-auth: ${PERMIT_PROMETHEUS_WITHOUT_AUTH:false}
-    expose-api-docs: ${EXPOSE_API_DOCS:false}
-    trust-proxy-forwarded-headers: ${TRUST_PROXY_FORWARDED_HEADERS:false}
+    jwt-enabled: true
+    allow-insecure-local-database-credentials: false
+    allow-header-user-id-fallback: false
+    require-https: false
+    permit-prometheus-without-auth: false
+    expose-api-docs: false
+    trust-proxy-forwarded-headers: false
     rate-limit:
-      login-per-ip-per-minute: ${LANTU_RL_LOGIN_PER_IP_MINUTE:50}
-      login-per-username-per-minute: ${LANTU_RL_LOGIN_PER_USERNAME_MINUTE:25}
-      register-per-ip-per-hour: ${LANTU_RL_REGISTER_PER_IP_HOUR:40}
-      captcha-per-ip-per-minute: ${LANTU_RL_CAPTCHA_PER_IP_MINUTE:45}
-      send-sms-per-ip-per-hour: ${LANTU_RL_SMS_PER_IP_HOUR:30}
-    encryption-key: ${FIELD_ENCRYPTION_KEY:hVe1vQCXF4x0criksOqtS98bEmUJAHK76jdWMglp}
+      login-per-ip-per-minute: 50
+      login-per-username-per-minute: 25
+      register-per-ip-per-hour: 40
+      captcha-per-ip-per-minute: 45
+      send-sms-per-ip-per-hour: 30
+    encryption-key: hVe1vQCXF4x0criksOqtS98bEmUJAHK76jdWMglp
   gateway:
-    invoke-http-status-reflects-upstream: ${INVOKE_HTTP_STATUS_REFLECTS_UPSTREAM:true}
+    invoke-http-status-reflects-upstream: true
   logging:
-    gateway-invoke-log-success: ${GATEWAY_INVOKE_LOG_SUCCESS:false}
-    gateway-invoke-log-payload-preview: ${GATEWAY_INVOKE_LOG_PAYLOAD_PREVIEW:false}
-    gateway-invoke-body-preview-max: ${GATEWAY_INVOKE_BODY_PREVIEW_MAX:1024}
-    gateway-invoke-payload-preview-max: ${GATEWAY_INVOKE_PAYLOAD_PREVIEW_MAX:300}
-    access-log-error-body-max-bytes: ${ACCESS_LOG_ERROR_BODY_MAX_BYTES:262144}
-    access-log-skip-error-body-path-fragments: ${ACCESS_LOG_SKIP_ERROR_BODY_PATH_FRAGMENTS:/auth/login,/auth/refresh,/auth/register}
+    gateway-invoke-log-success: false
+    gateway-invoke-log-payload-preview: false
+    gateway-invoke-body-preview-max: 1024
+    gateway-invoke-payload-preview-max: 300
+    access-log-error-body-max-bytes: 262144
+    access-log-skip-error-body-path-fragments: /auth/login,/auth/refresh,/auth/register
   api-deprecation:
-    enabled: ${LANTU_API_DEPRECATION_ENABLED:true}
+    enabled: true
     deprecated-patterns:
       - /v1/**
       - /agents/**
@@ -129,41 +125,41 @@ lantu:
       - /v1/**
       - /agents/**
   system:
-    integration-mock: ${LANTU_SYSTEM_INTEGRATION_MOCK:true}
+    integration-mock: true
   integration:
-    network-api-url: ${NETWORK_API_URL:}
-    acl-api-url: ${ACL_API_URL:}
-    mcp-allow-http: ${MCP_ALLOW_HTTP:false}
-    mcp-allow-local-targets: ${MCP_ALLOW_LOCAL_TARGETS:false}
-    mcp-http-accept: ${MCP_HTTP_ACCEPT:application/json, text/event-stream}
-    app-launch-token-ttl-seconds: ${APP_LAUNCH_TOKEN_TTL_SECONDS:300}
-    mcp-session-ttl-minutes: ${MCP_SESSION_TTL_MINUTES:45}
-    mcp-invoke-retries: ${MCP_INVOKE_RETRIES:1}
+    network-api-url: ''
+    acl-api-url: ''
+    mcp-allow-http: false
+    mcp-allow-local-targets: false
+    mcp-http-accept: application/json, text/event-stream
+    app-launch-token-ttl-seconds: 300
+    mcp-session-ttl-minutes: 45
+    mcp-invoke-retries: 1
     oauth2:
-      connect-timeout-sec: ${OAUTH2_CONNECT_TIMEOUT_SEC:15}
+      connect-timeout-sec: 15
   notification:
-    sms-enabled: ${NOTIFICATION_SMS_ENABLED:false}
-    email-enabled: ${NOTIFICATION_EMAIL_ENABLED:false}
+    sms-enabled: false
+    email-enabled: false
   contract:
-    freeze-version: ${LANTU_CONTRACT_FREEZE_VERSION:2026-03-contract-v1}
-    freeze-effective-date: ${LANTU_CONTRACT_FREEZE_EFFECTIVE_DATE:2026-03-24}
+    freeze-version: 2026-03-contract-v1
+    freeze-effective-date: 2026-03-24
   idempotency:
-    enabled: ${LANTU_IDEMPOTENCY_ENABLED:true}
-    processing-ttl-seconds: ${LANTU_IDEMPOTENCY_PROCESSING_TTL_SECONDS:60}
-    success-ttl-seconds: ${LANTU_IDEMPOTENCY_SUCCESS_TTL_SECONDS:86400}
+    enabled: true
+    processing-ttl-seconds: 60
+    success-ttl-seconds: 86400
   skill-pack-import:
-    max-bytes: ${SKILL_PACK_IMPORT_MAX_BYTES:26214400}
-    connect-timeout-seconds: ${SKILL_PACK_IMPORT_CONNECT_TIMEOUT:45}
-    read-timeout-seconds: ${SKILL_PACK_IMPORT_READ_TIMEOUT_SECONDS:90}
-    max-redirects: ${SKILL_PACK_IMPORT_MAX_REDIRECTS:5}
-    fetch-retries: ${SKILL_PACK_IMPORT_FETCH_RETRIES:3}
-    fetch-retry-delay-ms: ${SKILL_PACK_IMPORT_FETCH_RETRY_DELAY_MS:1000}
-    https-only: ${SKILL_PACK_IMPORT_HTTPS_ONLY:true}
+    max-bytes: 26214400
+    connect-timeout-seconds: 45
+    read-timeout-seconds: 90
+    max-redirects: 5
+    fetch-retries: 3
+    fetch-retry-delay-ms: 1000
+    https-only: true
     allowed-host-suffixes: [ ]
-    require-allowed-host-suffixes: ${SKILL_PACK_IMPORT_REQUIRE_SUFFIX:false}
-    git-clone-enabled: ${SKILL_PACK_GIT_CLONE_ENABLED:true}
-    git-clone-timeout-seconds: ${SKILL_PACK_GIT_CLONE_TIMEOUT_SECONDS:120}
-    git-clone-allow-bare-repo-paths: ${SKILL_PACK_GIT_CLONE_ALLOW_BARE:true}
+    require-allowed-host-suffixes: false
+    git-clone-enabled: true
+    git-clone-timeout-seconds: 120
+    git-clone-allow-bare-repo-paths: true
     git-bare-repo-host-suffixes:
       - github.com
       - www.github.com
@@ -173,7 +169,33 @@ lantu:
       - www.bitbucket.org
       - gitee.com
       - www.gitee.com
-    git-clone-max-unpacked-bytes: ${SKILL_PACK_GIT_CLONE_MAX_UNPACKED_BYTES:41943040}
+    git-clone-max-unpacked-bytes: 41943040
+
+file:
+  upload-dir: /data/nexusai/uploads
+  max-size-mb: 50
+  allowed-types: pdf,docx,csv,json,parquet,xlsx,jpg,jpeg,png,gif,svg
+  storage-type: local
+  minio:
+    endpoint: http://localhost:9000
+    access-key: minioadmin
+    secret-key: minioadmin
+    bucket: nexusai-connect
+
+cors:
+  # true：任意源（allowedOriginPatterns("*") + allowedHeaders("*")）；对内网/公网开放 API 时注意风险
+  allow-all-origins: true
+  # allow-all 为 true 时下列两项不生效，仅在不开放任意源时使用
+  relax-localhost: true
+  allowed-origins: ''
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: false
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: false
 
 resilience4j:
   circuitbreaker:
@@ -291,29 +313,6 @@ resilience4j:
       mcpInvoke:
         base-config: default
 
-file:
-  upload-dir: ${FILE_UPLOAD_DIR:/data/nexusai/uploads}
-  max-size-mb: ${FILE_MAX_SIZE_MB:50}
-  allowed-types: ${FILE_ALLOWED_TYPES:pdf,docx,csv,json,parquet,xlsx,jpg,jpeg,png,gif,svg}
-  storage-type: ${FILE_STORAGE_TYPE:local}
-  minio:
-    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
-    access-key: ${MINIO_ACCESS_KEY:minioadmin}
-    secret-key: ${MINIO_SECRET_KEY:minioadmin}
-    bucket: ${MINIO_BUCKET:nexusai-connect}
-
-cors:
-  allowed-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:5173}
-  relax-localhost: ${CORS_RELAX_LOCALHOST:true}
-
-springdoc:
-  api-docs:
-    path: /v3/api-docs
-    enabled: ${SPRINGDOC_ENABLED:false}
-  swagger-ui:
-    path: /swagger-ui.html
-    enabled: ${SPRINGDOC_UI_ENABLED:false}
-
 management:
   endpoints:
     web:
@@ -326,9 +325,9 @@ management:
 
 logging:
   level:
-    com.lantu.connect: ${LOG_LEVEL_LANTU:info}
-    com.lantu.connect.common.mybatis: ${LOG_LEVEL_MYBATIS:info}
-    org.springframework.web: ${LOG_LEVEL_SPRING_WEB:info}
+    com.lantu.connect: info
+    com.lantu.connect.common.mybatis: info
+    org.springframework.web: info
 
 ---
 spring:
@@ -341,10 +340,10 @@ spring:
   rabbitmq:
     listener:
       simple:
-        auto-startup: ${RABBITMQ_LISTENER_AUTO_STARTUP:false}
+        auto-startup: false
 
 file:
-  upload-dir: ${FILE_UPLOAD_DIR:D:/LantuConnect/LantuConnect-Backend/skills_local_data}
+  upload-dir: D:/LantuConnect/LantuConnect-Backend/skills_local_data
 
 lantu:
   security:

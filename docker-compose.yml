@@ -6,21 +6,24 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # 本地联调可设 SPRING_PROFILES_ACTIVE=dev；默认不加即用 application.yml 生产向默认值
-      # 与 compose 内 Prometheus 联调时可设 true；默认 false 与 application 一致
-      - PERMIT_PROMETHEUS_WITHOUT_AUTH=${PERMIT_PROMETHEUS_WITHOUT_AUTH:-false}
-      - DB_USER=${DB_USER:-lantu}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_ALLOW_PUBLIC_KEY_RETRIEVAL=${DB_ALLOW_PUBLIC_KEY_RETRIEVAL:-false}
-      - DB_USE_SSL=${DB_USE_SSL:-false}
-      # 需要自定义密钥时在 .env 中声明 JWT_SECRET、LANTU_ENCRYPTION_KEY（否则使用 application.yml 内建默认值）
+      # 本地联调可设 SPRING_PROFILES_ACTIVE=dev；其余以 application.yml 字面量为准
+      # Compose 内需连服务名 mysql/redis/rabbitmq，用 Spring 标准环境变量覆盖（见 application.yml）
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/lantu_connect?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      - SPRING_DATASOURCE_USERNAME=${DB_USER:-lantu}
+      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_DATABASE=${REDIS_DB:-0}
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_RABBITMQ_PORT=5672
+      - SPRING_RABBITMQ_USERNAME=${RABBITMQ_USER:-guest}
+      - SPRING_RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-guest}
+      - SPRING_RABBITMQ_VIRTUAL_HOST=${RABBITMQ_VHOST:-/}
+      # 栈内有 Rabbit：默认启监听；裸跑 JAR 见 application.yml 默认 false
+      - SPRING_RABBITMQ_LISTENER_SIMPLE_AUTO_STARTUP=${RABBITMQ_LISTENER_AUTO_STARTUP:-true}
+      - LANTU_SECURITY_PERMIT_PROMETHEUS_WITHOUT_AUTH=${PERMIT_PROMETHEUS_WITHOUT_AUTH:-false}
       - SMS_ACCESS_KEY=${SMS_ACCESS_KEY}
       - SMS_SECRET=${SMS_SECRET}
       - MAIL_PASSWORD=${MAIL_PASSWORD}
-      # 共用公司 Redis 时可在 .env 中设置 REDIS_DB=约定编号（默认 0）
-      - REDIS_DB=${REDIS_DB:-0}
-      # 本 compose 含 RabbitMQ：镜像内默认开启监听器；裸跑 JAR 时 application.yml 默认为 false
-      - RABBITMQ_LISTENER_AUTO_STARTUP=${RABBITMQ_LISTENER_AUTO_STARTUP:-true}
     depends_on:
       mysql:
         condition: service_healthy

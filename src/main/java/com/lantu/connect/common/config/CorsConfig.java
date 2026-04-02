@@ -27,8 +27,22 @@ public class CorsConfig implements WebMvcConfigurer {
     @Value("${cors.relax-localhost:true}")
     private boolean relaxLocalhost;
 
+    /** true 时等同 allowedOriginPatterns("*")（含 credentials）；生产请保持 false。 */
+    @Value("${cors.allow-all-origins:false}")
+    private boolean allowAllOrigins;
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        if (allowAllOrigins) {
+            registry.addMapping("/**")
+                    .allowedOriginPatterns("*")
+                    .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+                    .allowedHeaders("*")
+                    .exposedHeaders("X-Trace-Id", "X-Request-Id", "X-Total-Count")
+                    .allowCredentials(true)
+                    .maxAge(3600);
+            return;
+        }
         Set<String> patterns = new LinkedHashSet<>();
         if (relaxLocalhost) {
             patterns.add("http://localhost:*");
