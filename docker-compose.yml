@@ -17,6 +17,8 @@ services:
       - SMS_ACCESS_KEY=${SMS_ACCESS_KEY}
       - SMS_SECRET=${SMS_SECRET}
       - MAIL_PASSWORD=${MAIL_PASSWORD}
+      # 共用公司 Redis 时可在 .env 中设置 REDIS_DB=约定编号（默认 0）
+      - REDIS_DB=${REDIS_DB:-0}
     depends_on:
       mysql:
         condition: service_healthy

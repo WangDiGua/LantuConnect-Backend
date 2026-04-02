@@ -57,6 +57,8 @@ spring:
       host: ${REDIS_HOST:localhost}
       # host: ${REDIS_HOST:192.168.5.130}
       port: ${REDIS_PORT:6379}
+      # 与公司其它系统共用同一 Redis 实例时，与运维约定独立逻辑库（默认 0）可显著降低撞 key 概率
+      database: ${REDIS_DB:0}
       # password: ${REDIS_PASSWORD:redispassword}
       # 无密码时不要配置 password。若 Redis 有密码，可在此增加：password: ${REDIS_PASSWORD}
   servlet:
