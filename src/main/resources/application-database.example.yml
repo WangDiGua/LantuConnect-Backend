@@ -1,0 +1,201 @@
+# =============================================================================
+# 本地/部署覆盖配置 — 模板（可提交仓库）
+#
+# 使用：复制本文件为同目录 application-database.yml，按环境修改（application-database.yml 勿提交仓库）。
+# 加载顺序晚于 application.yml，此处写的值会覆盖主文件中的占位默认值。
+# 不需要改动的节可整段删除，沿用 application.yml。
+# =============================================================================
+
+# --- HTTP / TLS ---
+server:
+  port: 8080
+  servlet:
+    context-path: /regis
+  ssl:
+    enabled: false
+    key-store: classpath:keystore.p12
+    key-store-password: ''
+    key-store-type: PKCS12
+
+spring:
+  devtools:
+    restart:
+      enabled: false
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/lantu_connect?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 8
+      connection-timeout: 30000
+      max-lifetime: 1800000
+      leak-detection-threshold: 0
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+      # password: your-redis-password
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 120MB
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    virtual-host: /
+    listener:
+      simple:
+        auto-startup: true
+  task:
+    execution:
+      pool:
+        core-size: 8
+        max-size: 32
+        queue-capacity: 200
+  flyway:
+    enabled: false
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+
+jwt:
+  secret: W9aAj8Gelv5D1BORiXMfx6LTYomqypuJHkIwK2ES3dhsbngPNFtcZ7rQz40UVC
+  access-token-expiry: 7200
+  refresh-token-expiry: 604800
+
+geoip:
+  enabled: true
+  timeout-ms: 2000
+
+lantu:
+  encryption:
+    key: bCJgWT36frAQZsUvui7ze0dYO92DcVGHwNkn8XoK5lPtqEya
+  security:
+    jwt-enabled: true
+    allow-insecure-local-database-credentials: false
+    allow-header-user-id-fallback: false
+    require-https: false
+    permit-prometheus-without-auth: false
+    expose-api-docs: false
+    trust-proxy-forwarded-headers: false
+    rate-limit:
+      login-per-ip-per-minute: 50
+      login-per-username-per-minute: 25
+      register-per-ip-per-hour: 40
+      captcha-per-ip-per-minute: 45
+      send-sms-per-ip-per-hour: 30
+    encryption-key: hVe1vQCXF4x0criksOqtS98bEmUJAHK76jdWMglp
+  gateway:
+    invoke-http-status-reflects-upstream: true
+  logging:
+    gateway-invoke-log-success: false
+    gateway-invoke-log-payload-preview: false
+    gateway-invoke-body-preview-max: 1024
+    gateway-invoke-payload-preview-max: 300
+    access-log-error-body-max-bytes: 262144
+    access-log-skip-error-body-path-fragments: /auth/login,/auth/refresh,/auth/register
+  api-deprecation:
+    enabled: true
+    deprecated-patterns:
+      - /v1/**
+      - /agents/**
+    write-blocked-patterns:
+      - /v1/**
+      - /agents/**
+  system:
+    integration-mock: true
+  integration:
+    network-api-url: ''
+    acl-api-url: ''
+    mcp-allow-http: false
+    mcp-allow-local-targets: false
+    mcp-http-accept: application/json, text/event-stream
+    app-launch-token-ttl-seconds: 300
+    mcp-session-ttl-minutes: 45
+    mcp-invoke-retries: 1
+    oauth2:
+      connect-timeout-sec: 15
+  notification:
+    sms-enabled: false
+    email-enabled: false
+  contract:
+    freeze-version: 2026-03-contract-v1
+    freeze-effective-date: 2026-03-24
+  idempotency:
+    enabled: true
+    processing-ttl-seconds: 60
+    success-ttl-seconds: 86400
+  skill-pack-import:
+    max-bytes: 26214400
+    connect-timeout-seconds: 45
+    read-timeout-seconds: 90
+    max-redirects: 5
+    fetch-retries: 3
+    fetch-retry-delay-ms: 1000
+    https-only: true
+    allowed-host-suffixes: [ ]
+    require-allowed-host-suffixes: false
+    git-clone-enabled: true
+    git-clone-timeout-seconds: 120
+    git-clone-allow-bare-repo-paths: true
+    git-bare-repo-host-suffixes:
+      - github.com
+      - www.github.com
+      - gitlab.com
+      - www.gitlab.com
+      - bitbucket.org
+      - www.bitbucket.org
+      - gitee.com
+      - www.gitee.com
+    git-clone-max-unpacked-bytes: 41943040
+
+file:
+  upload-dir: /data/nexusai/uploads
+  max-size-mb: 50
+  allowed-types: pdf,docx,csv,json,parquet,xlsx,jpg,jpeg,png,gif,svg
+  storage-type: local
+  minio:
+    endpoint: http://localhost:9000
+    access-key: minioadmin
+    secret-key: minioadmin
+    bucket: nexusai-connect
+
+cors:
+  allowed-origins: http://localhost:3000,http://localhost:5173
+  relax-localhost: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: false
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+logging:
+  level:
+    com.lantu.connect: info
+    com.lantu.connect.common.mybatis: info
+    org.springframework.web: info
+
+# --- 进阶：Resilience4j、MyBatis-Plus 等仍写在 application.yml。
+#   若只在本机调熔断/限流/连接池 XML，可在 application.yml 搜索对应根键，
+#   将整段 YAML 复制到本文件（或 application-database.yml）末尾，后加载的段落会覆盖前者。

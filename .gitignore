@@ -44,6 +44,9 @@ desktop.ini
 # --- Spring Boot ---
 application-local.yml
 application-local.properties
+# 私有覆盖：由 application-database.example.yml 复制为 application-database.yml 后填写（勿提交）
+# 模板 application-database.example.yml 须保留在仓库内，勿忽略
+application-database.yml
 
 # --- Logs ---
 logs/
