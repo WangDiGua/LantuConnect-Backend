@@ -60,7 +60,7 @@ src/main/java/com/lantu/connect/
 
 - JDK 17+
 - MySQL 8.0+、Redis 7+（本机或 Docker 均可）
-- **可选** RabbitMQ（`docker-compose` 已包含；本机不配时请用 **`dev` profile** 或关闭监听，见配置说明）
+- **可选** RabbitMQ（`docker-compose` 已包含；裸跑不配时**无需**装 Broker，默认不启消息监听，见配置说明）
 - **可选** 全局 Maven 3.8+；未安装时可用仓库自带的 **Maven Wrapper**（`mvnw` / `mvnw.cmd`）
 
 ### 1. 初始化数据库
@@ -83,6 +83,8 @@ mysql -u root -p < sql/lantu_connect.sql
 | 环境变量 | 占位键名见 `application.yml`；Docker/K8s 可只注入变量、不写覆盖文件 |
 | 列表项 | 如 `lantu.api-deprecation.*-patterns`、`skill-pack-import.allowed-host-suffixes` 须在 YAML 中写多行列表（见 example） |
 | 技能外部目录 | `skill-external-catalog.yml`（`spring.config.import` 可选加载） |
+| 文件存储 | 默认 `FILE_STORAGE_TYPE=local`（本地上传目录）；对象存储见 MinIO 配置 |
+| RabbitMQ 监听 | 默认 `RABBITMQ_LISTENER_AUTO_STARTUP=false`（无 Broker 可启动）；**`docker-compose` 对 app 默认注入 `true`**（栈内有 Rabbit）；**`SPRING_PROFILES_ACTIVE=dev`** 时默认仍为 `false`，需要队列时请设 `RABBITMQ_LISTENER_AUTO_STARTUP=true` |
 
 可选：`application-local.yml`（已 gitignore）用于零散覆盖。
 

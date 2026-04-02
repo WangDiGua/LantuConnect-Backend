@@ -6,11 +6,11 @@
 # 不需要改动的节可整段删除，沿用 application.yml。
 # =============================================================================
 
-# --- HTTP / TLS ---
+# --- HTTP / TLS（与 application.yml 占位一致，便于仅用环境变量改端口/上下文）---
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
   servlet:
-    context-path: /regis
+    context-path: ${SERVER_CONTEXT_PATH:/regis}
   ssl:
     enabled: false
     key-store: classpath:keystore.p12
@@ -53,7 +53,8 @@ spring:
     virtual-host: /
     listener:
       simple:
-        auto-startup: true
+        # 与主配置一致：默认不启监听，需要消费队列时改为 true 或依赖 RABBITMQ_LISTENER_AUTO_STARTUP
+        auto-startup: ${RABBITMQ_LISTENER_AUTO_STARTUP:false}
   task:
     execution:
       pool:

@@ -60,7 +60,8 @@ spring:
     virtual-host: ${RABBITMQ_VHOST:/}
     listener:
       simple:
-        auto-startup: ${RABBITMQ_LISTENER_AUTO_STARTUP:true}
+        # 默认 false：本机可无 Rabbit；使用消息队列时请设为 true 或用 dev/docker-compose 提供的默认值
+        auto-startup: ${RABBITMQ_LISTENER_AUTO_STARTUP:false}
   task:
     execution:
       pool:

@@ -19,6 +19,8 @@ services:
       - MAIL_PASSWORD=${MAIL_PASSWORD}
       # 共用公司 Redis 时可在 .env 中设置 REDIS_DB=约定编号（默认 0）
       - REDIS_DB=${REDIS_DB:-0}
+      # 本 compose 含 RabbitMQ：镜像内默认开启监听器；裸跑 JAR 时 application.yml 默认为 false
+      - RABBITMQ_LISTENER_AUTO_STARTUP=${RABBITMQ_LISTENER_AUTO_STARTUP:-true}
     depends_on:
       mysql:
         condition: service_healthy

@@ -6,7 +6,7 @@
 
 | 文件 | 说明 |
 |------|------|
-| [controller-inventory.md](controller-inventory.md) | 后端 Controller 与 Servlet 路径前缀（不含 `context-path` `/api`） |
+| [controller-inventory.md](controller-inventory.md) | 后端 Controller 与 Servlet 路径前缀（不含 `context-path` `/regis`） |
 | [endpoint-matrix-snapshot.md](endpoint-matrix-snapshot.md) | 按模块节选的 Endpoint × 前端 service 对照快照 |
 | [fe-services-and-routes.md](fe-services-and-routes.md) | 前端 API 封装与路由模型说明 |
 | [findings.md](findings.md) | 分级问题摘要 |

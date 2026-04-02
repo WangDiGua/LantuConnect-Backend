@@ -19,12 +19,12 @@
 - 与现有网关逻辑共用 `UnifiedGatewayService`，保证行为一致。
 - 增加 OpenAPI 注解（`@Tag`、`@Operation`）用于文档稳定输出。
 - **鉴权**：所有上述接口须请求头 `X-Api-Key`（完整 `secretPlain`）；可选 `X-User-Id`、`X-Trace-Id`（invoke / invoke-stream）。
-- **多语言 SDK**：本仓库交付的是 **HTTP 契约**；Maven/npm 等客户端包由独立发版维护，调用路径为 `{context-path}/sdk/v1/...`（默认 context-path 为 `/api` 时即 `/api/sdk/v1/...`）。
+- **多语言 SDK**：本仓库交付的是 **HTTP 契约**；Maven/npm 等客户端包由独立发版维护，调用路径为 `{context-path}/sdk/v1/...`（默认 context-path 为 `/regis` 时即 `/regis/sdk/v1/...`）。
 
 #### HTTP 调用示例（invoke）
 
 ```bash
-# BASE：网关根，须含 context-path，例如 https://host/api
+# BASE：网关根，须含 context-path，例如 https://host/regis
 curl -sS -X POST "$BASE/sdk/v1/invoke" \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: sk_..." \

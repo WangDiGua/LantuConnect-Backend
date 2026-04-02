@@ -1,6 +1,6 @@
 # 后端 Controller 清单（与代码一致）
 
-**说明**：以下路径为 **Servlet 路径**（相对 `server.servlet.context-path`，默认需加前缀 `/api`）。  
+**说明**：以下路径为 **Servlet 路径**（相对 `server.servlet.context-path`，默认需加前缀 `/regis`）。  
 **REST Controller 数量**：29（不含 `GlobalExceptionHandler`）。
 
 | # | Controller | `RequestMapping` 前缀 |
