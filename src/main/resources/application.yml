@@ -18,9 +18,8 @@
 # HTTP：context-path /api；TLS 由网关/本机二选一（默认关闭，便于无证书直启）
 # -----------------------------------------------------------------------------
 server:
-  port: 8080
   servlet:
-    context-path: /api
+    context-path: /regis
   ssl:
     enabled: ${SSL_ENABLED:false}
     key-store: ${SSL_KEY_STORE:classpath:keystore.p12}
