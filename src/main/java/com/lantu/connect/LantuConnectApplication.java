@@ -4,7 +4,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.boot.web.servlet.support.SpringBootServletInitializer;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.env.Environment;
@@ -19,7 +21,12 @@ import java.net.UnknownHostException;
 @EnableScheduling
 @MapperScan({"com.lantu.connect.**.mapper", "com.lantu.connect.common.sensitive"})
 @Slf4j
-public class LantuConnectApplication {
+public class LantuConnectApplication extends SpringBootServletInitializer {
+
+    @Override
+    protected SpringApplicationBuilder configure(SpringApplicationBuilder application) {
+        return application.sources(LantuConnectApplication.class);
+    }
 
     public static void main(String[] args) {
         SpringApplication.run(LantuConnectApplication.class, args);
