@@ -26,6 +26,10 @@ public class UsageRecord {
     private String agentName;
     private String displayName;
     private String type;
+
+    /** 对应 {@code t_resource.id}；网关 invoke 写入，历史数据可为 null */
+    private Long resourceId;
+
     private String action;
     private String inputPreview;
     private String outputPreview;

@@ -5,9 +5,10 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import com.lantu.connect.common.web.TraceLogging;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -21,25 +22,12 @@ import java.util.Locale;
 @Slf4j
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 1)
+@RequiredArgsConstructor
 public class AccessLogFilter extends OncePerRequestFilter {
 
     private static final String IGNORED_PATHS = "/actuator,/swagger-ui,/v3/api-docs";
 
-    /** HTTP 状态 >=400 时，响应体预览最大字符数；0 表示不输出正文预览。流式接口见 isStreamingInvokePath。 */
-    @Value("${lantu.logging.access-log-error-body-max-chars:2048}")
-    private int accessLogErrorBodyMaxChars;
-
-    /**
-     * 超过此字节数的已缓存响应体不写预览（仅字符预览策略下仍可能截断）。0 表示不按大小跳过。
-     */
-    @Value("${lantu.logging.access-log-error-body-max-bytes:262144}")
-    private int accessLogErrorBodyMaxBytes;
-
-    /**
-     * 请求 URI 包含任一片段时不记录错误响应体（如登录返回含 token）。逗号分隔，前后空格忽略。
-     */
-    @Value("${lantu.logging.access-log-skip-error-body-path-fragments:/auth/login,/auth/refresh,/auth/register}")
-    private String accessLogSkipErrorBodyPathFragments;
+    private final RuntimeAppConfigService runtimeAppConfigService;
 
     /** SSE/chunked 长响应不能使用 ContentCachingResponseWrapper 全量缓存，否则易占满内存。 */
     private static boolean isStreamingInvokePath(String uri) {
@@ -59,6 +47,7 @@ public class AccessLogFilter extends OncePerRequestFilter {
         String query = request.getQueryString();
         String fullUrl = query != null ? uri + "?" + query : uri;
 
+        var logCfg = runtimeAppConfigService.logging();
         if (isStreamingInvokePath(uri)) {
             try {
                 chain.doFilter(request, response);
@@ -75,9 +64,10 @@ public class AccessLogFilter extends OncePerRequestFilter {
             chain.doFilter(request, wrapped);
         } finally {
             int status = wrapped.getStatus();
-            String bodyPreview = status >= 400 && accessLogErrorBodyMaxChars > 0
-                    ? responseBodyPreview(wrapped, uri, accessLogErrorBodyMaxChars, accessLogErrorBodyMaxBytes,
-                    accessLogSkipErrorBodyPathFragments)
+            String bodyPreview = status >= 400 && logCfg.getAccessLogErrorBodyMaxChars() > 0
+                    ? responseBodyPreview(wrapped, uri, logCfg.getAccessLogErrorBodyMaxChars(),
+                    logCfg.getAccessLogErrorBodyMaxBytes(),
+                    logCfg.getAccessLogSkipErrorBodyPathFragments())
                     : null;
             logAccessLine(request.getMethod(), fullUrl, traceIdFull, shortTraceId, start, status, uri, bodyPreview);
             wrapped.copyBodyToResponse();

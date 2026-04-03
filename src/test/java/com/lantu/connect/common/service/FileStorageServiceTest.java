@@ -1,17 +1,20 @@
 package com.lantu.connect.common.service;
 
+import com.lantu.connect.common.config.FileBootstrapProperties;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.storage.FileStorageSupport;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.file.Path;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class FileStorageServiceTest {
 
@@ -22,16 +25,17 @@ class FileStorageServiceTest {
 
     @BeforeEach
     void setUp() {
-        FileStorageSupport support = new FileStorageSupport();
-        ReflectionTestUtils.setField(support, "uploadDir", tempDir.toString());
+        RuntimeAppConfigService runtime = mock(RuntimeAppConfigService.class);
+        FileBootstrapProperties fileProps = new FileBootstrapProperties();
+        fileProps.setUploadDir(tempDir.toString());
+        fileProps.setMaxSizeMb(10);
+        fileProps.setSkillPackMaxMb(10);
+        fileProps.setStorageType("local");
+        fileProps.setAllowedCategories("document,avatar,image,attachment,temp,dataset");
+        when(runtime.file()).thenReturn(fileProps);
 
-        service = new FileStorageService(support);
-        ReflectionTestUtils.setField(service, "uploadDir", tempDir.toString());
-        ReflectionTestUtils.setField(service, "maxSizeMb", 10);
-        ReflectionTestUtils.setField(service, "skillPackMaxMb", 10);
-        ReflectionTestUtils.setField(service, "storageType", "local");
-        ReflectionTestUtils.setField(service, "allowedCategoriesRaw", "document,avatar,image,attachment,temp,dataset");
-        service.initAllowedCategories();
+        FileStorageSupport support = new FileStorageSupport(runtime);
+        service = new FileStorageService(support, runtime);
     }
 
     @Test

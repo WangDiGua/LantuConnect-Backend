@@ -6,10 +6,12 @@ import com.lantu.connect.common.security.RequirePermission;
 import com.lantu.connect.dashboard.dto.AdminOverviewVO;
 import com.lantu.connect.dashboard.dto.AdminRealtimeData;
 import com.lantu.connect.dashboard.dto.ExploreHubData;
+import com.lantu.connect.dashboard.dto.OwnerDeveloperStatsVO;
 import com.lantu.connect.dashboard.dto.UsageStatsVO;
 import com.lantu.connect.dashboard.dto.UserDashboardData;
 import com.lantu.connect.dashboard.dto.UserWorkspaceVO;
 import com.lantu.connect.dashboard.service.DashboardService;
+import com.lantu.connect.dashboard.service.OwnerDeveloperStatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.util.StringUtils;
@@ -22,6 +24,7 @@ import java.util.Map;
 public class DashboardController {
 
     private final DashboardService dashboardService;
+    private final OwnerDeveloperStatsService ownerDeveloperStatsService;
 
     @GetMapping("/admin-overview")
     @RequirePermission({"monitor:view"})
@@ -32,6 +35,18 @@ public class DashboardController {
     @GetMapping("/user-workspace")
     public R<UserWorkspaceVO> userWorkspace(@RequestHeader("X-User-Id") Long userId) {
         return R.ok(dashboardService.userWorkspace(userId));
+    }
+
+    /**
+     * Owner 维度统计（网关 invoke / usage_record invoke / 技能包下载）。权限：本人、同部门 dept_admin 只读、platform_admin/admin。
+     */
+    @GetMapping("/owner-resource-stats")
+    public R<OwnerDeveloperStatsVO> ownerResourceStats(
+            @RequestHeader("X-User-Id") Long operatorUserId,
+            @RequestParam(required = false) Long ownerUserId,
+            @RequestParam(required = false, defaultValue = "7") Integer periodDays) {
+        int days = periodDays == null ? 7 : periodDays;
+        return R.ok(ownerDeveloperStatsService.ownerResourceStats(operatorUserId, ownerUserId, days));
     }
 
     @GetMapping("/health-summary")

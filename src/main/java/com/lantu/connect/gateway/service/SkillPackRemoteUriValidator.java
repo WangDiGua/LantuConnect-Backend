@@ -3,6 +3,7 @@ package com.lantu.connect.gateway.service;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.gateway.config.SkillPackImportProperties;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -19,13 +20,17 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class SkillPackRemoteUriValidator {
 
-    private final SkillPackImportProperties properties;
+    private final RuntimeAppConfigService runtimeAppConfigService;
+
+    private SkillPackImportProperties p() {
+        return runtimeAppConfigService.skillPackImport();
+    }
 
     public void assertHostSuffixPolicyConfigured() {
-        if (!properties.isRequireAllowedHostSuffixes()) {
+        if (!p().isRequireAllowedHostSuffixes()) {
             return;
         }
-        List<String> s = properties.getAllowedHostSuffixes();
+        List<String> s = p().getAllowedHostSuffixes();
         boolean any = s != null && s.stream().anyMatch(x -> x != null && !x.isBlank());
         if (!any) {
             throw new BusinessException(ResultCode.PARAM_ERROR,
@@ -39,7 +44,7 @@ public class SkillPackRemoteUriValidator {
             throw new BusinessException(ResultCode.PARAM_ERROR, "url 须包含协议");
         }
         String s = scheme.toLowerCase(Locale.ROOT);
-        if (properties.isHttpsOnly() && !"https".equals(s)) {
+        if (p().isHttpsOnly() && !"https".equals(s)) {
             throw new BusinessException(ResultCode.PARAM_ERROR,
                     "仅允许 https（可在配置 lantu.skill-pack-import.https-only=false 关闭）");
         }
@@ -54,7 +59,7 @@ public class SkillPackRemoteUriValidator {
         if ("localhost".equals(h) || h.endsWith(".localhost")) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "禁止访问本地主机");
         }
-        List<String> suffixes = properties.getAllowedHostSuffixes();
+        List<String> suffixes = p().getAllowedHostSuffixes();
         if (suffixes != null && !suffixes.isEmpty()) {
             boolean ok = false;
             for (String suf : suffixes) {

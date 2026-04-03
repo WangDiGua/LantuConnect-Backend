@@ -2,6 +2,7 @@ package com.lantu.connect.common.idempotency;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -28,12 +29,13 @@ public class IdempotencyFilter extends OncePerRequestFilter {
     private static final String PREFIX = "idem:req:";
 
     private final StringRedisTemplate redisTemplate;
-    private final IdempotencyProperties properties;
+    private final RuntimeAppConfigService runtimeAppConfigService;
     private final ObjectMapper objectMapper;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
+        IdempotencyProperties properties = runtimeAppConfigService.idempotency();
         if (!properties.isEnabled() || !MUTATING.contains(request.getMethod())) {
             filterChain.doFilter(request, response);
             return;

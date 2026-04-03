@@ -20,12 +20,12 @@ import com.lantu.connect.gateway.support.GatewayInvokeResponseSupport;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.usermgmt.entity.ApiKey;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import com.lantu.connect.usermgmt.mapper.ApiKeyMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -52,9 +52,7 @@ public class ResourceCatalogController {
     private final AppLaunchTokenService appLaunchTokenService;
     private final ApiKeyMapper apiKeyMapper;
     private final ResourceInvokeGrantService resourceInvokeGrantService;
-
-    @Value("${lantu.gateway.invoke-http-status-reflects-upstream:true}")
-    private boolean invokeHttpStatusReflectsUpstream;
+    private final RuntimeAppConfigService runtimeAppConfigService;
 
     @GetMapping("/catalog/resources")
     public R<PageResult<ResourceCatalogItemVO>> catalog(ResourceCatalogQueryRequest request,
@@ -68,12 +66,14 @@ public class ResourceCatalogController {
     public R<List<ExploreHubData.ExploreResourceItem>> trending(
             @RequestParam(required = false) String resourceType,
             @RequestParam(required = false, defaultValue = "10") Integer limit) {
-        return R.ok(unifiedGatewayService.trending(resourceType, limit));
+        Long userId = gatewayCallerResolver.resolveTrustedUserIdOrNull();
+        return R.ok(unifiedGatewayService.trending(resourceType, limit, userId));
     }
 
     @GetMapping("/catalog/resources/search-suggestions")
     public R<List<SearchSuggestion>> searchSuggestions(@RequestParam String q) {
-        return R.ok(unifiedGatewayService.searchSuggestions(q));
+        Long userId = gatewayCallerResolver.resolveTrustedUserIdOrNull();
+        return R.ok(unifiedGatewayService.searchSuggestions(q, userId));
     }
 
     @GetMapping("/catalog/resources/{type}/{id}")
@@ -113,7 +113,7 @@ public class ResourceCatalogController {
                 : (StringUtils.hasText(requestId) ? requestId.trim() : UUID.randomUUID().toString());
         InvokeResponse data = unifiedGatewayService.invoke(userId, resolvedTraceId, httpRequest.getRemoteAddr(), request, apiKey);
         R<InvokeResponse> body = GatewayInvokeResponseSupport.wrap(data);
-        if (!invokeHttpStatusReflectsUpstream) {
+        if (!runtimeAppConfigService.gateway().isInvokeHttpStatusReflectsUpstream()) {
             return ResponseEntity.ok(body);
         }
         return ResponseEntity.status(GatewayInvokeResponseSupport.toHttpStatus(data)).body(body);

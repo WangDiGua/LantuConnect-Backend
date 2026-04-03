@@ -3,6 +3,7 @@ package com.lantu.connect.common.aspect;
 import com.lantu.connect.common.annotation.AuditLog;
 import com.lantu.connect.common.audit.AuditSnapshotEntry;
 import com.lantu.connect.common.audit.JaversAuditService;
+import com.lantu.connect.common.web.ClientIpResolver;
 import com.lantu.connect.sysconfig.mapper.AuditLogMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,7 @@ public class AuditLogAspect {
 
     private final AuditLogMapper auditLogMapper;
     private final JaversAuditService javersAuditService;
+    private final ClientIpResolver clientIpResolver;
 
     @Around("@annotation(com.lantu.connect.common.annotation.AuditLog)")
     public Object around(ProceedingJoinPoint point) throws Throwable {
@@ -42,7 +44,7 @@ public class AuditLogAspect {
         if (attrs != null) {
             HttpServletRequest req = attrs.getRequest();
             userId = req.getHeader("X-User-Id");
-            ip = req.getRemoteAddr();
+            ip = clientIpResolver.resolve(req);
         }
         String result = "success";
         Object responseBody = null;

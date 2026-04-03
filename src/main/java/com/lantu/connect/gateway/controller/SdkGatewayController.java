@@ -14,6 +14,7 @@ import com.lantu.connect.gateway.dto.ResourceResolveVO;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
 import com.lantu.connect.gateway.support.GatewayInvokeResponseSupport;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -21,7 +22,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
@@ -41,12 +41,7 @@ public class SdkGatewayController {
 
     private final UnifiedGatewayService unifiedGatewayService;
     private final ApiKeyScopeService apiKeyScopeService;
-
-    /**
-     * false 时 HTTP 恒为 200，仅依赖包体 {@link InvokeResponse#getStatus()} / {@link R#getCode()}（兼容只认 HTTP 200 的旧客户端）。
-     */
-    @Value("${lantu.gateway.invoke-http-status-reflects-upstream:true}")
-    private boolean invokeHttpStatusReflectsUpstream;
+    private final RuntimeAppConfigService runtimeAppConfigService;
 
     @Operation(summary = "资源目录分页查询")
     @GetMapping("/resources")
@@ -94,7 +89,7 @@ public class SdkGatewayController {
         String resolvedTraceId = StringUtils.hasText(traceId) ? traceId.trim() : UUID.randomUUID().toString();
         InvokeResponse data = unifiedGatewayService.invoke(userId, resolvedTraceId, httpRequest.getRemoteAddr(), request, apiKey);
         R<InvokeResponse> body = GatewayInvokeResponseSupport.wrap(data);
-        if (!invokeHttpStatusReflectsUpstream) {
+        if (!runtimeAppConfigService.gateway().isInvokeHttpStatusReflectsUpstream()) {
             return ResponseEntity.ok(body);
         }
         return ResponseEntity.status(GatewayInvokeResponseSupport.toHttpStatus(data)).body(body);

@@ -14,6 +14,7 @@ import com.lantu.connect.gateway.dto.ObservabilitySummaryVO;
 import com.lantu.connect.gateway.dto.ResourceUpsertRequest;
 import com.lantu.connect.gateway.dto.ResourceVersionCreateRequest;
 import com.lantu.connect.gateway.dto.ResourceVersionVO;
+import com.lantu.connect.gateway.model.ResourceAccessPolicy;
 import com.lantu.connect.gateway.protocol.McpOutboundHeaderBuilder;
 import com.lantu.connect.gateway.protocol.ProtocolInvokerRegistry;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
@@ -76,13 +77,14 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         String type = normalizeType(request.getResourceType());
         validateByType(type, request);
         ensureUniqueCode(type, request.getResourceCode(), null);
+        ResourceAccessPolicy accessPolicy = ResourceAccessPolicy.parseRequestValue(request.getAccessPolicy());
 
         LocalDateTime now = LocalDateTime.now();
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(conn -> {
             PreparedStatement ps = conn.prepareStatement("""
-                    INSERT INTO t_resource(resource_type, resource_code, display_name, description, status, source_type, provider_id, category_id, created_by, deleted, create_time, update_time)
-                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    INSERT INTO t_resource(resource_type, resource_code, display_name, description, status, source_type, provider_id, category_id, access_policy, created_by, deleted, create_time, update_time)
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                     """, Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, type);
             ps.setString(2, request.getResourceCode().trim());
@@ -92,9 +94,10 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             ps.setString(6, request.getSourceType());
             ps.setObject(7, request.getProviderId());
             ps.setObject(8, request.getCategoryId());
-            ps.setLong(9, operatorUserId);
-            ps.setTimestamp(10, Timestamp.valueOf(now));
+            ps.setString(9, accessPolicy.wireValue());
+            ps.setLong(10, operatorUserId);
             ps.setTimestamp(11, Timestamp.valueOf(now));
+            ps.setTimestamp(12, Timestamp.valueOf(now));
             return ps;
         }, keyHolder);
         Long resourceId = keyHolder.getKey() == null ? null : keyHolder.getKey().longValue();
@@ -104,7 +107,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         upsertExtension(type, resourceId, request);
         syncResourceRelations(resourceId, type, request.getRelatedResourceIds());
         syncResourceTagRels(resourceId, type, request);
-        upsertDefaultVersion(resourceId, snapshotForVersion(type, resourceId, request), true);
+        upsertDefaultVersion(resourceId, snapshotForVersion(type, resourceId, request, true), true);
         return findResource(resourceId);
     }
 
@@ -120,10 +123,11 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
         validateByType(type, request);
         ensureUniqueCode(type, request.getResourceCode(), resourceId);
+        ResourceAccessPolicy accessPolicy = resolveAccessPolicyForUpdate(resourceId, request);
 
         jdbcTemplate.update("""
                         UPDATE t_resource
-                        SET resource_code = ?, display_name = ?, description = ?, source_type = ?, provider_id = ?, category_id = ?, update_time = NOW()
+                        SET resource_code = ?, display_name = ?, description = ?, source_type = ?, provider_id = ?, category_id = ?, access_policy = ?, update_time = NOW()
                         WHERE id = ? AND deleted = 0
                         """,
                 request.getResourceCode().trim(),
@@ -132,11 +136,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 request.getSourceType(),
                 request.getProviderId(),
                 request.getCategoryId(),
+                accessPolicy.wireValue(),
                 resourceId);
         upsertExtension(type, resourceId, request);
         syncResourceRelations(resourceId, type, request.getRelatedResourceIds());
         syncResourceTagRels(resourceId, type, request);
-        upsertCurrentVersionSnapshot(resourceId, snapshotForVersion(type, resourceId, request));
+        upsertCurrentVersionSnapshot(resourceId, snapshotForVersion(type, resourceId, request, false));
         return findResource(resourceId);
     }
 
@@ -289,11 +294,29 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         upsertCurrentVersionSnapshot(resourceId, buildSnapshotFromDb(row.resourceType(), resourceId));
     }
 
-    private Map<String, Object> snapshotForVersion(String type, Long resourceId, ResourceUpsertRequest request) {
+    /**
+     * @param forCreate true：缺省 accessPolicy 视为 grant_required；false：更新时未传字段则保留库中值
+     */
+    private Map<String, Object> snapshotForVersion(String type, Long resourceId, ResourceUpsertRequest request, boolean forCreate) {
         if ("skill".equals(type)) {
             return buildSnapshotFromDb(type, resourceId);
         }
-        return buildSnapshot(type, request);
+        ResourceAccessPolicy ap = forCreate
+                ? ResourceAccessPolicy.parseRequestValue(request.getAccessPolicy())
+                : resolveAccessPolicyForUpdate(resourceId, request);
+        return buildSnapshot(type, request, ap);
+    }
+
+    private ResourceAccessPolicy resolveAccessPolicyForUpdate(Long resourceId, ResourceUpsertRequest request) {
+        if (StringUtils.hasText(request.getAccessPolicy())) {
+            return ResourceAccessPolicy.parseRequestValue(request.getAccessPolicy());
+        }
+        List<Map<String, Object>> cur = jdbcTemplate.queryForList(
+                "SELECT access_policy FROM t_resource WHERE id = ? AND deleted = 0 LIMIT 1", resourceId);
+        if (cur.isEmpty()) {
+            return ResourceAccessPolicy.GRANT_REQUIRED;
+        }
+        return ResourceAccessPolicy.fromStored(cur.get(0).get("access_policy"));
     }
 
     private static Timestamp toSqlTimestamp(Object raw) {
@@ -380,7 +403,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 """
                         SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.source_type, \
-                        r.provider_id, r.category_id, r.created_by, r.create_time, r.update_time, \
+                        r.provider_id, r.category_id, r.access_policy, r.created_by, r.create_time, r.update_time, \
                         (SELECT v.version FROM t_resource_version v WHERE v.resource_id = r.id AND v.is_current = 1 LIMIT 1) AS current_version \
                         FROM t_resource r \
                         """
@@ -568,7 +591,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private ResourceManageVO findResource(Long id) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT id, resource_type, resource_code, display_name, description, status, source_type, provider_id, category_id, created_by, create_time, update_time
+                SELECT id, resource_type, resource_code, display_name, description, status, source_type, provider_id, category_id, access_policy, created_by, create_time, update_time
                 FROM t_resource
                 WHERE id = ? AND deleted = 0
                 LIMIT 1
@@ -1220,13 +1243,14 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
     }
 
-    private Map<String, Object> buildSnapshot(String type, ResourceUpsertRequest request) {
+    private Map<String, Object> buildSnapshot(String type, ResourceUpsertRequest request, ResourceAccessPolicy accessPolicy) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("resourceType", type);
         snapshot.put("resourceCode", request.getResourceCode());
         snapshot.put("displayName", request.getDisplayName());
         snapshot.put("description", request.getDescription());
         snapshot.put("status", ResourceLifecycleStateMachine.STATUS_DRAFT);
+        snapshot.put("accessPolicy", accessPolicy.wireValue());
         switch (type) {
             case "agent" -> {
                 snapshot.put("invokeType", "rest");
@@ -1293,7 +1317,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private Map<String, Object> buildSnapshotFromDb(String type, Long resourceId) {
         Map<String, Object> base = jdbcTemplate.queryForList("""
-                SELECT resource_code, display_name, description, status
+                SELECT resource_code, display_name, description, status, access_policy
                 FROM t_resource
                 WHERE id = ? AND deleted = 0
                 LIMIT 1
@@ -1305,6 +1329,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         snapshot.put("displayName", stringValue(base.get("display_name")));
         snapshot.put("description", stringValue(base.get("description")));
         snapshot.put("status", stringValue(base.get("status")));
+        snapshot.put("accessPolicy", ResourceAccessPolicy.fromStored(base.get("access_policy")).wireValue());
         switch (type) {
             case "agent" -> {
                 Map<String, Object> ext = jdbcTemplate.queryForList("SELECT spec_json FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1", resourceId)
@@ -1625,6 +1650,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 .sourceType(stringValue(row.get("source_type")))
                 .providerId(longValue(row.get("provider_id")))
                 .categoryId(longValue(row.get("category_id")))
+                .accessPolicy(ResourceAccessPolicy.fromStored(row.get("access_policy")).wireValue())
                 .createdBy(longValue(row.get("created_by")))
                 .createTime(toDateTime(row.get("create_time")))
                 .updateTime(toDateTime(row.get("update_time")))

@@ -4,7 +4,7 @@
 
 ## 认证与会话
 
-- **JWT**：生产必须使用环境变量 `JWT_SECRET`（≥32 字符），且勿使用仓库内开发默认值；`prod` profile 下由 `SecurityConfigValidator` 强制校验。
+- **JWT**：生产必须使用环境变量 `JWT_SECRET`（≥32 字符），且勿使用仓库内开发默认值；部署前请自行核对，应用启动时不再做该项强制校验。
 - **`X-User-Id`**：`lantu.security.allow-header-user-id-fallback` 默认为 `false`，避免未校验 Bearer 时的头注入冒充；生产 profile 禁止为 `true`。
 - **JSON 错误体**：手写 JSON 中的消息字段经 `JsonStringEscaper` 转义，降低反射型注入噪声。
 
@@ -41,7 +41,7 @@ Swagger / OpenAPI 在默认白名单中对外可达。**生产**建议通过 **I
 ## 依赖与密钥
 
 - 父工程已升级至 **Spring Boot 3.2.12** 以纳入安全补丁；仍建议定期 `mvn dependency:check` / OWASP Dependency-Check。
-- 数据库、Redis、RabbitMQ、第三方 API 密钥仅经环境变量或保密配置注入，勿提交仓库。
+- 数据库、Redis、第三方 API 密钥仅经环境变量或保密配置注入，勿提交仓库。
 - `lantu.encryption.key`（`LANTU_ENCRYPTION_KEY`）在生产必须为非占位强密钥；`FIELD_ENCRYPTION_KEY` 用于字段级 `ENC:` 密文。
 - **字段加密**：`FieldEncryptor` 对非 16/24/32 字节口令改为 SHA-256 派生，**若曾用短口令 + 零填充写入的 `ENC:` 数据，需轮转密钥并重写密文**。
 

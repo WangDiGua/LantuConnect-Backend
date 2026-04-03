@@ -14,5 +14,5 @@ public interface GrantApplicationService {
 
     PageResult<GrantApplicationVO> pageMyApplications(Long applicantUserId, String status, String keyword, int page, int pageSize);
 
-    PageResult<GrantApplicationVO> pagePendingApplications(String status, String keyword, int page, int pageSize);
+    PageResult<GrantApplicationVO> pagePendingApplications(Long operatorUserId, String status, String keyword, int page, int pageSize);
 }

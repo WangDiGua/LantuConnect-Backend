@@ -2,19 +2,19 @@ package com.lantu.connect.common.service;
 
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.common.config.FileBootstrapProperties;
 import com.lantu.connect.common.storage.FileStorageSupport;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import io.minio.BucketExistsArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
-import jakarta.annotation.PostConstruct;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -42,33 +42,14 @@ public class FileStorageService {
     private static final Pattern SAFE_CATEGORY = Pattern.compile("^[a-z0-9][a-z0-9_-]{0,39}$");
 
     private final FileStorageSupport storageSupport;
+    private final RuntimeAppConfigService runtimeAppConfigService;
 
-    @Value("${file.upload-dir:/data/nexusai/uploads}")
-    private String uploadDir;
+    private FileBootstrapProperties f() {
+        return runtimeAppConfigService.file();
+    }
 
-    @Value("${file.max-size-mb:50}")
-    private int maxSizeMb;
-
-    @Value("${file.skill-pack-max-mb:100}")
-    private int skillPackMaxMb;
-
-    /** {@code local}（默认）或 {@code minio} */
-    @Value("${file.storage-type:local}")
-    private String storageType;
-
-    @Value("${file.minio.endpoint:}")
-    private String minioEndpoint;
-
-    @Value("${file.minio.bucket:nexusai-connect}")
-    private String minioBucket;
-
-    @Value("${file.allowed-categories:document,avatar,image,attachment,temp,dataset}")
-    private String allowedCategoriesRaw;
-
-    private Set<String> allowedCategories = Set.of("document", "avatar", "image", "attachment", "temp", "dataset");
-
-    @PostConstruct
-    void initAllowedCategories() {
+    private Set<String> allowedCategories() {
+        String allowedCategoriesRaw = f().getAllowedCategories();
         Set<String> parsed = Arrays.stream(allowedCategoriesRaw.split(","))
                 .map(String::trim)
                 .map(s -> s.toLowerCase(Locale.ROOT))
@@ -83,11 +64,12 @@ public class FileStorageService {
                         "file.allowed-categories 含非法分类: " + c);
             }
         }
-        this.allowedCategories = Set.copyOf(parsed);
+        return Set.copyOf(parsed);
     }
 
     public String store(MultipartFile file, String category) {
         if (file.isEmpty()) throw new BusinessException(ResultCode.PARAM_ERROR, "文件不能为空");
+        int maxSizeMb = f().getMaxSizeMb();
         if (file.getSize() > (long) maxSizeMb * 1024 * 1024)
             throw new BusinessException(ResultCode.FILE_SIZE_EXCEEDED, "文件大小超过限制 (" + maxSizeMb + "MB)");
 
@@ -115,6 +97,7 @@ public class FileStorageService {
         if (data == null || data.length == 0) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "文件不能为空");
         }
+        int skillPackMaxMb = f().getSkillPackMaxMb();
         if (data.length > (long) skillPackMaxMb * 1024 * 1024) {
             throw new BusinessException(ResultCode.FILE_SIZE_EXCEEDED, "技能包超过大小限制 (" + skillPackMaxMb + "MB)");
         }
@@ -133,6 +116,7 @@ public class FileStorageService {
     }
 
     private boolean isMinioMode() {
+        String storageType = f().getStorageType();
         if ("minio".equalsIgnoreCase(storageType)) {
             return true;
         }
@@ -162,7 +146,7 @@ public class FileStorageService {
             ensureBucket(client);
             try (InputStream is = new ByteArrayInputStream(data)) {
                 client.putObject(PutObjectArgs.builder()
-                        .bucket(minioBucket)
+                        .bucket(f().getMinio().getBucket())
                         .object(key)
                         .stream(is, data.length, -1)
                         .contentType("application/zip")
@@ -196,7 +180,7 @@ public class FileStorageService {
             ensureBucket(client);
             try (InputStream is = file.getInputStream()) {
                 client.putObject(PutObjectArgs.builder()
-                        .bucket(minioBucket)
+                        .bucket(f().getMinio().getBucket())
                         .object(key)
                         .stream(is, file.getSize(), -1)
                         .contentType(file.getContentType())
@@ -212,6 +196,7 @@ public class FileStorageService {
     }
 
     private void ensureBucket(MinioClient client) throws Exception {
+        String minioBucket = f().getMinio().getBucket();
         boolean bucketExists = client.bucketExists(BucketExistsArgs.builder().bucket(minioBucket).build());
         if (!bucketExists) {
             client.makeBucket(MakeBucketArgs.builder().bucket(minioBucket).build());
@@ -220,6 +205,8 @@ public class FileStorageService {
 
     /** 与 {@link com.lantu.connect.common.storage.FileStorageSupport#extractMinioObjectKey} 使用的前缀一致 */
     private String normalizedMinioPublicPrefix() {
+        String minioEndpoint = f().getMinio().getEndpoint();
+        String minioBucket = f().getMinio().getBucket();
         String ep = minioEndpoint.replaceAll("/+$", "");
         return ep + "/" + minioBucket + "/";
     }
@@ -229,7 +216,7 @@ public class FileStorageService {
         if (!SAFE_CATEGORY.matcher(raw).matches()) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "非法文件分类");
         }
-        if (!allowedCategories.contains(raw)) {
+        if (!allowedCategories().contains(raw)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "不允许的文件分类: " + raw);
         }
         return raw;

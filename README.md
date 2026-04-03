@@ -6,6 +6,7 @@ NexusAI（NexusAI Connect）—— 面向高校的智能体接入与管理平台
 
 | 文档 | 维护方 / 读者 | 作用 |
 |------|----------------|------|
+| [PRODUCT_DEFINITION.md](PRODUCT_DEFINITION.md) | **产品 / 架构 / 全员** | **锚点**：对标「高校/企业数字化资产与能力门户」；五类资源定位与 invoke/下载/打开边界，避免叙述走偏。 |
 | [docs/backend-architecture.md](docs/backend-architecture.md) | **前端**编写准则 → **后端**按此实现 | 目标规范与整体设计；文内 **[后端实现状态说明](docs/backend-architecture.md#后端实现状态说明相对本文目标的差距)** 对照代码列差距（快照日期见该节）。 |
 | [docs/frontend-alignment-handbook.md](docs/frontend-alignment-handbook.md) | **后端**编写 → **前端**联调依据 | **以当前仓库代码为准** 的契约：路径、请求头、分页、RBAC、DTO、错误码与「实现差距」说明，减少仅按架构文档开发导致的前后端不一致。 |
 | [docs/bug-fixes.md](docs/bug-fixes.md) | **后端**记录 | 已暴露问题与修复（BUG-xxx）；**实现审计**见 **AUDIT-xxx**；**功能补全**见 **IMPL-xxx**；**若影响接口行为**，应同步修订 `frontend-alignment-handbook.md`。 |
@@ -25,7 +26,6 @@ NexusAI（NexusAI Connect）—— 面向高校的智能体接入与管理平台
 | ORM | MyBatis-Plus 3.5 |
 | 数据库 | MySQL 8.0 |
 | 缓存 | Redis 7 |
-| 消息队列 | RabbitMQ（可选；本地无 Broker 时请见下方 **运行 profile**） |
 | 认证 | Spring Security + JWT（双 Token） |
 | 限流 / 熔断 | Resilience4j |
 | API 文档 | SpringDoc OpenAPI 3 |
@@ -60,7 +60,6 @@ src/main/java/com/lantu/connect/
 
 - JDK 17+
 - MySQL 8.0+、Redis 7+（本机或 Docker 均可）
-- **可选** RabbitMQ（`docker-compose` 已包含；裸跑不配时**无需**装 Broker，默认不启消息监听，见配置说明）
 - **可选** 全局 Maven 3.8+；未安装时可用仓库自带的 **Maven Wrapper**（`mvnw` / `mvnw.cmd`）
 
 ### 1. 初始化数据库
@@ -75,25 +74,25 @@ mysql -u root -p < sql/lantu_connect.sql
 
 ### 2. 配置说明
 
-**唯一主配置**：`src/main/resources/application.yml` — **直接修改文件里的字面量**（库地址、账号、JWT、`lantu.*` 等）；文末 `---` 为 **`dev` profile`。
+**主配置**：`src/main/resources/application.yml` — 敏感项与环境项为 **`${环境变量}` 占位**；说明见该文件顶部。文末 `---` 为 **`dev` profile`。
 
 | 项 | 说明 |
 |----|------|
-| Docker Compose | `docker-compose.yml` 已向 app 注入 `SPRING_DATASOURCE_*`、`SPRING_DATA_REDIS_*`、`SPRING_RABBITMQ_*` 等，连接服务名 `mysql` / `redis` / `rabbitmq`；`.env` 仍供 Compose 替换 |
+| 本地私有值 | 将 **`application-local.example.yml`** 复制为 **`application-local.yml`**（同目录，已 gitignore），填写库、Redis、JWT、加密密钥等；Spring 会 `import` 该文件 |
+| Docker Compose | `docker-compose.yml` 向 app 注入与 `application.yml` 占位符对齐的全套变量（含 `SERVER_*`、`JWT_*`、`LANTU_*`、`FILE_*`、`CORS_*`、技能目录等）；`.env` 可覆写；未覆写项使用 Compose 内开发向默认值 |
 | 列表项 | `lantu.api-deprecation.*-patterns`、`skill-pack-import.*` 等均在 **`application.yml`** |
-| 技能外部目录 | `skill-external-catalog.yml`（`spring.config.import` 可选加载） |
-| 文件存储 | 默认本地上传目录见 `file.upload-dir`；对象存储见 `file.minio` |
-| RabbitMQ 监听 | 默认 `false`（无 Broker 可启动）；**`docker-compose`** 对 app 默认 `SPRING_RABBITMQ_LISTENER_SIMPLE_AUTO_STARTUP=true` |
+| 技能外部目录 | `application.yml` → `lantu.skill-external-catalog`（库表 `skill_external_catalog` 可运行时覆盖） |
+| 文件存储 | `FILE_UPLOAD_DIR`、`file.minio` 等可用环境变量覆盖 |
 
-可选：`application-local.yml`（已 gitignore）用于零散覆盖。
-
-部署到 K8s 等：可用 **标准 Spring 环境变量**（如 `SPRING_DATASOURCE_URL`）覆盖 `application.yml` 中的同名配置，无需改 YAML 文件。
+部署到 K8s 等：用 **标准 Spring 环境变量**（与 `application.yml` 中占位符同名，如 `SPRING_DATASOURCE_URL`、`JWT_SECRET`）注入，无需改 YAML。
 
 也可用 **`.env`** + Docker Compose；Spring 不直接读取 `.env`，由 Compose 注入容器环境变量。
 
 **本地推荐启动示例（Windows PowerShell）：**
 
 ```powershell
+Copy-Item src\main\resources\application-local.example.yml src\main\resources\application-local.yml
+# 按需编辑 application-local.yml（库、Redis、jwt.secret 等）
 $env:SPRING_PROFILES_ACTIVE = 'dev'
 .\mvnw.cmd spring-boot:run -DskipTests
 ```
@@ -134,7 +133,7 @@ mvnw.cmd spring-boot:run -DskipTests
 # 构建
 mvn clean package -DskipTests
 
-# 启动全部服务（MySQL + Redis + RabbitMQ + App 等，见 docker-compose.yml）
+# 启动全部服务（MySQL + Redis + App 等，见 docker-compose.yml）
 docker-compose up -d
 ```
 

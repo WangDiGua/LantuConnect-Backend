@@ -1,6 +1,7 @@
 package com.lantu.connect.common.config;
 
 import com.lantu.connect.common.util.JwtUtil;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,8 +26,8 @@ public class JwtConfig {
     private long refreshTokenExpiry;
 
     @Bean
-    public JwtUtil jwtUtil() {
+    public JwtUtil jwtUtil(RuntimeAppConfigService runtimeAppConfigService) {
         String key = StringUtils.hasText(secret) ? secret : JwtBootstrapSecrets.LOCAL_DEV_FALLBACK;
-        return new JwtUtil(key, accessTokenExpiry, refreshTokenExpiry);
+        return new JwtUtil(key, accessTokenExpiry, refreshTokenExpiry, runtimeAppConfigService);
     }
 }

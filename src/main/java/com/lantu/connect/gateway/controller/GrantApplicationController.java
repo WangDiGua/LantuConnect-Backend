@@ -3,7 +3,6 @@ package com.lantu.connect.gateway.controller;
 import com.lantu.connect.common.annotation.AuditLog;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.R;
-import com.lantu.connect.common.security.RequireRole;
 import com.lantu.connect.gateway.dto.GrantApplicationRequest;
 import com.lantu.connect.gateway.dto.GrantApplicationVO;
 import com.lantu.connect.gateway.dto.ResourceRejectRequest;
@@ -16,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
 /**
- * 资源授权申请工单：开发者申请 → 平台管理员审批 → 自动授权。
+ * 资源授权申请工单：申请人提交 → **资源 owner 优先审批**；本部 dept_admin、platform_admin 可代管/全量（权限见 {@link com.lantu.connect.gateway.service.impl.GrantApplicationServiceImpl}）。
  */
 @RestController
 @RequestMapping("/grant-applications")
@@ -46,19 +45,18 @@ public class GrantApplicationController {
     }
 
     @GetMapping("/pending")
-    @RequireRole({"platform_admin"})
     public R<PageResult<GrantApplicationVO>> pendingApplications(
+            @RequestHeader("X-User-Id") Long userId,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String q,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int pageSize) {
         String kw = StringUtils.hasText(keyword) ? keyword : q;
-        return R.ok(grantApplicationService.pagePendingApplications(status, kw, page, pageSize));
+        return R.ok(grantApplicationService.pagePendingApplications(userId, status, kw, page, pageSize));
     }
 
     @PostMapping("/{id}/approve")
-    @RequireRole({"platform_admin"})
     @AuditLog(action = "grant_application_approve", resource = "grant-applications")
     public R<Void> approve(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
         grantApplicationService.approve(userId, id);
@@ -66,7 +64,6 @@ public class GrantApplicationController {
     }
 
     @PostMapping("/{id}/reject")
-    @RequireRole({"platform_admin"})
     @AuditLog(action = "grant_application_reject", resource = "grant-applications")
     public R<Void> reject(@RequestHeader("X-User-Id") Long userId,
                           @PathVariable Long id,

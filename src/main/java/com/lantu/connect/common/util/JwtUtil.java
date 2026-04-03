@@ -4,6 +4,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
@@ -19,21 +20,41 @@ import java.util.Map;
 public class JwtUtil {
 
     private final SecretKey key;
-    private final long accessTokenExpiry;
-    private final long refreshTokenExpiry;
+    private final RuntimeAppConfigService runtimeAppConfigService;
+    private final long yamlAccessTokenExpirySec;
+    private final long yamlRefreshTokenExpirySec;
 
-    public JwtUtil(String secret, long accessTokenExpiry, long refreshTokenExpiry) {
+    public JwtUtil(
+            String secret,
+            long accessTokenExpirySeconds,
+            long refreshTokenExpirySeconds,
+            RuntimeAppConfigService runtimeAppConfigService) {
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        this.accessTokenExpiry = accessTokenExpiry * 1000L;
-        this.refreshTokenExpiry = refreshTokenExpiry * 1000L;
+        this.yamlAccessTokenExpirySec = accessTokenExpirySeconds;
+        this.yamlRefreshTokenExpirySec = refreshTokenExpirySeconds;
+        this.runtimeAppConfigService = runtimeAppConfigService;
+    }
+
+    private long accessExpiryMs() {
+        long sec = runtimeAppConfigService != null
+                ? runtimeAppConfigService.jwtTokenLifetime().getAccessTokenExpiry()
+                : yamlAccessTokenExpirySec;
+        return sec * 1000L;
+    }
+
+    private long refreshExpiryMs() {
+        long sec = runtimeAppConfigService != null
+                ? runtimeAppConfigService.jwtTokenLifetime().getRefreshTokenExpiry()
+                : yamlRefreshTokenExpirySec;
+        return sec * 1000L;
     }
 
     public String generateAccessToken(Long userId, String username, Map<String, Object> extraClaims) {
-        return buildToken(userId, username, extraClaims, accessTokenExpiry);
+        return buildToken(userId, username, extraClaims, accessExpiryMs());
     }
 
     public String generateRefreshToken(Long userId, String username) {
-        return buildToken(userId, username, Map.of("type", "refresh"), refreshTokenExpiry);
+        return buildToken(userId, username, Map.of("type", "refresh"), refreshExpiryMs());
     }
 
     private String buildToken(Long userId, String username, Map<String, Object> claims, long expiry) {

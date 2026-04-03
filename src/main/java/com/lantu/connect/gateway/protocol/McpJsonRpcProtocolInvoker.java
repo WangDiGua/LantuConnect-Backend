@@ -1,13 +1,14 @@
 package com.lantu.connect.gateway.protocol;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lantu.connect.common.config.IntegrationProperties;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
 import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -41,22 +42,11 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
     private final ObjectMapper objectMapper;
     private final McpStreamSessionStore mcpStreamSessionStore;
     private final McpOutboundHeaderBuilder mcpOutboundHeaderBuilder;
+    private final RuntimeAppConfigService runtimeAppConfigService;
 
-    @Value("${lantu.integration.mcp-http-accept:application/json, text/event-stream}")
-    private String mcpHttpAccept;
-
-    @Value("${lantu.integration.mcp-max-redirects:3}")
-    private int mcpMaxRedirects;
-
-    @Value("${lantu.integration.mcp-allow-http:false}")
-    private boolean mcpAllowHttp;
-
-    /** 为 true 时允许 MCP 出站指向 localhost/127.0.0.1/私网等（仅联调用；生产须 false） */
-    @Value("${lantu.integration.mcp-allow-local-targets:false}")
-    private boolean mcpAllowLocalTargets;
-
-    @Value("${lantu.integration.mcp-allow-insecure-ws:false}")
-    private boolean mcpAllowInsecureWs;
+    private IntegrationProperties i() {
+        return runtimeAppConfigService.integration();
+    }
 
     @Override
     public boolean supports(String protocol) {
@@ -90,7 +80,7 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
         } catch (Exception e) {
             throw new IOException("MCP 请求体构造失败: " + e.getMessage(), e);
         }
-        String accept = StringUtils.hasText(mcpHttpAccept) ? mcpHttpAccept.trim() : "application/json, text/event-stream";
+        String accept = StringUtils.hasText(i().getMcpHttpAccept()) ? i().getMcpHttpAccept().trim() : "application/json, text/event-stream";
 
         HttpResponse<InputStream> resp;
         try {
@@ -167,7 +157,7 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
                                                       ProtocolInvokeContext ctx) throws Exception {
         int to = Math.max(1, Math.min(120, timeoutSec));
         String bodyJson = buildJsonRpcBody(traceId, payload, spec);
-        String accept = StringUtils.hasText(mcpHttpAccept) ? mcpHttpAccept.trim() : "application/json, text/event-stream";
+        String accept = StringUtils.hasText(i().getMcpHttpAccept()) ? i().getMcpHttpAccept().trim() : "application/json, text/event-stream";
 
         long t0 = System.nanoTime();
         HttpResponse<InputStream> resp = sendWithRedirectGuard(endpoint, to, traceId, bodyJson, accept, spec, ctx);
@@ -340,7 +330,7 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
         URI current = URI.create(endpoint);
-        int maxRedirects = Math.max(0, mcpMaxRedirects);
+        int maxRedirects = Math.max(0, i().getMcpMaxRedirects());
         int followed = 0;
         while (true) {
             validateOutboundEndpoint(current, false);
@@ -375,14 +365,14 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
             if (!"ws".equals(normalizedScheme) && !"wss".equals(normalizedScheme)) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "MCP WebSocket endpoint must use ws/wss");
             }
-            if ("ws".equals(normalizedScheme) && !mcpAllowInsecureWs) {
+            if ("ws".equals(normalizedScheme) && !i().isMcpAllowInsecureWs()) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "Insecure ws:// endpoint is disabled");
             }
         } else {
             if (!"https".equals(normalizedScheme) && !"http".equals(normalizedScheme)) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "MCP HTTP endpoint must use http/https");
             }
-            if ("http".equals(normalizedScheme) && !mcpAllowHttp) {
+            if ("http".equals(normalizedScheme) && !i().isMcpAllowHttp()) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "Insecure http:// endpoint is disabled");
             }
         }
@@ -390,7 +380,7 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
         if (!StringUtils.hasText(host)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "MCP endpoint host is required");
         }
-        if (!mcpAllowLocalTargets) {
+        if (!i().isMcpAllowLocalTargets()) {
             String h = host.toLowerCase(Locale.ROOT);
             if ("localhost".equals(h) || h.endsWith(".localhost")) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "MCP endpoint must not target localhost");

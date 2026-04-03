@@ -26,6 +26,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lantu.connect.common.session.SessionGeoEnrichmentService;
 import com.lantu.connect.common.session.SessionTrackerService;
 import com.lantu.connect.common.util.JwtUtil;
+import com.lantu.connect.common.web.ClientIpResolver;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,6 +42,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -88,6 +91,7 @@ public class AuthServiceImpl implements AuthService {
     private final SystemNotificationFacade systemNotificationFacade;
     private final RedisAuthRateLimiter redisAuthRateLimiter;
     private final ObjectMapper objectMapper;
+    private final ClientIpResolver clientIpResolver;
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -542,16 +546,12 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
-    private static String resolveClientIp() {
+    private String resolveClientIp() {
         try {
-            var attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
-            if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes sra) {
-                var req = sra.getRequest();
-                String xff = req.getHeader("X-Forwarded-For");
-                if (StringUtils.hasText(xff)) {
-                    return xff.split(",")[0].trim();
-                }
-                return req.getRemoteAddr() != null ? req.getRemoteAddr() : "0.0.0.0";
+            var attrs = RequestContextHolder.getRequestAttributes();
+            if (attrs instanceof ServletRequestAttributes sra) {
+                String ip = clientIpResolver.resolve(sra.getRequest());
+                return StringUtils.hasText(ip) ? ip : "0.0.0.0";
             }
         } catch (Exception ignored) {
         }

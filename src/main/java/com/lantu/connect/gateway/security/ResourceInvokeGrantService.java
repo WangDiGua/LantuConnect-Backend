@@ -9,6 +9,7 @@ import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.gateway.dto.ResourceGrantCreateRequest;
 import com.lantu.connect.gateway.dto.ResourceGrantVO;
 import com.lantu.connect.gateway.entity.ResourceInvokeGrant;
+import com.lantu.connect.gateway.model.ResourceAccessPolicy;
 import com.lantu.connect.gateway.mapper.ResourceInvokeGrantMapper;
 import com.lantu.connect.notification.service.NotificationEventCodes;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
@@ -46,14 +47,18 @@ public class ResourceInvokeGrantService {
         if (isPlatformOwner(apiKey)) {
             return;
         }
-        Long ownerUserId = resolveResourceOwnerUserId(resourceType, resourceId);
-        if (ownerUserId == null) {
+        GrantContext ctx = loadGrantContext(resourceType, resourceId);
+        if (ctx == null || ctx.ownerUserId() == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "资源不存在或不可访问");
         }
+        Long ownerUserId = ctx.ownerUserId();
         if (isApiKeyOwnedByUser(apiKey, ownerUserId)) {
             return;
         }
         if (callerUserId != null && callerUserId.equals(ownerUserId)) {
+            return;
+        }
+        if (isGrantWaivedByAccessPolicy(apiKey, ctx)) {
             return;
         }
         if (!hasActiveGrant(apiKey.getId(), action, resourceType, resourceId)) {
@@ -150,6 +155,32 @@ public class ResourceInvokeGrantService {
                 grant.getGranteeId());
     }
 
+    /**
+     * 授权申请工单审批：资源 owner、同部门 dept_admin、platform_admin/admin（与 Grant 管理一致）。
+     */
+    public void ensureMayReviewGrantApplication(Long operatorUserId, String resourceType, Long resourceId) {
+        GrantContext ctx = loadGrantContext(resourceType, resourceId);
+        if (ctx == null || ctx.ownerUserId() == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "资源不存在");
+        }
+        ensureCanManageGrant(operatorUserId, ctx.ownerUserId());
+    }
+
+    /**
+     * 审核流发布（testing→published）：与 {@link #ensureCanManageGrant} 同款（owner、同部门 dept_admin、platform_admin/admin）。
+     */
+    public void ensureMayPublishAuditedResource(Long operatorUserId, String resourceType, Long resourceId) {
+        if (operatorUserId == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证用户无法发布");
+        }
+        String type = normalizeType(resourceType);
+        Long ownerUserId = resolveResourceOwnerUserId(type, resourceId);
+        if (ownerUserId == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "资源不存在");
+        }
+        ensureCanManageGrant(operatorUserId, ownerUserId);
+    }
+
     public List<ResourceGrantVO> listByResource(Long operatorUserId, String resourceType, Long resourceId, String keyword) {
         String normalizedType = normalizeType(resourceType);
         Long ownerUserId = resolveResourceOwnerUserId(normalizedType, resourceId);
@@ -190,9 +221,24 @@ public class ResourceInvokeGrantService {
         if (operatorUserId == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证用户无法管理授权");
         }
-        if (!casbinAuthorizationService.canManageOwnerResource(operatorUserId, ownerUserId)) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "仅资源拥有者或平台管理员可管理授权");
+        if (ownerUserId != null && ownerUserId.equals(operatorUserId)) {
+            return;
         }
+        if (casbinAuthorizationService.hasAnyRole(operatorUserId, new String[]{"platform_admin", "admin"})) {
+            return;
+        }
+        if (casbinAuthorizationService.hasAnyRole(operatorUserId, new String[]{"dept_admin"})) {
+            if (ownerUserId == null) {
+                throw new BusinessException(ResultCode.FORBIDDEN, "资源无拥有者信息，部门管理员无法代管授权");
+            }
+            Long opMenu = casbinAuthorizationService.userDepartmentMenuId(operatorUserId);
+            Long ownerMenu = casbinAuthorizationService.userDepartmentMenuId(ownerUserId);
+            if (opMenu != null && opMenu.equals(ownerMenu)) {
+                return;
+            }
+            throw new BusinessException(ResultCode.FORBIDDEN, "部门管理员仅可管理本部门开发者资源的授权");
+        }
+        throw new BusinessException(ResultCode.FORBIDDEN, "仅资源拥有者或管理员可管理授权");
     }
 
     private boolean hasActiveGrant(String apiKeyId, String action, String resourceType, Long resourceId) {
@@ -207,32 +253,87 @@ public class ResourceInvokeGrantService {
         if (grants.isEmpty()) {
             return false;
         }
-        String normalizedAction = normalizeAction(action);
+        String grantAction = grantActionForStoredGrant(action);
         return grants.stream().anyMatch(grant -> {
             if (grant.getExpiresAt() != null && !grant.getExpiresAt().isAfter(now)) {
                 return false;
             }
             List<String> actions = grant.getActions();
-            return actions != null && (actions.contains("*") || actions.contains(normalizedAction));
+            return actions != null && (actions.contains("*") || actions.contains(grantAction));
         });
     }
 
-    private Long resolveResourceOwnerUserId(String resourceType, Long resourceId) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT created_by FROM t_resource WHERE deleted = 0 AND resource_type = ? AND id = ? LIMIT 1",
+    /**
+     * 与 {@code t_resource_invoke_grant.actions} 对齐：目录详情使用 catalog_read，存库多为 catalog。
+     */
+    private static String grantActionForStoredGrant(String action) {
+        String a = normalizeAction(action);
+        if ("catalog_read".equals(a)) {
+            return "catalog";
+        }
+        return a;
+    }
+
+    private GrantContext loadGrantContext(String resourceType, Long resourceId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                        SELECT created_by, access_policy FROM t_resource
+                        WHERE deleted = 0 AND resource_type = ? AND id = ? LIMIT 1
+                        """,
                 normalizeType(resourceType), resourceId);
         if (rows.isEmpty()) {
             return null;
         }
-        Object createdBy = rows.get(0).get("created_by");
-        if (createdBy == null) {
-            return null;
+        Map<String, Object> row = rows.get(0);
+        Object createdBy = row.get("created_by");
+        Long ownerUserId = null;
+        if (createdBy != null) {
+            try {
+                ownerUserId = Long.valueOf(String.valueOf(createdBy));
+            } catch (NumberFormatException ignored) {
+                ownerUserId = null;
+            }
         }
+        ResourceAccessPolicy policy = ResourceAccessPolicy.fromStored(row.get("access_policy"));
+        return new GrantContext(ownerUserId, policy);
+    }
+
+    /**
+     * {@code open_platform}：任意已通过上层 scope 校验的非平台 Key 免 Grant。
+     * {@code open_org}：仅用户 Key，且 Key 所属用户与资源 owner 的 menuId 一致时免 Grant。
+     */
+    private boolean isGrantWaivedByAccessPolicy(ApiKey apiKey, GrantContext ctx) {
+        return switch (ctx.accessPolicy()) {
+            case OPEN_PLATFORM -> true;
+            case OPEN_ORG -> openOrgGrantWaived(apiKey, ctx.ownerUserId());
+            case GRANT_REQUIRED -> false;
+        };
+    }
+
+    /** 以 API Key 所属用户的 menuId 与资源 owner 对齐（非 user 归属 Key 不适用 open_org）。 */
+    private boolean openOrgGrantWaived(ApiKey apiKey, Long ownerUserId) {
+        if (ownerUserId == null || apiKey == null) {
+            return false;
+        }
+        if (!"user".equalsIgnoreCase(apiKey.getOwnerType()) || !StringUtils.hasText(apiKey.getOwnerId())) {
+            return false;
+        }
+        Long keyUserId;
         try {
-            return Long.valueOf(String.valueOf(createdBy));
-        } catch (NumberFormatException ex) {
-            return null;
+            keyUserId = Long.valueOf(apiKey.getOwnerId().trim());
+        } catch (NumberFormatException e) {
+            return false;
         }
+        Long ownerMenu = casbinAuthorizationService.userDepartmentMenuId(ownerUserId);
+        Long keyMenu = casbinAuthorizationService.userDepartmentMenuId(keyUserId);
+        return ownerMenu != null && ownerMenu.equals(keyMenu);
+    }
+
+    private Long resolveResourceOwnerUserId(String resourceType, Long resourceId) {
+        GrantContext ctx = loadGrantContext(resourceType, resourceId);
+        return ctx == null ? null : ctx.ownerUserId();
+    }
+
+    private record GrantContext(Long ownerUserId, ResourceAccessPolicy accessPolicy) {
     }
 
     private static List<String> normalizeActions(List<String> actions) {

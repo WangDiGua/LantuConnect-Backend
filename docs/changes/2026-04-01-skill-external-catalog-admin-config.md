@@ -4,7 +4,7 @@
 
 - 技能市场相关参数（`lantu.skill-external-catalog` 结构）可由具备 `system:config` 权限的超管在前端通过接口保存，无需改部署文件即可在进程内生效。
 - 数据库层**不新增表**：使用既有表 **`t_system_param`**，主键 **`skill_external_catalog`**，值为与 `SkillExternalCatalogProperties` 一致的 **JSON**。
-- **无需 Flyway / 手工执行 DDL**：应用首次保存时 `INSERT` 该行即可；无该行时逻辑回退为 **`skill-external-catalog.yml` + 环境变量** 绑定的默认值（与改造前行为一致）。
+- **无需 Flyway / 手工执行 DDL**：应用首次保存时 `INSERT` 该行即可；无该行时逻辑回退为 **`application.yml` 中 `lantu.skill-external-catalog` + 环境变量** 绑定的默认值。
 
 ## 后端 API
 

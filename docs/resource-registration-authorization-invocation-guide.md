@@ -3,7 +3,7 @@
 > 版本：v1.0  
 > 适用对象：前端开发、产品、测试、联调负责人  
 > 目标：避免前端流程继续“想当然”，按后端真实能力完整落地 `mcp/agent/skill/dataset/app` 五类资源闭环  
-> 后端上下文路径：`/regis`（与前端 `VITE_API_BASE_URL` 一致）
+> 后端上下文路径以部署为准（`server.servlet.context-path`，常见为 `/api` 或 `/regis`），与前端 `VITE_API_BASE_URL` 一致。
 
 ---
 
@@ -12,10 +12,11 @@
 - 后端已经打通五类资源的主链路：**注册 -> 提审 -> 审核 -> 发布 -> 目录可见 -> 使用/调用**。
 - 上架不是一步：**`approve` 不等于上架**，必须再执行 `publish` 才到 `published`。
 - 授权不是“授权链接”：当前是 **`API Key + Scope + Grant` 三层校验模型**。
-- 五类资源都能注册，但“使用方式”不同：
-  - `agent/skill/mcp`：可走统一调用 `POST /invoke`。
-  - `app`：主要是解析后拿 URL 跳转/嵌入（`invokeType=redirect`）。
-  - `dataset`：主要是元数据消费（`invokeType=metadata`），不是 HTTP 远程执行型。
+- 五类资源都能注册，但“使用方式”不同（与 `PRODUCT_DEFINITION.md` §2–§3 一致）：
+  - `agent` / `mcp`：可走统一调用 `POST /invoke`（MCP 流式用 `invoke-stream`）。
+  - `skill`：**禁止**统一网关 `POST /invoke`；以 `resolve` + 技能制品下载为主，远程可执行工具请注册为 `mcp`。
+  - `app`：主要是 `resolve` 后拿 URL 跳转/嵌入；`invoke` 多为 redirect/票据语义。
+  - `dataset`：主要是元数据消费（`invokeType=metadata` 等），**无**通用统一 `invoke` 执行模型。
 
 ---
 
@@ -55,6 +56,7 @@
 
 ## 3.1 注册中心（资源拥有者）
 
+- **消费策略 `accessPolicy`（可选）**：写入主表 `t_resource.access_policy`。取值 `grant_required`（默认）、`open_org`、`open_platform`。网关侧已由 `ResourceInvokeGrantService.ensureApiKeyGranted` 读取：**`open_platform`** 在满足 Key 与 scope 前提下 **免 per-resource Grant**；**`open_org`** 仅当 **X-Api-Key 为用户 Key** 且 Key 所属用户与资源 **owner 的 `menu_id`（部门）一致** 时免 Grant；否则仍须 Grant。创建缺省 `grant_required`；**更新省略字段则保留库值**。
 - `POST /resource-center/resources` 创建资源（初始 `draft`）
 - `PUT /resource-center/resources/{id}` 更新资源
 - `DELETE /resource-center/resources/{id}` 删除（受状态机限制）
@@ -69,10 +71,18 @@
 - `GET /audit/resources` 待审核列表（`pending_review`）
 - `POST /audit/resources/{auditId}/approve` 审核通过（到 `testing`）
 - `POST /audit/resources/{auditId}/reject` 审核驳回（到 `rejected`）
-- `POST /audit/resources/{auditId}/publish` 发布（到 `published`）
+- `POST /audit/resources/{auditId}/publish` 发布（**testing → published**）。服务层校验：调用者须为 **资源 owner**、**与 owner 同 `menu_id` 的 dept_admin** 或 **platform_admin/admin**（与 `POST /resource-grants` 代管范围一致）；`@RequireRole` 含 `developer`、`dept_admin`、`platform_admin`、`admin`。
+- `POST /audit/resources/{id}/platform-force-deprecate` **平台强制下架**（body 可选 `{"reason"}`），**仅 platform_admin** → 资源 `deprecated`，并与开发者自助 `POST /resource-center/resources/{id}/deprecate` 区分。
+
+## 3.2.1 授权申请工单（审批路由）
+
+- `GET /grant-applications/pending`：**须** `X-User-Id`。可见范围：超管全量；部门管理员仅 **资源拥有者属于本部门** 的待办；普通开发者仅 **自己创建的资源** 上的待办。
+- `POST /grant-applications/{id}/approve`、`reject`：通过/驳回前校验调用者是否为 **资源 owner**、**同部门 dept_admin** 或 **platform_admin/admin**（与直接 `POST /resource-grants` 管理能力对齐）。
+- 提交申请 `POST /grant-applications` 后，会通知 **资源 owner** 与 **平台管理员**（沿用原广播）。
 
 ## 3.3 市场/解析/调用
 
+- **目录类型权限**：登录用户按 Casbin 权限过滤资源类型（`GatewayUserPermissionService`）：`agent` 需 `agent:read` 或 `skill:read`；`skill`/`mcp` 需 `skill:read`；`app` 需 `app:view`；`dataset` 需 `dataset:read`。系统预置 **`consumer`** 角色仅含上述只读权限，适合「只逛市场」账号。`/catalog/resources/trending` 与 `/catalog/resources/search-suggestions` 与主列表使用**同一**类型谓词。
 - `GET /catalog/resources` 目录列表
 - `GET /catalog/resources/{type}/{id}` 按类型详情解析
 - `POST /catalog/resolve` 统一解析
@@ -88,6 +98,11 @@
 - `POST /resource-grants` 授权给某个 API Key
 - `GET /resource-grants?resourceType=&resourceId=` 查看某资源授权列表
 - `DELETE /resource-grants/{grantId}` 撤销授权
+
+## 3.5 开发者 owner 维度统计
+
+- `GET /dashboard/owner-resource-stats?ownerUserId=&periodDays=7`：**须** `X-User-Id`。默认统计当前用户名下资源；部门管理员可传 **本部门开发者** 的 `ownerUserId`；平台管理员可查任意 owner。
+- 指标：`t_call_log` 网关调用总量/成功量、按资源类型拆分；`t_usage_record` 中 `action=invoke` 且可归因到该 owner 资源的条数（可能与 call_log 重复，仅供对照）；`t_skill_pack_download_event` 技能包成功下载次数（下载接口流式完成后写入）。
 
 ---
 
@@ -128,7 +143,7 @@ flowchart TD
   - 管理员可见：通过、驳回
   - 不应允许编辑/删除
 - `testing`
-  - 管理员可见：发布、驳回（按产品策略可保留）
+  - **发布**：资源 owner、同部门 dept_admin（与 Grant 一致）或 platform_admin/admin；驳回仍可由审核管理员操作（按产品策略）
   - 开发者可见：下线（若业务允许）
 - `published`
   - 可见：下线、查看、使用（按类型）

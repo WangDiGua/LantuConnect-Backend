@@ -4,6 +4,7 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.gateway.config.SkillPackImportProperties;
 import com.lantu.connect.gateway.service.support.AnthropicSkillPackValidator;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import lombok.RequiredArgsConstructor;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
@@ -31,10 +32,14 @@ import java.util.zip.ZipOutputStream;
 @RequiredArgsConstructor
 public class GitSkillPackCloner {
 
-    private final SkillPackImportProperties properties;
+    private final RuntimeAppConfigService runtimeAppConfigService;
+
+    private SkillPackImportProperties p() {
+        return runtimeAppConfigService.skillPackImport();
+    }
 
     public boolean shouldGitClone(URI uri) {
-        if (!properties.isGitCloneEnabled()) {
+        if (!p().isGitCloneEnabled()) {
             return false;
         }
         String scheme = uri.getScheme();
@@ -52,7 +57,7 @@ public class GitSkillPackCloner {
         if (path.toLowerCase(Locale.ROOT).endsWith(".git")) {
             return true;
         }
-        if (!properties.isGitCloneAllowBareRepoPaths()) {
+        if (!p().isGitCloneAllowBareRepoPaths()) {
             return false;
         }
         return isBareRepoPathOnAllowedGitHost(uri.getHost(), path);
@@ -75,7 +80,7 @@ public class GitSkillPackCloner {
                     .setDirectory(finalWorkDir.toFile())
                     .setDepth(1)
                     .setCloneSubmodules(false)
-                    .setTimeout(properties.getGitCloneTimeoutSeconds())
+                    .setTimeout(p().getGitCloneTimeoutSeconds())
                     .call()
                     .close();
             Path dotGit = finalWorkDir.resolve(".git");
@@ -83,7 +88,7 @@ public class GitSkillPackCloner {
                 FileUtils.delete(dotGit.toFile(), FileUtils.RECURSIVE | FileUtils.RETRY);
             }
             long unpacked = measureUnpackedBytes(finalWorkDir);
-            long cap = Math.max(1024L, properties.getGitCloneMaxUnpackedBytes());
+            long cap = Math.max(1024L, p().getGitCloneMaxUnpackedBytes());
             if (unpacked > cap) {
                 throw new BusinessException(ResultCode.PARAM_ERROR,
                         "克隆产物超过大小上限 " + (cap / 1024 / 1024) + "MB，请缩小仓库或使用制品 zip");
@@ -131,7 +136,7 @@ public class GitSkillPackCloner {
             return false;
         }
         String h = host.toLowerCase(Locale.ROOT);
-        List<String> suffixes = properties.getGitBareRepoHostSuffixes();
+        List<String> suffixes = p().getGitBareRepoHostSuffixes();
         if (suffixes == null || suffixes.isEmpty()) {
             return false;
         }

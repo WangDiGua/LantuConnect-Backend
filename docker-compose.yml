@@ -6,30 +6,49 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # 本地联调可设 SPRING_PROFILES_ACTIVE=dev；其余以 application.yml 字面量为准
-      # Compose 内需连服务名 mysql/redis/rabbitmq，用 Spring 标准环境变量覆盖（见 application.yml）
+      # application.yml 中占位均无默认值；Compose 须注入全套变量（可用 .env 覆盖，见 .env.example）
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/lantu_connect?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
       - SPRING_DATASOURCE_USERNAME=${DB_USER:-lantu}
       - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
       - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=${REDIS_PORT:-6379}
       - SPRING_DATA_REDIS_DATABASE=${REDIS_DB:-0}
-      - SPRING_RABBITMQ_HOST=rabbitmq
-      - SPRING_RABBITMQ_PORT=5672
-      - SPRING_RABBITMQ_USERNAME=${RABBITMQ_USER:-guest}
-      - SPRING_RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-guest}
-      - SPRING_RABBITMQ_VIRTUAL_HOST=${RABBITMQ_VHOST:-/}
-      # 栈内有 Rabbit：默认启监听；裸跑 JAR 见 application.yml 默认 false
-      - SPRING_RABBITMQ_LISTENER_SIMPLE_AUTO_STARTUP=${RABBITMQ_LISTENER_AUTO_STARTUP:-true}
+      - SPRING_DATA_REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - SERVER_PORT=8080
+      - SERVER_SERVLET_CONTEXT_PATH=/regis
+      - SERVER_SSL_ENABLED=false
+      - SERVER_SSL_KEY_STORE=classpath:keystore.p12
+      - SERVER_SSL_KEY_STORE_PASSWORD=${SERVER_SSL_KEY_STORE_PASSWORD:-}
+      - JWT_SECRET=${JWT_SECRET:-docker-compose-change-me-jwt-secret-min-32chars}
+      - JWT_ACCESS_TOKEN_EXPIRY=${JWT_ACCESS_TOKEN_EXPIRY:-7200}
+      - JWT_REFRESH_TOKEN_EXPIRY=${JWT_REFRESH_TOKEN_EXPIRY:-604800}
+      - LANTU_ENCRYPTION_KEY=${LANTU_ENCRYPTION_KEY:-docker-dev-lantu-encryption-32b-key0000}
+      - LANTU_SECURITY_ENCRYPTION_KEY=${LANTU_SECURITY_ENCRYPTION_KEY:-docker-dev-security-encryption-key00}
+      - LANTU_SYSTEM_INTEGRATION_MOCK=${LANTU_SYSTEM_INTEGRATION_MOCK:-true}
       - LANTU_SECURITY_PERMIT_PROMETHEUS_WITHOUT_AUTH=${PERMIT_PROMETHEUS_WITHOUT_AUTH:-false}
-      - SMS_ACCESS_KEY=${SMS_ACCESS_KEY}
-      - SMS_SECRET=${SMS_SECRET}
-      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      - SKILL_MIRROR_CATALOG_URL=${SKILL_MIRROR_CATALOG_URL:-}
+      - SKILL_CATALOG_HTTP_PROXY_HOST=${SKILL_CATALOG_HTTP_PROXY_HOST:-}
+      - SKILL_CATALOG_HTTP_PROXY_PORT=${SKILL_CATALOG_HTTP_PROXY_PORT:-0}
+      - SKILL_GITHUB_ZIP_MIRROR_MODE=${SKILL_GITHUB_ZIP_MIRROR_MODE:-none}
+      - SKILL_GITHUB_ZIP_MIRROR_PREFIX=${SKILL_GITHUB_ZIP_MIRROR_PREFIX:-}
+      - SKILLHUB_FALLBACK_BASE_URL=${SKILLHUB_FALLBACK_BASE_URL:-}
+      - SKILLSMP_API_KEY=${SKILLSMP_API_KEY:-}
+      - FILE_UPLOAD_DIR=${FILE_UPLOAD_DIR:-/tmp/lantu-connect-uploads}
+      - FILE_STORAGE_TYPE=${FILE_STORAGE_TYPE:-local}
+      - FILE_MINIO_ENDPOINT=${FILE_MINIO_ENDPOINT:-http://localhost:9000}
+      - FILE_MINIO_ACCESS_KEY=${FILE_MINIO_ACCESS_KEY:-minioadmin}
+      - FILE_MINIO_SECRET_KEY=${FILE_MINIO_SECRET_KEY:-minioadmin}
+      - FILE_MINIO_BUCKET=${FILE_MINIO_BUCKET:-nexusai-connect}
+      - CORS_ALLOW_ALL_ORIGINS=${CORS_ALLOW_ALL_ORIGINS:-true}
+      - CORS_RELAX_LOCALHOST=${CORS_RELAX_LOCALHOST:-true}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      - SMS_ACCESS_KEY=${SMS_ACCESS_KEY:-}
+      - SMS_SECRET=${SMS_SECRET:-}
+      - MAIL_PASSWORD=${MAIL_PASSWORD:-}
     depends_on:
       mysql:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
     restart: unless-stopped
 
@@ -62,21 +81,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  rabbitmq:
-    image: rabbitmq:3.13-management
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    environment:
-      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
-      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-guest}
-      - RABBITMQ_DEFAULT_VHOST=${RABBITMQ_VHOST:-/}
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 8
 
   nginx:
     image: nginx:alpine

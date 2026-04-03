@@ -31,6 +31,12 @@ public class ResourceUpsertRequest {
     private Long categoryId;
 
     /**
+     * 消费策略（主表 {@code t_resource.access_policy}）：{@code grant_required}（默认）、{@code open_org}、{@code open_platform}。
+     * 网关是否按策略短路 Grant 见后续实现阶段。
+     */
+    private String accessPolicy;
+
+    /**
      * 仅 agent 使用。
      */
     private String agentType;

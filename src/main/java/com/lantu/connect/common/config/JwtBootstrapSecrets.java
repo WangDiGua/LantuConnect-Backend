@@ -2,7 +2,7 @@ package com.lantu.connect.common.config;
 
 /**
  * 当 {@code jwt.secret} / {@code JWT_SECRET} 未设置或为空白（例如环境里存在空字符串）时，
- * 非生产环境使用的兜底密钥。须与 {@code application.yml} 中 {@code jwt.secret} 默认值保持一致。
+ * 使用的仅适用于本地启动的兜底密钥。生产环境必须在环境变量或 {@code application-local.yml} 中显式配置 {@code jwt.secret}。
  */
 public final class JwtBootstrapSecrets {
 

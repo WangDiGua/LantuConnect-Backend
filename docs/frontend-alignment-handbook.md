@@ -1,6 +1,6 @@
 # 前端对接后端标准说明书（后端全量执行版）
 
-> 更新时间：2026-03-24  
+> 更新时间：2026-04-03  
 > 适用范围：前端控制台与用户端全部页面改造。  
 > 权威顺序：后端代码（Controller/Filter/DTO/AOP）> 本文档 > `docs/frontend-full-spec.md`。  
 > 结论标记：`保留` / `迁移` / `下线`。
@@ -125,6 +125,8 @@
 - `platform_admin`：平台级管理角色。
 - `dept_admin`：部门管理角色。
 - `developer`：开发者角色。
+- `consumer`：系统预置「只逛市场」角色（目录只读权限，与 `GatewayUserPermissionService` / Casbin 一致）；前端控制台壳层仍映射为 `user`。
+- 普通业务用户（`user` 等）：按租户实际分配。
 - 未绑定角色用户：只能走“开发者入驻申请”主流程（受 `UnassignedUserAccessFilter` 限制）。
 
 ### 2.8.2 前端视图域与角色关系
@@ -132,7 +134,7 @@
 | 前端视图域 | 含义 | 对应后端角色（可进入） | 备注 |
 |---|---|---|---|
 | `admin` 视图域 | 管理后台导航壳层 | 通常 `platform_admin`、部分 `dept_admin` | 实际功能仍受权限点控制 |
-| `user` 视图域 | 用户侧导航壳层 | `developer`、普通登录用户 | 未赋权用户会被限制到入驻相关接口 |
+| `user` 视图域 | 用户侧导航壳层 | `developer`、`consumer`、普通登录用户 | 未赋权用户会被限制到入驻相关接口；`consumer` 无管理端入口 |
 
 ### 2.8.3 判权优先级
 
@@ -151,7 +153,7 @@
 - 网关调用已升级为三层同时生效：
   1) 用户 RBAC（有 `X-User-Id` 时）
   2) API Key scope
-  3) 资源 grant（资源拥有者或平台管理员授予）
+  3) 资源 grant（资源拥有者或平台管理员授予）；此外 **`t_resource.access_policy`**（`grant_required` / `open_org(同部门)` / `open_platform(租户内)`）可在网关侧短路 Grant 校验，细则见 `PRODUCT_DEFINITION.md` §4 与 `docs/resource-registration-authorization-invocation-guide.md` §3.1。**不改变** `skill` / `dataset` 等「禁止统一 invoke」的产品边界（见 `PRODUCT_DEFINITION.md` §2–§3）。
 - 新增授权管理接口（供前端授权页接入）：
   - `POST /resource-grants`：授予/更新授权
   - `GET /resource-grants?resourceType=&resourceId=`：查询授权列表
@@ -168,10 +170,10 @@
 | 个人资料/设置 | `/auth/profile`、`/auth/change-password`、`/auth/bind-phone`、`/auth/login-history` | 保留 | 同现状 |
 | Agent 管理、Agent 市场 | 旧 `/agents/**` | 下线 | 迁到 `/catalog/resources*` + `/catalog/resolve` + `/invoke` |
 | Agent 版本管理 | 旧 `/agents/{id}/versions`、`/versions/*` | 下线 | 迁到统一资源能力（网关/资源模型） |
-| Skill 管理、Skill 市场 | 旧 `/v1/skills/**` | 下线 | 迁到 `/catalog/resources*` + `/invoke` |
+| Skill 管理、Skill 市场 | 旧 `/v1/skills/**` | 下线 | 迁到 `/catalog/resources*` + `resolve` + 技能制品下载（**不提供**统一网关 `invoke`） |
 | MCP 管理页 | 旧 `/v1/mcp-servers/**` | 下线 | 迁到统一资源目录和解析调用 |
-| App 管理/市场 | 旧 `/v1/apps/**` | 下线 | 迁到统一资源目录和调用 |
-| Dataset 管理/市场 | 旧 `/v1/datasets/**` | 下线 | 迁到统一资源目录和调用 |
+| App 管理/市场 | 旧 `/v1/apps/**` | 下线 | 迁到统一资源目录；以 `resolve`/launch 为主，`invoke` 多为 redirect/票据语义 |
+| Dataset 管理/市场 | 旧 `/v1/datasets/**` | 下线 | 迁到统一资源目录与 `resolve` 元数据（无统一 `invoke`） |
 | Provider/Category | 旧 `/v1/providers/**`、`/v1/categories/**` | 下线 | 对应系统配置/标签或资源域 |
 | 用户活动页（收藏、最近使用、统计） | `/user/*` | 保留 | 同现状 |
 | 用户管理、角色、组织、API Key | `/user-mgmt/*` | 保留 | 同现状 |
@@ -323,13 +325,15 @@
 
 ## 4.2.1a 资源授权申请（工单）
 
+Controller 方法无类级 `@RequireRole`；**待办可见范围与通过/驳回权**由 `GrantApplicationService` 与资源 owner / 部门一致性强校验（与 `resource-registration-authorization-invocation-guide.md` §3.2.1 一致）：`platform_admin` 全量；`dept_admin` 仅 **owner 属本部门** 的待办；`developer` 仅 **本人名下资源** 上的待办。审批人可为 **资源 owner**、**同部门 dept_admin** 或 **platform_admin/admin**。
+
 | 方法 | 路径 | 请求要点 | 鉴权/权限 | 结论 |
 |---|---|---|---|---|
 | POST | `/grant-applications` | body:`GrantApplicationRequest` | `X-User-Id` | 保留 |
-| GET | `/grant-applications/mine` | query:`status?,page,pageSize` | `X-User-Id` | 保留 |
-| GET | `/grant-applications/pending` | query:`status?,keyword?,q?,page,pageSize`；`keyword` 与 `q` 等价择一；服务端 OR 匹配资源字段、`actions`、申请人 `t_user` 用户名/姓名及申请 `id`（纯数字）；`total` 为筛选后总数 | `@RequireRole(platform_admin)` | 保留 |
-| POST | `/grant-applications/{id}/approve` | path:`id` | `@RequireRole(platform_admin)` + `X-User-Id` | 保留 |
-| POST | `/grant-applications/{id}/reject` | path:`id` + body:`ResourceRejectRequest` | `@RequireRole(platform_admin)` + `X-User-Id` | 保留 |
+| GET | `/grant-applications/mine` | query:`status?,keyword?,q?,page,pageSize` | `X-User-Id` | 保留 |
+| GET | `/grant-applications/pending` | query: 同 mine；`keyword` 与 `q` 等价择一；服务端 OR 匹配资源字段、`actions`、申请人用户名/姓名及申请 `id`（纯数字） | `X-User-Id` + 服务层按角色过滤待办（见上文） | 保留 |
+| POST | `/grant-applications/{id}/approve` | path:`id` | `X-User-Id` + 服务层审批权校验 | 保留 |
+| POST | `/grant-applications/{id}/reject` | path:`id` + body:`ResourceRejectRequest` | 同 approve | 保留 |
 
 ## 4.2.2 统一资源注册中心（新增）
 
@@ -495,6 +499,7 @@
 | GET | `/dashboard/health-summary` | `@RequirePermission(monitor:view)` | 保留 |
 | GET | `/dashboard/usage-stats` | `@RequirePermission(monitor:view)` + query:`range?` | 保留 |
 | GET | `/dashboard/data-reports` | `@RequirePermission(monitor:view)` + query:`range?` | 保留 |
+| GET | `/dashboard/owner-resource-stats` | query:`periodDays?`（默认 7）、`ownerUserId?`；**须** `X-User-Id`；服务层限制仅能查本人或管理策略允许的 owner | 保留；指标为 call_log / usage_record(invoke) / 技能包下载，见 `PRODUCT_DEFINITION.md` §5 |
 
 ## 4.11 通知、评价、审核、标签、文件、敏感词
 
@@ -638,6 +643,7 @@
 | `endpoint/protocol/authType/authConfig` | String/Object | mcp: endpoint 必填 | MCP 扩展；`protocol` 必须后端可调用 |
 | `appUrl/embedType` | String | app 必填 | App 扩展 |
 | `dataType/format` | String | dataset 必填 | Dataset 扩展 |
+| `accessPolicy` | String | 否 | `grant_required`（默认）/ `open_org` / `open_platform`；写入 `t_resource.access_policy`，更新时**未传则保留原值**；网关 Grant 短路规则见 `PRODUCT_DEFINITION.md` §4 |
 
 版本请求体（`ResourceVersionCreateRequest`）：
 

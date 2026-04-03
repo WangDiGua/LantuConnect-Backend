@@ -17,6 +17,7 @@ import com.lantu.connect.gateway.dto.ResourceResolveSpecSanitizer;
 import com.lantu.connect.gateway.dto.ResourceResolveVO;
 import com.lantu.connect.gateway.dto.ResourceStatsVO;
 import com.lantu.connect.gateway.dto.SearchSuggestion;
+import com.lantu.connect.gateway.model.ResourceAccessPolicy;
 import com.lantu.connect.gateway.protocol.McpJsonRpcProtocolInvoker;
 import com.lantu.connect.gateway.protocol.McpOutboundHeaderBuilder;
 import com.lantu.connect.gateway.protocol.ProtocolInvokeContext;
@@ -28,6 +29,7 @@ import com.lantu.connect.gateway.security.GatewayGovernanceService;
 import com.lantu.connect.gateway.security.GatewayUserPermissionService;
 import com.lantu.connect.gateway.security.ResourceInvokeGrantService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import com.lantu.connect.monitoring.entity.CallLog;
 import com.lantu.connect.monitoring.entity.TraceSpan;
 import com.lantu.connect.monitoring.mapper.CallLogMapper;
@@ -89,18 +91,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private final GatewayGovernanceService gatewayGovernanceService;
     private final ProtocolInvokerRegistry protocolInvokerRegistry;
     private final McpJsonRpcProtocolInvoker mcpJsonRpcProtocolInvoker;
-
-    @Value("${lantu.logging.gateway-invoke-log-success:false}")
-    private boolean gatewayInvokeLogSuccess;
-
-    @Value("${lantu.logging.gateway-invoke-log-payload-preview:false}")
-    private boolean gatewayInvokeLogPayloadPreview;
-
-    @Value("${lantu.logging.gateway-invoke-body-preview-max:1024}")
-    private int gatewayInvokeBodyPreviewMax;
-
-    @Value("${lantu.logging.gateway-invoke-payload-preview-max:300}")
-    private int gatewayInvokePayloadPreviewMax;
+    private final RuntimeAppConfigService runtimeAppConfigService;
 
     /**
      * 统一资源目录查询：固定从新模型主表检索，再叠加用户权限和 API Key scope 裁剪。
@@ -119,7 +110,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
         List<Object> args = new ArrayList<>();
         StringBuilder sql = new StringBuilder("""
-                SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.source_type, r.update_time, r.created_by
+                SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.source_type, r.update_time, r.created_by, r.access_policy
                 FROM t_resource r
                 WHERE r.deleted = 0
                 """);
@@ -217,6 +208,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                             .description(valueOf(row.get("description")))
                             .status(valueOf(row.get("status")))
                             .sourceType(valueOf(row.get("source_type")))
+                            .accessPolicy(ResourceAccessPolicy.fromStored(row.get("access_policy")).wireValue())
                             .updateTime(toDateTime(row.get("update_time")))
                             .tags(new ArrayList<>())
                             .build());
@@ -619,6 +611,11 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         UsageRecord usage = new UsageRecord();
         usage.setUserId(userId);
         usage.setType(resourceType);
+        try {
+            usage.setResourceId(Long.valueOf(resolved.getResourceId()));
+        } catch (NumberFormatException ignored) {
+            usage.setResourceId(null);
+        }
         usage.setAction("invoke");
         usage.setAgentName(resolved.getResourceCode());
         usage.setDisplayName(StringUtils.hasText(resolved.getDisplayName()) ? resolved.getDisplayName() : resolved.getResourceCode());
@@ -1116,7 +1113,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             String errMsg,
             String respBody,
             Object payload) {
-        int bodyMax = Math.min(4096, Math.max(128, gatewayInvokeBodyPreviewMax));
+        var logCfg = runtimeAppConfigService.logging();
+        int bodyMax = Math.min(4096, Math.max(128, logCfg.getGatewayInvokeBodyPreviewMax()));
         DegradedJsonFields dj = parseDegradedJsonFields(respBody);
         String resolvedErr = StringUtils.hasText(errMsg) ? errMsg : dj.jsonMessage();
         String bodyPreview = StringUtils.hasText(respBody) ? abbreviateForCallLog(respBody, bodyMax) : null;
@@ -1142,7 +1140,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                     resolvedErr == null ? "" : resolvedErr,
                     bodyPreview == null ? "" : bodyPreview,
                     payloadPreview == null ? "" : payloadPreview);
-        } else if (gatewayInvokeLogSuccess) {
+        } else if (logCfg.isGatewayInvokeLogSuccess()) {
             log.info(
                     "[gateway.invoke] {} traceId={} requestId={} resourceType={} resourceId={} resourceCode={} userId={} status={} statusCode={} latencyMs={} payloadPreview={}",
                     httpLabel,
@@ -1160,10 +1158,11 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     }
 
     private String buildPayloadPreviewForLog(Object payload) {
-        if (!gatewayInvokeLogPayloadPreview || payload == null) {
+        var logCfg = runtimeAppConfigService.logging();
+        if (!logCfg.isGatewayInvokeLogPayloadPreview() || payload == null) {
             return null;
         }
-        int max = Math.min(4096, Math.max(64, gatewayInvokePayloadPreviewMax));
+        int max = Math.min(4096, Math.max(64, logCfg.getGatewayInvokePayloadPreviewMax()));
         try {
             String raw = payload instanceof String s ? s : objectMapper.writeValueAsString(payload);
             return abbreviateForCallLog(raw, max);
@@ -1365,9 +1364,11 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     }
 
     @Override
-    public List<ExploreHubData.ExploreResourceItem> trending(String resourceType, Integer limit) {
+    public List<ExploreHubData.ExploreResourceItem> trending(String resourceType, Integer limit, Long userId) {
         int lim = limit != null ? Math.min(50, Math.max(1, limit)) : 10;
         String type = normalizeType(resourceType);
+        GatewayUserPermissionService.CatalogTypePredicate typeOk = gatewayUserPermissionService.catalogTypePredicate(userId);
+        int fetchCap = Math.min(200, lim * 15);
 
         StringBuilder sql = new StringBuilder(
                 "SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, "
@@ -1387,9 +1388,9 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             args.add(type);
         }
         sql.append(" ORDER BY call_count DESC LIMIT ? ");
-        args.add(lim);
+        args.add(fetchCap);
 
-        return jdbcTemplate.query(sql.toString(), args.toArray(), (rs, i) ->
+        List<ExploreHubData.ExploreResourceItem> rows = jdbcTemplate.query(sql.toString(), args.toArray(), (rs, i) ->
                 ExploreHubData.ExploreResourceItem.builder()
                         .resourceType(rs.getString("resource_type"))
                         .resourceId(String.valueOf(rs.getLong("id")))
@@ -1402,19 +1403,24 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                         .publishedAt(rs.getTimestamp("update_time") != null
                                 ? rs.getTimestamp("update_time").toLocalDateTime() : null)
                         .build());
+        return rows.stream()
+                .filter(item -> typeOk.allow(item.getResourceType()))
+                .limit(lim)
+                .toList();
     }
 
     @Override
-    public List<SearchSuggestion> searchSuggestions(String query) {
+    public List<SearchSuggestion> searchSuggestions(String query, Long userId) {
         if (!StringUtils.hasText(query) || query.trim().length() < 1) {
             return List.of();
         }
+        GatewayUserPermissionService.CatalogTypePredicate typeOk = gatewayUserPermissionService.catalogTypePredicate(userId);
         String keyword = "%" + query.trim() + "%";
-        return jdbcTemplate.query(
+        List<SearchSuggestion> rows = jdbcTemplate.query(
                 "SELECT id, resource_type, resource_code, display_name "
                         + "FROM t_resource WHERE deleted = 0 AND status = 'published' "
                         + "AND (resource_code LIKE ? OR display_name LIKE ?) "
-                        + "ORDER BY update_time DESC LIMIT 10",
+                        + "ORDER BY update_time DESC LIMIT 50",
                 new Object[]{keyword, keyword},
                 (rs, i) -> {
                     String name = rs.getString("display_name");
@@ -1425,6 +1431,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                             .highlightedText(name)
                             .build();
                 });
+        return rows.stream().filter(s -> typeOk.allow(s.getResourceType())).limit(10).toList();
     }
 
     private static void ensureSkillNotInvokable(String type) {

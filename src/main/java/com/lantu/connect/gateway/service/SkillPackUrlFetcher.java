@@ -3,7 +3,7 @@ package com.lantu.connect.gateway.service;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.gateway.config.SkillPackImportProperties;
-import jakarta.annotation.PostConstruct;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -34,15 +34,17 @@ public class SkillPackUrlFetcher {
     private static final String UA_BROWSERISH =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-    private final SkillPackImportProperties properties;
+    private final RuntimeAppConfigService runtimeAppConfigService;
     private final SkillPackRemoteUriValidator remoteUriValidator;
     private final GitSkillPackCloner gitSkillPackCloner;
-    private HttpClient httpClient;
 
-    @PostConstruct
-    void initHttpClient() {
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(Math.max(1, properties.getConnectTimeoutSeconds())))
+    private SkillPackImportProperties p() {
+        return runtimeAppConfigService.skillPackImport();
+    }
+
+    private HttpClient httpClient() {
+        return HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(Math.max(1, p().getConnectTimeoutSeconds())))
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
     }
@@ -70,9 +72,9 @@ public class SkillPackUrlFetcher {
         }
 
         URI current = initial;
-        int maxRedirects = Math.max(0, properties.getMaxRedirects());
-        long maxBytes = Math.max(1024L, properties.getMaxBytes());
-        int readSec = Math.max(5, properties.getReadTimeoutSeconds());
+        int maxRedirects = Math.max(0, p().getMaxRedirects());
+        long maxBytes = Math.max(1024L, p().getMaxBytes());
+        int readSec = Math.max(5, p().getReadTimeoutSeconds());
         int redirectsFollowed = 0;
 
         while (true) {
@@ -115,9 +117,9 @@ public class SkillPackUrlFetcher {
     }
 
     private HttpResponse<InputStream> sendGetWithRetries(URI uri, int readTimeoutSec) {
-        int extra = Math.max(0, properties.getFetchRetries());
+        int extra = Math.max(0, p().getFetchRetries());
         int attempts = 1 + extra;
-        long delayMs = Math.max(0, properties.getFetchRetryDelayMs());
+        long delayMs = Math.max(0, p().getFetchRetryDelayMs());
         for (int attempt = 1; attempt <= attempts; attempt++) {
             String userAgent = attempt == 1 ? UA_APP : UA_BROWSERISH;
             HttpRequest req = HttpRequest.newBuilder(uri)
@@ -131,7 +133,7 @@ public class SkillPackUrlFetcher {
                     .GET()
                     .build();
             try {
-                return httpClient.send(req, HttpResponse.BodyHandlers.ofInputStream());
+                return httpClient().send(req, HttpResponse.BodyHandlers.ofInputStream());
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new BusinessException(ResultCode.PARAM_ERROR, "拉取 url 已中断");

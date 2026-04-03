@@ -20,6 +20,10 @@ public class ResourceManageVO {
     private String sourceType;
     private Long providerId;
     private Long categoryId;
+
+    /** {@code grant_required} | {@code open_org} | {@code open_platform} */
+    private String accessPolicy;
+
     private Long createdBy;
     private String createdByName;
     private LocalDateTime createTime;

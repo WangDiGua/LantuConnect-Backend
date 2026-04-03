@@ -6,11 +6,12 @@ import com.lantu.connect.common.integration.NetworkApplyService;
 import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
@@ -28,20 +29,17 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class NetworkApplyServiceImpl implements NetworkApplyService {
 
-    @Value("${lantu.integration.network-api-url:}")
-    private String networkApiUrl;
-
-    @Value("${lantu.system.integration-mock:true}")
-    private boolean mockMode;
-
     private final RestTemplate restTemplate;
+    private final RuntimeAppConfigService runtimeAppConfigService;
 
     @Override
     @CircuitBreaker(name = "networkApply", fallbackMethod = "applyFallback")
     @Retry(name = "networkApply", fallbackMethod = "applyFallback")
     @Bulkhead(name = "networkApply", type = Bulkhead.Type.SEMAPHORE, fallbackMethod = "applyFallback")
     public NetworkApplyResult apply(NetworkApplyRequest request) {
-        if (mockMode || networkApiUrl == null || networkApiUrl.isEmpty()) {
+        boolean mockMode = runtimeAppConfigService.system().isIntegrationMock();
+        String networkApiUrl = runtimeAppConfigService.integration().getNetworkApiUrl();
+        if (mockMode || !StringUtils.hasText(networkApiUrl)) {
             return mockApply(request);
         }
         try {
@@ -85,7 +83,9 @@ public class NetworkApplyServiceImpl implements NetworkApplyService {
 
     @Override
     public NetworkApplyResult queryStatus(String taskId) {
-        if (mockMode || networkApiUrl == null || networkApiUrl.isEmpty()) {
+        boolean mockMode = runtimeAppConfigService.system().isIntegrationMock();
+        String networkApiUrl = runtimeAppConfigService.integration().getNetworkApiUrl();
+        if (mockMode || !StringUtils.hasText(networkApiUrl)) {
             return NetworkApplyResult.builder()
                     .success(true)
                     .taskId(taskId)

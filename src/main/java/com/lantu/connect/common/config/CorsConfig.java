@@ -1,10 +1,14 @@
 package com.lantu.connect.common.config;
 
-import org.springframework.beans.factory.annotation.Value;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
-import org.springframework.web.servlet.config.annotation.CorsRegistry;
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.filter.CorsFilter;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -13,66 +17,56 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Cors 配置
- *
- * @author 王帝
- * @date 2026-03-21
+ * CORS：按请求从 {@link RuntimeAppConfigService#cors()} 生成配置，支持库内 runtime_app_config 覆盖。
  */
 @Configuration
-public class CorsConfig implements WebMvcConfigurer {
+@RequiredArgsConstructor
+public class CorsConfig {
 
-    @Value("${cors.allowed-origins:http://localhost:3000}")
-    private String allowedOriginsRaw;
+    private final RuntimeAppConfigService runtimeAppConfigService;
 
-    @Value("${cors.relax-localhost:true}")
-    private boolean relaxLocalhost;
-
-    /** true 时等同 allowedOriginPatterns("*")（含 credentials）；生产请保持 false。 */
-    @Value("${cors.allow-all-origins:false}")
-    private boolean allowAllOrigins;
-
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        if (allowAllOrigins) {
-            registry.addMapping("/**")
-                    .allowedOriginPatterns("*")
-                    .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-                    .allowedHeaders("*")
-                    .exposedHeaders("X-Trace-Id", "X-Request-Id", "X-Total-Count")
-                    .allowCredentials(true)
-                    .maxAge(3600);
-            return;
-        }
-        Set<String> patterns = new LinkedHashSet<>();
-        if (relaxLocalhost) {
-            patterns.add("http://localhost:*");
-            patterns.add("http://127.0.0.1:*");
-            patterns.add("https://localhost:*");
-            patterns.add("https://127.0.0.1:*");
-        }
-        Arrays.stream(allowedOriginsRaw.split(","))
-                .map(String::trim)
-                .filter(StringUtils::hasText)
-                .forEach(patterns::add);
-        if (patterns.isEmpty()) {
-            patterns.add("http://localhost:*");
-            patterns.add("http://127.0.0.1:*");
-        }
-        List<String> patternList = new ArrayList<>(patterns);
-        registry.addMapping("/**")
-                .allowedOriginPatterns(patternList.toArray(String[]::new))
-                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-                .allowedHeaders(
-                        "Authorization",
-                        "Content-Type",
-                        "Accept",
-                        "X-Api-Key",
-                        "X-Trace-Id",
-                        "X-Request-Id",
-                        "X-Sandbox-Token",
-                        "Idempotency-Key")
-                .exposedHeaders("X-Trace-Id", "X-Request-Id", "X-Total-Count")
-                .allowCredentials(true)
-                .maxAge(3600);
+    @Bean
+    public CorsFilter corsFilter() {
+        CorsConfigurationSource source = (HttpServletRequest request) -> {
+            CorsBootstrapProperties c = runtimeAppConfigService.cors();
+            CorsConfiguration cfg = new CorsConfiguration();
+            cfg.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+            cfg.setExposedHeaders(Arrays.asList("X-Trace-Id", "X-Request-Id", "X-Total-Count"));
+            cfg.setAllowCredentials(true);
+            cfg.setMaxAge(3600L);
+            if (c.isAllowAllOrigins()) {
+                cfg.setAllowedOriginPatterns(List.of("*"));
+                cfg.setAllowedHeaders(List.of("*"));
+                return cfg;
+            }
+            Set<String> patterns = new LinkedHashSet<>();
+            if (c.isRelaxLocalhost()) {
+                patterns.add("http://localhost:*");
+                patterns.add("http://127.0.0.1:*");
+                patterns.add("https://localhost:*");
+                patterns.add("https://127.0.0.1:*");
+            }
+            String raw = c.getAllowedOrigins() != null ? c.getAllowedOrigins() : "";
+            Arrays.stream(raw.split(","))
+                    .map(String::trim)
+                    .filter(StringUtils::hasText)
+                    .forEach(patterns::add);
+            if (patterns.isEmpty()) {
+                patterns.add("http://localhost:*");
+                patterns.add("http://127.0.0.1:*");
+            }
+            cfg.setAllowedOriginPatterns(new ArrayList<>(patterns));
+            cfg.setAllowedHeaders(Arrays.asList(
+                    "Authorization",
+                    "Content-Type",
+                    "Accept",
+                    "X-Api-Key",
+                    "X-Trace-Id",
+                    "X-Request-Id",
+                    "X-Sandbox-Token",
+                    "Idempotency-Key"));
+            return cfg;
+        };
+        return new CorsFilter(source);
     }
 }

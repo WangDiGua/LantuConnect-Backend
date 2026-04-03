@@ -6,11 +6,12 @@ import com.lantu.connect.common.integration.AclPublishService;
 import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
@@ -28,20 +29,17 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AclPublishServiceImpl implements AclPublishService {
 
-    @Value("${lantu.integration.acl-api-url:}")
-    private String aclApiUrl;
-
-    @Value("${lantu.system.integration-mock:true}")
-    private boolean mockMode;
-
     private final RestTemplate restTemplate;
+    private final RuntimeAppConfigService runtimeAppConfigService;
 
     @Override
     @CircuitBreaker(name = "aclPublish", fallbackMethod = "publishFallback")
     @Retry(name = "aclPublish", fallbackMethod = "publishFallback")
     @Bulkhead(name = "aclPublish", type = Bulkhead.Type.SEMAPHORE, fallbackMethod = "publishFallback")
     public AclPublishResult publish(AclPublishRequest request) {
-        if (mockMode || aclApiUrl == null || aclApiUrl.isEmpty()) {
+        boolean mockMode = runtimeAppConfigService.system().isIntegrationMock();
+        String aclApiUrl = runtimeAppConfigService.integration().getAclApiUrl();
+        if (mockMode || !StringUtils.hasText(aclApiUrl)) {
             return mockPublish(request);
         }
         try {
@@ -85,7 +83,9 @@ public class AclPublishServiceImpl implements AclPublishService {
 
     @Override
     public AclPublishResult queryStatus(String aclId) {
-        if (mockMode || aclApiUrl == null || aclApiUrl.isEmpty()) {
+        boolean mockMode = runtimeAppConfigService.system().isIntegrationMock();
+        String aclApiUrl = runtimeAppConfigService.integration().getAclApiUrl();
+        if (mockMode || !StringUtils.hasText(aclApiUrl)) {
             return AclPublishResult.builder()
                     .success(true)
                     .aclId(aclId)

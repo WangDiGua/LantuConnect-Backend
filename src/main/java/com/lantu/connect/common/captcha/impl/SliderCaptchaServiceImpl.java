@@ -13,6 +13,7 @@ import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.UUID;
@@ -22,6 +23,11 @@ import java.util.concurrent.TimeUnit;
 @Service
 @RequiredArgsConstructor
 public class SliderCaptchaServiceImpl implements CaptchaService {
+
+    /**
+     * 来自 {@code net.sourceforge.jeuclid:dejavu-fonts}，不依赖服务器安装 Arial/字体包。
+     */
+    private static final String CAPTCHA_FONT_RESOURCE = "fonts/DejaVuSans-Bold.ttf";
 
     private final StringRedisTemplate redisTemplate;
     private static final String CAPTCHA_PREFIX = "captcha:image:";
@@ -34,6 +40,36 @@ public class SliderCaptchaServiceImpl implements CaptchaService {
     private static final int NOISE_DOT_COUNT = 80;
 
     private final SecureRandom random = new SecureRandom();
+
+    /** 一级缓存：TrueType 基字体，按字号 {@link Font#deriveFont(float)} */
+    private volatile Font bundledFontBase;
+
+    private Font bundledFontBase() {
+        Font cached = bundledFontBase;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (this) {
+            cached = bundledFontBase;
+            if (cached != null) {
+                return cached;
+            }
+            ClassLoader cl = Thread.currentThread().getContextClassLoader();
+            try (InputStream in = cl != null ? cl.getResourceAsStream(CAPTCHA_FONT_RESOURCE) : null) {
+                if (in != null) {
+                    cached = Font.createFont(Font.TRUETYPE_FONT, in);
+                }
+            } catch (FontFormatException | IOException e) {
+                log.warn("Captcha: failed to load bundled font {}: {}", CAPTCHA_FONT_RESOURCE, e.getMessage());
+            }
+            if (cached == null) {
+                cached = new Font(Font.SANS_SERIF, Font.BOLD, 12);
+                log.debug("Captcha: using logical font SANS_SERIF (bundled TTF not available)");
+            }
+            bundledFontBase = cached;
+            return cached;
+        }
+    }
 
     @Override
     public CaptchaResult generate() {
@@ -108,7 +144,7 @@ public class SliderCaptchaServiceImpl implements CaptchaService {
             for (int i = 0; i < code.length(); i++) {
                 char ch = code.charAt(i);
                 int fontSize = 26 + random.nextInt(5);
-                g2d.setFont(new Font("Arial", Font.BOLD, fontSize));
+                g2d.setFont(bundledFontBase().deriveFont((float) fontSize));
                 g2d.setColor(randomColor(20, 120));
 
                 int x = step * (i + 1) - 8 + random.nextInt(6);

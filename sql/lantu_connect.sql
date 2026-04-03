@@ -558,7 +558,7 @@ CREATE TABLE `t_platform_role`  (
   `update_time` datetime NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE INDEX `uk_role_code`(`role_code` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 5 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '平台角色表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 6 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '平台角色表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_platform_role
@@ -566,6 +566,7 @@ CREATE TABLE `t_platform_role`  (
 INSERT INTO `t_platform_role` VALUES (1, 'platform_admin', '平台管理员', '拥有所有操作权限', '[\"agent:read\", \"agent:create\", \"agent:update\", \"agent:delete\", \"agent:publish\", \"agent:audit\", \"skill:read\", \"skill:create\", \"skill:update\", \"skill:delete\", \"skill:publish\", \"skill:audit\", \"app:view\", \"app:create\", \"app:update\", \"app:delete\", \"dataset:read\", \"dataset:create\", \"dataset:update\", \"dataset:delete\", \"dataset:apply\", \"provider:manage\", \"user:manage\", \"user:read\", \"user:create\", \"user:update\", \"user:delete\", \"role:read\", \"role:create\", \"role:update\", \"role:delete\", \"apikey:read\", \"apikey:create\", \"apikey:delete\", \"org:read\", \"org:create\", \"org:update\", \"org:delete\", \"system:config\", \"monitor:view\", \"audit:manage\"]', 1, 1, '2026-03-24 11:37:43', '2026-03-24 11:37:43');
 INSERT INTO `t_platform_role` VALUES (2, 'dept_admin', '部门管理员', '本部门资源管理与用户查看', '[\"agent:read\", \"agent:create\", \"agent:update\", \"agent:audit\", \"skill:read\", \"skill:create\", \"skill:update\", \"skill:audit\", \"app:view\", \"dataset:read\", \"dataset:create\", \"dataset:update\", \"dataset:apply\", \"user:manage\", \"user:read\", \"user:create\", \"user:update\", \"role:read\", \"org:read\", \"monitor:view\"]', 1, 1, '2026-03-24 11:37:43', '2026-03-24 11:37:43');
 INSERT INTO `t_platform_role` VALUES (3, 'developer', '开发者', 'Agent/Skill 创建与发布', '[\"agent:read\", \"agent:create\", \"agent:update\", \"agent:publish\", \"skill:read\", \"skill:create\", \"skill:update\", \"skill:publish\", \"app:view\", \"dataset:read\", \"dataset:apply\"]', 1, 1, '2026-03-24 11:37:43', '2026-03-24 11:37:43');
+INSERT INTO `t_platform_role` VALUES (4, 'consumer', '消费者', '目录与市场只读（五类资源浏览；mcp 与 skill 共用 skill:read）', '[\"agent:read\", \"skill:read\", \"app:view\", \"dataset:read\"]', 1, 0, '2026-04-03 00:00:00', '2026-04-03 00:00:00');
 
 -- ----------------------------
 -- Table structure for t_provider
@@ -691,6 +692,7 @@ CREATE TABLE `t_resource`  (
   `source_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
   `provider_id` bigint NULL DEFAULT NULL,
   `category_id` bigint NULL DEFAULT NULL,
+  `access_policy` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'grant_required',
   `created_by` bigint NULL DEFAULT NULL,
   `deleted` smallint NULL DEFAULT 0,
   `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
@@ -704,29 +706,29 @@ CREATE TABLE `t_resource`  (
 -- ----------------------------
 -- Records of t_resource
 -- ----------------------------
-INSERT INTO `t_resource` VALUES (1, 'agent', 'web-search', '联网搜索', '通过搜索引擎实时检索互联网信息并汇总回答', 'published', 'cloud', 1, 1, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (2, 'agent', 'smart-tutor', '智能备课助手', '辅助教师快速生成教案、课件大纲和教学活动设计', 'published', 'internal', 3, 2, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (3, 'agent', 'paper-polish', '论文润色', '对学术论文进行语言润色、格式规范和学术表达优化', 'published', 'cloud', 1, 10, 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (4, 'agent', 'campus-qa', '校园问答', '回答校园生活、教务政策、办事流程等常见问题', 'testing', 'internal', 3, 1, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (5, 'agent', 'image-gen', '图像生成', '根据文字描述生成高质量图像', 'draft', 'cloud', 2, 3, 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (6, 'agent', 'code-assistant', '代码助手', '辅助编写、调试和解释代码，支持多种编程语言', 'published', 'cloud', 1, 3, 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (8, 'mcp', 'lantu-mcp-server', '兰智通 MCP Server', '兰智通平台内置 MCP 工具集合，提供知识库检索、文档生成等能力', 'testing', 'internal', 3, 3, 1, 0, '2026-03-22 10:58:54', '2026-03-25 09:59:40');
-INSERT INTO `t_resource` VALUES (9, 'mcp', 'local-kb-search', '本地知识库搜索', '在校内知识库中检索相关文档和信息', 'published', 'internal', 3, 1, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (10, 'mcp', 'word-gen', 'Word文档生成', '根据输入内容自动生成规范的 Word 文档', 'published', 'internal', 3, 11, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (11, 'mcp', 'ppt-gen', 'PPT生成', '根据主题和大纲自动生成演示文稿', 'published', 'internal', 3, 11, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (12, 'mcp', 'schedule-query', '日程查询', '查询个人或部门的日程安排', 'published', 'internal', 3, 1, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (13, 'mcp', 'data-analysis', '数据分析工具', '对上传的结构化数据进行统计分析和可视化', 'published', 'cloud', 1, 8, 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (14, 'mcp', 'translate', '多语言翻译', '支持中英日韩等多语言互译', 'published', 'cloud', 1, 3, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (15, 'mcp', 'ocr-recognize', 'OCR 文字识别', '识别图片中的文字内容', 'deprecated', 'cloud', 2, 3, 3, 0, '2026-03-22 10:58:54', '2026-03-25 09:28:55');
-INSERT INTO `t_resource` VALUES (23, 'app', 'campus-card', '校园一卡通查询', '查询校园卡余额、消费记录和充值', 'published', 'internal', NULL, 15, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (24, 'app', 'library-seat', '图书馆座位预约', '在线预约图书馆自习座位', 'published', 'internal', NULL, 15, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (25, 'app', 'course-table', '课表查询', '查看个人课程表和考试安排', 'published', 'internal', NULL, 6, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (26, 'dataset', 'cs-papers-2026', '计算机论文库2026', '2026年度计算机领域核心期刊论文集', 'deprecated', 'knowledge', NULL, 10, 3, 0, '2026-03-22 10:58:54', '2026-03-25 09:28:38');
-INSERT INTO `t_resource` VALUES (27, 'dataset', 'student-scores', '学生成绩数据', '近三年全校本科生成绩统计数据（脱敏）', 'published', 'department', NULL, 8, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (28, 'dataset', 'campus-news-corpus', '校园新闻语料', '兰州大学官网新闻语料库（用于NLP训练）', 'testing', 'knowledge', NULL, 10, 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` VALUES (31, 'skill', 'demo-skill-pack', '示例 Anthropic 技能包', '演示用可下载技能包（非远程 MCP）', 'published', 'internal', 3, 1, 1, 0, '2026-03-31 12:00:00', '2026-03-31 12:00:00');
-INSERT INTO `t_resource` VALUES (29, 'mcp', 'smoke-mcp-1774368649', 'Smoke MCP', 'smoke test', 'published', 'internal', NULL, NULL, 1, 0, '2026-03-25 00:10:50', '2026-03-25 00:10:50');
-INSERT INTO `t_resource` VALUES (30, 'mcp', 'smoke2-mcp-1774368774', 'Smoke2 MCP', 'smoke test 2', 'published', 'internal', NULL, NULL, 1, 0, '2026-03-25 00:12:55', '2026-03-25 00:12:55');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (1, 'agent', 'web-search', '联网搜索', '通过搜索引擎实时检索互联网信息并汇总回答', 'published', 'cloud', 1, 1, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (2, 'agent', 'smart-tutor', '智能备课助手', '辅助教师快速生成教案、课件大纲和教学活动设计', 'published', 'internal', 3, 2, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (3, 'agent', 'paper-polish', '论文润色', '对学术论文进行语言润色、格式规范和学术表达优化', 'published', 'cloud', 1, 10, 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (4, 'agent', 'campus-qa', '校园问答', '回答校园生活、教务政策、办事流程等常见问题', 'testing', 'internal', 3, 1, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (5, 'agent', 'image-gen', '图像生成', '根据文字描述生成高质量图像', 'draft', 'cloud', 2, 3, 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (6, 'agent', 'code-assistant', '代码助手', '辅助编写、调试和解释代码，支持多种编程语言', 'published', 'cloud', 1, 3, 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (8, 'mcp', 'lantu-mcp-server', '兰智通 MCP Server', '兰智通平台内置 MCP 工具集合，提供知识库检索、文档生成等能力', 'testing', 'internal', 3, 3, 1, 0, '2026-03-22 10:58:54', '2026-03-25 09:59:40');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (9, 'mcp', 'local-kb-search', '本地知识库搜索', '在校内知识库中检索相关文档和信息', 'published', 'internal', 3, 1, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (10, 'mcp', 'word-gen', 'Word文档生成', '根据输入内容自动生成规范的 Word 文档', 'published', 'internal', 3, 11, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (11, 'mcp', 'ppt-gen', 'PPT生成', '根据主题和大纲自动生成演示文稿', 'published', 'internal', 3, 11, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (12, 'mcp', 'schedule-query', '日程查询', '查询个人或部门的日程安排', 'published', 'internal', 3, 1, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (13, 'mcp', 'data-analysis', '数据分析工具', '对上传的结构化数据进行统计分析和可视化', 'published', 'cloud', 1, 8, 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (14, 'mcp', 'translate', '多语言翻译', '支持中英日韩等多语言互译', 'published', 'cloud', 1, 3, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (15, 'mcp', 'ocr-recognize', 'OCR 文字识别', '识别图片中的文字内容', 'deprecated', 'cloud', 2, 3, 3, 0, '2026-03-22 10:58:54', '2026-03-25 09:28:55');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (23, 'app', 'campus-card', '校园一卡通查询', '查询校园卡余额、消费记录和充值', 'published', 'internal', NULL, 15, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (24, 'app', 'library-seat', '图书馆座位预约', '在线预约图书馆自习座位', 'published', 'internal', NULL, 15, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (25, 'app', 'course-table', '课表查询', '查看个人课程表和考试安排', 'published', 'internal', NULL, 6, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (26, 'dataset', 'cs-papers-2026', '计算机论文库2026', '2026年度计算机领域核心期刊论文集', 'deprecated', 'knowledge', NULL, 10, 3, 0, '2026-03-22 10:58:54', '2026-03-25 09:28:38');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (27, 'dataset', 'student-scores', '学生成绩数据', '近三年全校本科生成绩统计数据（脱敏）', 'published', 'department', NULL, 8, 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (28, 'dataset', 'campus-news-corpus', '校园新闻语料', '兰州大学官网新闻语料库（用于NLP训练）', 'testing', 'knowledge', NULL, 10, 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (31, 'skill', 'demo-skill-pack', '示例 Anthropic 技能包', '演示用可下载技能包（非远程 MCP）', 'published', 'internal', 3, 1, 1, 0, '2026-03-31 12:00:00', '2026-03-31 12:00:00');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (29, 'mcp', 'smoke-mcp-1774368649', 'Smoke MCP', 'smoke test', 'published', 'internal', NULL, NULL, 1, 0, '2026-03-25 00:10:50', '2026-03-25 00:10:50');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `provider_id`, `category_id`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (30, 'mcp', 'smoke2-mcp-1774368774', 'Smoke2 MCP', 'smoke test 2', 'published', 'internal', NULL, NULL, 1, 0, '2026-03-25 00:12:55', '2026-03-25 00:12:55');
 
 -- ----------------------------
 -- Table structure for t_resource_agent_ext
@@ -1301,6 +1303,7 @@ CREATE TABLE `t_usage_record`  (
   `agent_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `display_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `resource_id` bigint NULL DEFAULT NULL,
   `action` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `input_preview` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
   `output_preview` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
@@ -1311,17 +1314,35 @@ CREATE TABLE `t_usage_record`  (
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_usage_record_user_time`(`user_id` ASC, `create_time` ASC) USING BTREE,
   INDEX `idx_usage_record_type`(`type` ASC) USING BTREE,
+  INDEX `idx_usage_record_owner_lookup`(`resource_id` ASC, `create_time` ASC) USING BTREE,
   CONSTRAINT `fk_usage_record_user` FOREIGN KEY (`user_id`) REFERENCES `t_user` (`user_id`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE = InnoDB AUTO_INCREMENT = 6 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '使用记录表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_usage_record
 -- ----------------------------
-INSERT INTO `t_usage_record` VALUES (1, 4, 'web-search', '联网搜索', 'agent', '对话', '兰州大学2026年招生政策', '根据最新公布的招生简章...', 470, 1150, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_usage_record` VALUES (2, 4, 'campus-qa', '校园问答', 'agent', '对话', '图书馆几点关门', '兰州大学图书馆开放时间为...', 250, 650, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_usage_record` VALUES (3, 3, 'smart-tutor', '智能备课助手', 'agent', '对话', '生成高等数学第一章教案', '教案：高等数学 - 函数与极限...', 1700, 2800, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_usage_record` VALUES (4, 3, 'code-assistant', '代码助手', 'agent', '对话', '用Python写一个快速排序', 'def quick_sort(arr):...', 900, 1900, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_usage_record` VALUES (5, 4, 'local-kb-search', '本地知识库搜索', 'skill', '调用', '机器学习期末考试重点', '根据知识库检索到3篇相关文档...', 150, 650, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_usage_record` VALUES (1, 4, 'web-search', '联网搜索', 'agent', NULL, '对话', '兰州大学2026年招生政策', '根据最新公布的招生简章...', 470, 1150, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_usage_record` VALUES (2, 4, 'campus-qa', '校园问答', 'agent', NULL, '对话', '图书馆几点关门', '兰州大学图书馆开放时间为...', 250, 650, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_usage_record` VALUES (3, 3, 'smart-tutor', '智能备课助手', 'agent', NULL, '对话', '生成高等数学第一章教案', '教案：高等数学 - 函数与极限...', 1700, 2800, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_usage_record` VALUES (4, 3, 'code-assistant', '代码助手', 'agent', NULL, '对话', '用Python写一个快速排序', 'def quick_sort(arr):...', 900, 1900, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_usage_record` VALUES (5, 4, 'local-kb-search', '本地知识库搜索', 'skill', NULL, '调用', '机器学习期末考试重点', '根据知识库检索到3篇相关文档...', 150, 650, 'success', '2026-03-22 10:58:54');
+
+-- ----------------------------
+-- Table structure for t_skill_pack_download_event
+-- ----------------------------
+DROP TABLE IF EXISTS `t_skill_pack_download_event`;
+CREATE TABLE `t_skill_pack_download_event`  (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `resource_id` bigint NOT NULL,
+  `resource_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'skill',
+  `owner_user_id` bigint NOT NULL,
+  `downloader_user_id` bigint NULL DEFAULT NULL,
+  `downloader_api_key_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`) USING BTREE,
+  INDEX `idx_spd_owner_time`(`owner_user_id` ASC, `create_time` ASC) USING BTREE,
+  INDEX `idx_spd_resource`(`resource_id` ASC) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '技能包下载埋点' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Table structure for t_user

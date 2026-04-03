@@ -25,6 +25,9 @@ public class ResourceCatalogItemVO {
 
     private String sourceType;
 
+    /** 开发者配置的消费策略；网关 Grant 短路见后续阶段。 */
+    private String accessPolicy;
+
     private LocalDateTime updateTime;
 
     /** 目录标签名（t_resource_tag_rel + t_tag），与市场筛选 tags 一致 */

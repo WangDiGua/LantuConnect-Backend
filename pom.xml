@@ -80,6 +80,13 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- 图形验证码：内嵌 DejaVu TTF，Linux 无 Arial/无字体包时仍可绘制 -->
+        <dependency>
+            <groupId>net.sourceforge.jeuclid</groupId>
+            <artifactId>dejavu-fonts</artifactId>
+            <version>2.29</version>
+        </dependency>
+
         <!-- Flyway：默认关闭（FLYWAY_ENABLED），详见 application.yml -->
         <dependency>
             <groupId>org.flywaydb</groupId>
@@ -134,12 +141,6 @@
             <groupId>net.logstash.logback</groupId>
             <artifactId>logstash-logback-encoder</artifactId>
             <version>8.0</version>
-        </dependency>
-
-        <!-- RabbitMQ 消息队列 -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
 
         <!-- MinIO 对象存储 -->

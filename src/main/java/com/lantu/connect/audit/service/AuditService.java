@@ -31,4 +31,9 @@ public interface AuditService {
     void rejectResource(Long id, String reason, Long reviewerId);
 
     void publishResource(Long id, Long reviewerId);
+
+    /**
+     * 平台强制下架：仅应由 {@code platform_admin} 调用（控制器层校验）。资源进入 {@code deprecated}，并可选更新审核队列表记。
+     */
+    void platformForceDeprecateResource(Long resourceId, Long operatorUserId, String reason);
 }

@@ -1,7 +1,7 @@
 package com.lantu.connect.gateway.protocol;
 
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -22,9 +22,7 @@ public class McpStreamSessionStore {
     private static final String KEY_PREFIX = "lantu:mcp:http-session:";
 
     private final StringRedisTemplate stringRedisTemplate;
-
-    @Value("${lantu.integration.mcp-session-ttl-minutes:45}")
-    private int sessionTtlMinutes;
+    private final RuntimeAppConfigService runtimeAppConfigService;
 
     public Optional<String> getSessionId(String apiKeyId, String endpoint) {
         if (!StringUtils.hasText(apiKeyId) || !StringUtils.hasText(endpoint)) {
@@ -38,6 +36,7 @@ public class McpStreamSessionStore {
         if (!StringUtils.hasText(apiKeyId) || !StringUtils.hasText(endpoint) || !StringUtils.hasText(sessionId)) {
             return;
         }
+        int sessionTtlMinutes = runtimeAppConfigService.integration().getMcpSessionTtlMinutes();
         int minutes = Math.max(5, Math.min(24 * 60, sessionTtlMinutes));
         stringRedisTemplate.opsForValue().set(cacheKey(apiKeyId, endpoint), sessionId.trim(),
                 Duration.ofMinutes(minutes));

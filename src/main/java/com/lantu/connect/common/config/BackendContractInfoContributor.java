@@ -1,5 +1,6 @@
 package com.lantu.connect.common.config;
 
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.actuate.info.Info;
 import org.springframework.boot.actuate.info.InfoContributor;
@@ -12,13 +13,14 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class BackendContractInfoContributor implements InfoContributor {
 
-    private final BackendContractProperties backendContractProperties;
+    private final RuntimeAppConfigService runtimeAppConfigService;
 
     @Override
     public void contribute(Info.Builder builder) {
+        var c = runtimeAppConfigService.contract();
         builder.withDetail("backendContract", java.util.Map.of(
-                "freezeVersion", backendContractProperties.getFreezeVersion(),
-                "freezeEffectiveDate", backendContractProperties.getFreezeEffectiveDate()
+                "freezeVersion", c.getFreezeVersion(),
+                "freezeEffectiveDate", c.getFreezeEffectiveDate()
         ));
     }
 }

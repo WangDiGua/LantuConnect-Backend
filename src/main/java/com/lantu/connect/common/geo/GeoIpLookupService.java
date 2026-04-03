@@ -3,8 +3,9 @@ package com.lantu.connect.common.geo;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -17,19 +18,17 @@ import java.nio.charset.StandardCharsets;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class GeoIpLookupService {
 
-    @Value("${geoip.enabled:true}")
-    private boolean enabled;
-
-    @Value("${geoip.timeout-ms:2000}")
-    private int timeoutMs;
+    private final RuntimeAppConfigService runtimeAppConfigService;
 
     /**
      * @return 可读文本，如「深圳市, 广东省, 中国」；不可用则 null
      */
     public String lookup(String ip) {
-        if (!enabled || !StringUtils.hasText(ip)) {
+        var geo = runtimeAppConfigService.geoIp();
+        if (!geo.isEnabled() || !StringUtils.hasText(ip)) {
             return null;
         }
         ip = ip.trim();
@@ -50,7 +49,7 @@ public class GeoIpLookupService {
             }
             String enc = URLEncoder.encode(addr.getHostAddress(), StandardCharsets.UTF_8);
             String url = "http://ip-api.com/json/" + enc + "?fields=status,message,country,regionName,city&lang=zh-CN";
-            String body = HttpRequest.get(url).timeout(timeoutMs).execute().body();
+            String body = HttpRequest.get(url).timeout(geo.getTimeoutMs()).execute().body();
             if (!StringUtils.hasText(body)) {
                 return null;
             }

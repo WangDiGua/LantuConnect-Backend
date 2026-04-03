@@ -9,9 +9,12 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.common.security.CasbinAuthorizationService;
 import com.lantu.connect.common.util.DeptScopeHelper;
 import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
+import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
+import com.lantu.connect.gateway.security.ResourceInvokeGrantService;
 import com.lantu.connect.notification.service.NotificationEventCodes;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +31,7 @@ import java.util.Set;
 /**
  * 审核Audit服务实现 — 两级审核模型：
  * 1. dept_admin 执行 approve / reject（pending_review → testing / rejected）
- * 2. platform_admin 执行 publish（testing → published）
+ * 2. publish（testing → published）：资源 owner、同部门 dept_admin 或 platform_admin/admin（与 Grant 代管范围一致）
  *
  * dept_admin 只能看到本部门提交的审核项（按 submitter 的 menuId 过滤）。
  *
@@ -43,6 +46,8 @@ public class AuditServiceImpl implements AuditService {
     private static final String STATUS_TESTING = "testing";
     private static final String STATUS_PUBLISHED = "published";
     private static final String STATUS_REJECTED = "rejected";
+    /** 平台强制下架后，关联审核队列表记状态（若有已 published 行） */
+    private static final String STATUS_PLATFORM_FORCE_DEPRECATED = "platform_force_deprecated";
     private static final String TARGET_AGENT = "agent";
     private static final String TARGET_SKILL = "skill";
     private static final Set<String> SUPPORTED_TARGET_TYPES = Set.of("agent", "skill", "mcp", "app", "dataset");
@@ -52,6 +57,8 @@ public class AuditServiceImpl implements AuditService {
     private final DeptScopeHelper deptScopeHelper;
     private final SystemNotificationFacade systemNotificationFacade;
     private final UserDisplayNameResolver userDisplayNameResolver;
+    private final ResourceInvokeGrantService resourceInvokeGrantService;
+    private final CasbinAuthorizationService casbinAuthorizationService;
 
     @Override
     public PageResult<AuditItem> pagePendingAgents(Long operatorUserId, int page, int pageSize) {
@@ -149,7 +156,7 @@ public class AuditServiceImpl implements AuditService {
 
         notifySubmitter(item, NotificationEventCodes.AUDIT_APPROVED,
                 "资源审核通过",
-                "您的资源「" + item.getDisplayName() + "」已通过部门审核，等待平台管理员上线发布。");
+                "您的资源「" + item.getDisplayName() + "」已通过部门审核，请在资源中心对处于测试灰度（testing）的资源执行「发布上线」。");
     }
 
     @Override
@@ -270,6 +277,7 @@ public class AuditServiceImpl implements AuditService {
             throw new BusinessException(ResultCode.NOT_FOUND, "审核项不存在");
         }
         normalizeTargetType(item.getTargetType());
+        resourceInvokeGrantService.ensureMayPublishAuditedResource(reviewerId, item.getTargetType(), item.getTargetId());
         item.setStatus(STATUS_PUBLISHED);
         item.setReviewerId(reviewerId);
         item.setReviewTime(LocalDateTime.now());
@@ -277,9 +285,76 @@ public class AuditServiceImpl implements AuditService {
         syncResourceStatus(item, STATUS_PUBLISHED);
         ensureDefaultVersion(item.getTargetId());
 
+        boolean platformActor = casbinAuthorizationService.hasAnyRole(reviewerId, new String[]{"platform_admin", "admin"});
+        String detail = platformActor
+                ? "您的资源「" + item.getDisplayName() + "」已由平台管理员上线发布，现已进入平台可用资源池。"
+                : "您的资源「" + item.getDisplayName() + "」已发布上线，现已进入平台可用资源池。";
         notifySubmitter(item, NotificationEventCodes.RESOURCE_PUBLISHED,
                 "资源已上线发布",
-                "您的资源「" + item.getDisplayName() + "」已由平台管理员上线发布，现已进入平台可用资源池。");
+                detail);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void platformForceDeprecateResource(Long resourceId, Long operatorUserId, String reason) {
+        if (resourceId == null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "资源 ID 不能为空");
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT id, resource_type, status, created_by, display_name
+                FROM t_resource
+                WHERE id = ? AND deleted = 0
+                LIMIT 1
+                """, resourceId);
+        if (rows.isEmpty()) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "资源不存在");
+        }
+        Map<String, Object> row = rows.get(0);
+        String currentStatus = String.valueOf(row.get("status"));
+        ResourceLifecycleStateMachine.ensureTransitionAllowed(currentStatus, ResourceLifecycleStateMachine.STATUS_DEPRECATED);
+        jdbcTemplate.update(
+                "UPDATE t_resource SET status = ?, update_time = NOW() WHERE id = ? AND deleted = 0",
+                ResourceLifecycleStateMachine.STATUS_DEPRECATED, resourceId);
+
+        List<Map<String, Object>> auditRows = jdbcTemplate.queryForList(
+                "SELECT id FROM t_audit_item WHERE target_id = ? AND status = ? ORDER BY submit_time DESC LIMIT 1",
+                resourceId, STATUS_PUBLISHED);
+        String reasonText = StringUtils.hasText(reason) ? reason.trim() : "平台强制下架";
+        if (!auditRows.isEmpty()) {
+            Object auditPk = auditRows.get(0).get("id");
+            jdbcTemplate.update(
+                    "UPDATE t_audit_item SET status = ?, reject_reason = ?, reviewer_id = ?, review_time = NOW() WHERE id = ?",
+                    STATUS_PLATFORM_FORCE_DEPRECATED, reasonText, operatorUserId, auditPk);
+        }
+
+        Long ownerId = null;
+        Object createdBy = row.get("created_by");
+        if (createdBy != null) {
+            try {
+                ownerId = Long.parseLong(String.valueOf(createdBy));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        String resourceType = row.get("resource_type") != null ? String.valueOf(row.get("resource_type")) : "resource";
+        if (ownerId != null) {
+            systemNotificationFacade.notifyToUser(
+                    ownerId,
+                    NotificationEventCodes.PLATFORM_RESOURCE_FORCE_DEPRECATED,
+                    "资源已被平台强制下架",
+                    """
+                            事件: 平台治理
+                            结果: 强制下架
+                            时间: %s
+                            详情:
+                            资源: %s/%s
+                            说明: %s
+                            操作人: %s
+                            建议: 请登录资源中心查看状态；如有异议请联系平台管理员。
+                            """.formatted(LocalDateTime.now(), resourceType, resourceId, reasonText,
+                            operatorUserId != null ? String.valueOf(operatorUserId) : "-"),
+                    resourceType,
+                    String.valueOf(resourceId));
+        }
     }
 
     private void ensureDefaultVersion(Long resourceId) {

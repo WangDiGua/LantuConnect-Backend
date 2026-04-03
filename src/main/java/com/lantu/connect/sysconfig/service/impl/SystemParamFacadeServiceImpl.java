@@ -17,10 +17,10 @@ import com.lantu.connect.sysconfig.mapper.AuditLogMapper;
 import com.lantu.connect.sysconfig.mapper.SecuritySettingMapper;
 import com.lantu.connect.sysconfig.mapper.SystemParamMapper;
 import com.lantu.connect.sysconfig.service.SystemParamFacadeService;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import com.lantu.connect.notification.service.NotificationEventCodes;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -41,14 +41,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
 
-    @Value("${lantu.system.integration-mock:true}")
-    private boolean integrationMock;
-
     private final SystemParamMapper systemParamMapper;
     private final SecuritySettingMapper securitySettingMapper;
     private final AuditLogMapper auditLogMapper;
     private final PlatformRoleMapper platformRoleMapper;
     private final SystemNotificationFacade systemNotificationFacade;
+    private final RuntimeAppConfigService runtimeAppConfigService;
 
     @Override
     public List<SystemParam> listParams() {
@@ -85,6 +83,9 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
                 NotificationEventCodes.SYSTEM_PARAM_CHANGED,
                 "修改系统参数",
                 request.getParamKey());
+        if (RuntimeAppConfigService.PARAM_KEY.equals(request.getParamKey())) {
+            runtimeAppConfigService.invalidate();
+        }
     }
 
     @Override
@@ -167,6 +168,7 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
 
     @Override
     public Map<String, Object> applyNetwork(Long operatorUserId) {
+        boolean integrationMock = runtimeAppConfigService.system().isIntegrationMock();
         Map<String, Object> body = new HashMap<>();
         body.put("applied", true);
         body.put("mock", integrationMock);
@@ -183,6 +185,7 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
 
     @Override
     public Map<String, Object> publishAcl(Long operatorUserId) {
+        boolean integrationMock = runtimeAppConfigService.system().isIntegrationMock();
         Map<String, Object> body = new HashMap<>();
         body.put("published", true);
         body.put("mock", integrationMock);

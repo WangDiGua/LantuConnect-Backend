@@ -32,7 +32,7 @@ public interface UnifiedGatewayService {
 
     ResourceStatsVO getResourceStats(String resourceType, String resourceId);
 
-    List<ExploreHubData.ExploreResourceItem> trending(String resourceType, Integer limit);
+    List<ExploreHubData.ExploreResourceItem> trending(String resourceType, Integer limit, Long userId);
 
-    List<SearchSuggestion> searchSuggestions(String query);
+    List<SearchSuggestion> searchSuggestions(String query, Long userId);
 }

@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -34,9 +34,7 @@ public class Oauth2ClientCredentialsTokenService {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
-
-    @Value("${lantu.integration.oauth2.connect-timeout-sec:15}")
-    private int oauth2ConnectTimeoutSec;
+    private final RuntimeAppConfigService runtimeAppConfigService;
 
     /**
      * @return access_token 明文
@@ -73,6 +71,7 @@ public class Oauth2ClientCredentialsTokenService {
                 .map(e -> urlEncode(e.getKey()) + "=" + urlEncode(e.getValue()))
                 .collect(Collectors.joining("&"));
 
+        int oauth2ConnectTimeoutSec = runtimeAppConfigService.integration().getOauth2().getConnectTimeoutSec();
         int to = Math.max(5, Math.min(60, oauth2ConnectTimeoutSec));
         HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(to)).build();
         HttpRequest req = HttpRequest.newBuilder()

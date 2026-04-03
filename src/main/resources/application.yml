@@ -1,14 +1,17 @@
-# =============================================================================
-# application.yml — 应用唯一主配置（库、Redis、密钥等均在本文修改）
-#
-# 另有两个可选 import（非必备）：skill-external-catalog.yml（外部技能目录）、
-# application-local.yml（本机零散覆盖，无则忽略）
-# =============================================================================
+# ----------------------------------------------------------------------------
+# 占位符说明
+#   - 下文仅为 ${VAR}，无默认值；须由 application-local.yml（从 application-local.example.yml 复制）
+#     或同名环境变量提供，否则启动将因无法解析占位符失败。
+#   - Spring 松散绑定：SPRING_DATASOURCE_URL → spring.datasource.url 等。
+# ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# spring.* — 数据源、Redis、上传、任务线程池、Flyway
+# ----------------------------------------------------------------------------
 
 spring:
   config:
     import:
-      - optional:classpath:skill-external-catalog.yml
       - optional:classpath:application-local.yml
   application:
     name: nexusai-connect
@@ -16,9 +19,9 @@ spring:
     restart:
       enabled: false
   datasource:
-    url: jdbc:mysql://localhost:3306/lantu_connect?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: root
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 30
@@ -28,10 +31,10 @@ spring:
       leak-detection-threshold: 0
   data:
     redis:
-      host: localhost
-      port: 6379
-      database: 0
-      # password: 若 Redis 有密码在此填写
+      host: ${SPRING_DATA_REDIS_HOST}
+      port: ${SPRING_DATA_REDIS_PORT}
+      database: ${SPRING_DATA_REDIS_DATABASE}
+      password: ${SPRING_DATA_REDIS_PASSWORD}
   servlet:
     multipart:
       max-file-size: 100MB
@@ -39,15 +42,6 @@ spring:
   jackson:
     time-zone: Asia/Shanghai
     date-format: yyyy-MM-dd HH:mm:ss
-  rabbitmq:
-    host: localhost
-    port: 5672
-    username: guest
-    password: guest
-    virtual-host: /
-    listener:
-      simple:
-        auto-startup: false
   task:
     execution:
       pool:
@@ -60,16 +54,22 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
 
+# ----------------------------------------------------------------------------
+# server.* — 端口、上下文路径、TLS（keystore 占位）
+# ----------------------------------------------------------------------------
 server:
-  port: 8080
+  port: ${SERVER_PORT}
   servlet:
-    context-path: /regis
+    context-path: ${SERVER_SERVLET_CONTEXT_PATH}
   ssl:
-    enabled: false
-    key-store: classpath:keystore.p12
-    key-store-password: ''
+    enabled: ${SERVER_SSL_ENABLED}
+    key-store: ${SERVER_SSL_KEY_STORE}
+    key-store-password: ${SERVER_SSL_KEY_STORE_PASSWORD}
     key-store-type: PKCS12
 
+# ----------------------------------------------------------------------------
+# MyBatis-Plus — Mapper 位置、驼峰、逻辑删除与列名转义
+# ----------------------------------------------------------------------------
 mybatis-plus:
   mapper-locations: classpath:mapper/**/*.xml
   configuration:
@@ -80,21 +80,30 @@ mybatis-plus:
       logic-delete-value: 1
       logic-not-delete-value: 0
 
+# ----------------------------------------------------------------------------
+# jwt.* — 签发密钥与令牌有效期（秒）。密钥勿写入 runtime_app_config。
+# ----------------------------------------------------------------------------
 jwt:
-  secret: W9aAj8Gelv5D1BORiXMfx6LTYomqypuJHkIwK2ES3dhsbngPNFtcZ7rQz40UVC
-  access-token-expiry: 7200
-  refresh-token-expiry: 604800
+  # 未设置或空白时由代码使用仅用于本地的兜底密钥（JwtBootstrapSecrets）；生产必须显式配置。
+  secret: ${JWT_SECRET}
+  access-token-expiry: ${JWT_ACCESS_TOKEN_EXPIRY}
+  refresh-token-expiry: ${JWT_REFRESH_TOKEN_EXPIRY}
 
+# ----------------------------------------------------------------------------
+# geoip.* — GeoIP 查询开关与超时（毫秒）
+# ----------------------------------------------------------------------------
 geoip:
   enabled: true
   timeout-ms: 2000
 
+# ----------------------------------------------------------------------------
+# lantu.* — 业务域配置（安全、网关、集成、幂等、技能包与外部目录等）
+# ----------------------------------------------------------------------------
 lantu:
   encryption:
-    key: bCJgWT36frAQZsUvui7ze0dYO92DcVGHwNkn8XoK5lPtqEya
+    key: ${LANTU_ENCRYPTION_KEY}
   security:
     jwt-enabled: true
-    allow-insecure-local-database-credentials: false
     allow-header-user-id-fallback: false
     require-https: false
     permit-prometheus-without-auth: false
@@ -106,7 +115,7 @@ lantu:
       register-per-ip-per-hour: 40
       captcha-per-ip-per-minute: 45
       send-sms-per-ip-per-hour: 30
-    encryption-key: hVe1vQCXF4x0criksOqtS98bEmUJAHK76jdWMglp
+    encryption-key: ${LANTU_SECURITY_ENCRYPTION_KEY}
   gateway:
     invoke-http-status-reflects-upstream: true
   logging:
@@ -114,6 +123,7 @@ lantu:
     gateway-invoke-log-payload-preview: false
     gateway-invoke-body-preview-max: 1024
     gateway-invoke-payload-preview-max: 300
+    access-log-error-body-max-chars: 2048
     access-log-error-body-max-bytes: 262144
     access-log-skip-error-body-path-fragments: /auth/login,/auth/refresh,/auth/register
   api-deprecation:
@@ -125,7 +135,7 @@ lantu:
       - /v1/**
       - /agents/**
   system:
-    integration-mock: true
+    integration-mock: ${LANTU_SYSTEM_INTEGRATION_MOCK}
   integration:
     network-api-url: ''
     acl-api-url: ''
@@ -170,25 +180,64 @@ lantu:
       - gitee.com
       - www.gitee.com
     git-clone-max-unpacked-bytes: 41943040
+  # lantu.skill-external-catalog — 在线技能市场默认；DB 键 skill_external_catalog 可全量覆盖。
+  skill-external-catalog:
+    provider: skillsmp
+    remote-catalog-mode: merged
+    cache-ttl-seconds: 3600
+    persistence-enabled: true
+    mirror-catalog-url: ${SKILL_MIRROR_CATALOG_URL}
+    mirror-catalog-urls: []
+    catalog-http-sources: []
+    outbound-http-proxy:
+      host: ${SKILL_CATALOG_HTTP_PROXY_HOST}
+      port: ${SKILL_CATALOG_HTTP_PROXY_PORT}
+    github-zip-mirror:
+      mode: ${SKILL_GITHUB_ZIP_MIRROR_MODE}
+      prefix: ${SKILL_GITHUB_ZIP_MIRROR_PREFIX}
+    skillhub:
+      enabled: true
+      base-url: https://agentskillhub.dev
+      fallback-base-url: ${SKILLHUB_FALLBACK_BASE_URL}
+      limit-per-query: 10
+      max-queries-per-request: 12
+      github-default-branch: main
+    skillsmp:
+      enabled: false
+      base-url: https://skillsmp.com/api/v1
+      api-key: ${SKILLSMP_API_KEY}
+      sort-by: stars
+      limit-per-query: 100
+      max-queries-per-request: 12
+      github-default-branch: main
+    entries: []
 
+# ----------------------------------------------------------------------------
+# file.* — 上传目录、允许类型与 MinIO；可与 runtime_app_config 中的 lantu.file 合并
+# ----------------------------------------------------------------------------
 file:
-  upload-dir: /data/nexusai/uploads
+  upload-dir: ${FILE_UPLOAD_DIR}
   max-size-mb: 50
   allowed-types: pdf,docx,csv,json,parquet,xlsx,jpg,jpeg,png,gif,svg
-  storage-type: local
+  storage-type: ${FILE_STORAGE_TYPE}
   minio:
-    endpoint: http://localhost:9000
-    access-key: minioadmin
-    secret-key: minioadmin
-    bucket: nexusai-connect
+    endpoint: ${FILE_MINIO_ENDPOINT}
+    access-key: ${FILE_MINIO_ACCESS_KEY}
+    secret-key: ${FILE_MINIO_SECRET_KEY}
+    bucket: ${FILE_MINIO_BUCKET}
 
+# ----------------------------------------------------------------------------
+# cors.* — 跨域；allow-all-origins=true 时放开任意 Origin/Headers，公网暴露请评估风险。
+#           为 true 时 relax-localhost / allowed-origins 由代码路径忽略，仅在不使用任意源时生效。
+# ----------------------------------------------------------------------------
 cors:
-  # true：任意源（allowedOriginPatterns("*") + allowedHeaders("*")）；对内网/公网开放 API 时注意风险
-  allow-all-origins: true
-  # allow-all 为 true 时下列两项不生效，仅在不开放任意源时使用
-  relax-localhost: true
-  allowed-origins: ''
+  allow-all-origins: ${CORS_ALLOW_ALL_ORIGINS}
+  relax-localhost: ${CORS_RELAX_LOCALHOST}
+  allowed-origins: ${CORS_ALLOWED_ORIGINS}
 
+# ----------------------------------------------------------------------------
+# springdoc.* — OpenAPI / Swagger UI（默认关闭）
+# ----------------------------------------------------------------------------
 springdoc:
   api-docs:
     path: /v3/api-docs
@@ -197,6 +246,9 @@ springdoc:
     path: /swagger-ui.html
     enabled: false
 
+# ----------------------------------------------------------------------------
+# resilience4j — 熔断、限流、重试、舱壁、超时；实例名与代码中的 Registry 一致
+# ----------------------------------------------------------------------------
 resilience4j:
   circuitbreaker:
     configs:
@@ -313,6 +365,9 @@ resilience4j:
       mcpInvoke:
         base-config: default
 
+# ----------------------------------------------------------------------------
+# Actuator — 暴露 health / info / prometheus
+# ----------------------------------------------------------------------------
 management:
   endpoints:
     web:
@@ -323,13 +378,20 @@ management:
       prometheus:
         enabled: true
 
+# ----------------------------------------------------------------------------
+# Logback 细节见 logback-spring.xml；此处仅设置 Logger 级别
+# ----------------------------------------------------------------------------
 logging:
   level:
     com.lantu.connect: info
     com.lantu.connect.common.mybatis: info
     org.springframework.web: info
 
+# =============================================================================
+# Profile: dev — 本地开发（文档、宽松 MCP、本地上传路径、调试日志）
+# =============================================================================
 ---
+# 以下为 dev 覆盖项；未出现的键继承首段文档默认值。
 spring:
   config:
     activate:
@@ -337,17 +399,9 @@ spring:
   devtools:
     restart:
       enabled: true
-  rabbitmq:
-    listener:
-      simple:
-        auto-startup: false
-
-file:
-  upload-dir: D:/LantuConnect/LantuConnect-Backend/skills_local_data
 
 lantu:
   security:
-    allow-insecure-local-database-credentials: true
     expose-api-docs: true
     require-https: false
   integration:

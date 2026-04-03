@@ -23,6 +23,7 @@ Current matrix for in-app notifications (`t_notification`) after full station-in
 | `audit_approved` | Audit approved | submitter | target resource type | target resource id | Existing audit flow |
 | `audit_rejected` | Audit rejected | submitter | target resource type | target resource id | Existing audit flow |
 | `resource_published` | Audit published | submitter | target resource type | target resource id | Existing audit flow |
+| `platform_resource_force_deprecated` | Platform force deprecate via audit API | resource owner (`created_by`) | resource type | resource id | Cross-tenant governance; distinct from owner `deprecate` |
 | `password_changed` | User changes password | current user | `user` | user id | Security-sensitive |
 | `phone_bound` | User binds phone | current user | `user` | user id | Security-sensitive |
 | `session_killed` | User kills session | current user | `session` | session id | Session security |

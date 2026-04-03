@@ -20,7 +20,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 未赋权账号仅允许访问申请开发者相关接口。
+ * 未赋权账号（无 {@code user_role_rel}）仅允许访问入驻申请、账号基础能力与 health 等白名单路径。
+ * OpenAPI/Swagger 是否加入白名单由 {@link SecurityProperties#isExposeApiDocs()} 控制，应与生产关闭文档暴露策略一致。
  */
 public class UnassignedUserAccessFilter extends OncePerRequestFilter {
 

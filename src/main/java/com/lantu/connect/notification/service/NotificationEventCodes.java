@@ -10,6 +10,8 @@ public final class NotificationEventCodes {
 
     public static final String RESOURCE_SUBMITTED = "resource_submitted";
     public static final String RESOURCE_DEPRECATED = "resource_deprecated";
+    /** 平台管理员对任意资源强制下架（与开发者自助 deprecate 区分） */
+    public static final String PLATFORM_RESOURCE_FORCE_DEPRECATED = "platform_resource_force_deprecated";
     public static final String RESOURCE_WITHDRAWN = "resource_withdrawn";
     public static final String RESOURCE_VERSION_SWITCHED = "resource_version_switched";
 

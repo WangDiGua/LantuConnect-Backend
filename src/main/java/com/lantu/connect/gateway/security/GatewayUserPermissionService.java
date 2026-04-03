@@ -11,6 +11,10 @@ import org.springframework.util.StringUtils;
 
 import java.util.Locale;
 
+/**
+ * 登录用户浏览目录时的资源类型权限。
+ * <p>约定：{@code mcp} 与 {@code skill} 共用 {@code skill:read}，以便五类资源在 Casbin 侧不必单独维护 {@code mcp:read}。</p>
+ */
 @Service
 @RequiredArgsConstructor
 public class GatewayUserPermissionService {

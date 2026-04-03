@@ -160,7 +160,7 @@ public class SkillExternalCatalogRuntimeConfigService {
             n.setValue(json);
             n.setType("json");
             n.setCategory("skill-catalog");
-            n.setDescription("技能在线市场（超管可编辑，覆盖 skill-external-catalog.yml 默认值）");
+            n.setDescription("技能在线市场（超管可编辑，覆盖 application.yml 中 lantu.skill-external-catalog 默认值）");
             n.setEditable(true);
             n.setUpdateTime(now);
             systemParamMapper.insert(n);

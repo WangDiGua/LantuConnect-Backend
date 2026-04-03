@@ -11,7 +11,7 @@
 | 项 | 文件 / 配置 | 结论 | 闭环标注 |
 |----|-------------|------|----------|
 | 启动 | [`LantuConnectApplication.java`](../../src/main/java/com/lantu/connect/LantuConnectApplication.java) | `@SpringBootApplication`，`@EnableAsync` / `@EnableScheduling`，`@MapperScan` 含 `**.mapper` 与 `common.sensitive` | API存在 |
-| 数据源 / 中间件 | [`application.yml`](../../src/main/resources/application.yml) | MySQL/Redis/RabbitMQ 默认 `localhost`；缺组件则**运行时**失败 | 外联依赖部署 |
+| 数据源 / 中间件 | [`application.yml`](../../src/main/resources/application.yml) | MySQL/Redis 默认 `localhost`；缺组件则**运行时**失败 | 外联依赖部署 |
 | JWT / 安全属性 | [`SecurityProperties.java`](../../src/main/java/com/lantu/connect/common/config/SecurityProperties.java) | 白名单含登录注册、captcha、swagger（可关）、health/info；`allowHeaderUserIdFallback` 默认 false | 权限前置 |
 | Security 链 | [`SecurityConfig.java`](../../src/main/java/com/lantu/connect/common/config/SecurityConfig.java) | CSRF 关闭；JWT Filter → `UnassignedUserAccessFilter` → `IdempotencyFilter`；HTTPS/HSTS 可配 | 权限前置 |
 | JWT / API Key / Sandbox | [`JwtAuthenticationFilter.java`](../../src/main/java/com/lantu/connect/common/filter/JwtAuthenticationFilter.java) | Bearer 解析、`X-Api-Key` 与 `/sandbox/invoke`+`X-Sandbox-Token` 放行分支 | 业务闭环 |
@@ -21,7 +21,7 @@
 | GeoIP | `application.yml` → `geoip.enabled: true` | 依赖外网 `ip-api.com`；内网需行为预期 | 外联 |
 | 通知开关 | `lantu.notification.sms-enabled` / `email-enabled` | 默认 false | **缺省关闭** |
 | Skill Pack URL | `lantu.skill-pack-import` | SSRF 相关：`allowed-host-suffixes` 默认可空、`require-allowed-host-suffixes` 默认 false | 配置敏感 |
-| 配置类清单 | `common/config/*.java`（15） | `JwtConfig`、`Cors`、`MyBatisPlus`、`RabbitMqConfig`（条件）、`LegacyApiDeprecationProperties`、`BackendContractProperties` 等 | 已覆盖 |
+| 配置类清单 | `common/config/*.java` | `JwtConfig`、`Cors`、`MyBatisPlus`、`LegacyApiDeprecationProperties`、`BackendContractProperties` 等 | 已覆盖 |
 
 ---
 
@@ -31,7 +31,6 @@
 |------|----------|------|
 | 条件 Bean | `MockSmsServiceImpl` / `AliyunSmsServiceImpl` | **`lantu.sms.provider` 未出现在 `application.yml`** → `matchIfMissing=true` → **默认 Mock 短信** |
 | 条件 Bean | `SmsNotificationChannel` / `EmailNotificationChannel` | 短信需 `lantu.notification.sms-enabled=true`；邮件需 `spring.mail.host` |
-| 条件 Bean | `RabbitMqConfig` | `@ConditionalOnProperty(spring.rabbitmq.host)`；yml 默认有 host → **期望 Rabbit 可用** |
 | 集成 | `NetworkApplyServiceImpl`、`AclPublishServiceImpl` | 读 `integration-mock`，真外联需 false + URL |
 | 存储 | `FileStorageService`、`FileStorageSupport` | `file.storage-type` local/minio；与制品路径一致 |
 | 安全 | `CasbinAuthorizationService`、`RequirePermission*`、`RequireRole*` | 与 Controller 注解配合 |
@@ -107,7 +106,7 @@
 ## Batch 6 — 测试与静态审阅关系
 
 - [`src/test`](../../src/test)：约 25 个测试类，以 **WebMvcTest / 单测** 为主，**不**加载全应用、**不**替代 MySQL 集成验证。
-- **本 log** 记录静态可读闭环边界；**环境级**验证（真实 DB/Redis/Rabbit/MinIO）须另册。
+- **本 log** 记录静态可读闭环边界；**环境级**验证（真实 DB/Redis/MinIO）须另册。
 
 ---
 

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.web.ServletContextPathUtil;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -26,9 +27,7 @@ public class AppLaunchTokenService {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
-
-    @Value("${lantu.integration.app-launch-token-ttl-seconds:300}")
-    private long ttlSeconds;
+    private final RuntimeAppConfigService runtimeAppConfigService;
 
     @Value("${server.servlet.context-path:/regis}")
     private String servletContextPath;
@@ -45,7 +44,7 @@ public class AppLaunchTokenService {
         } catch (JsonProcessingException e) {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "应用启动令牌生成失败");
         }
-        long ttl = Math.max(30L, Math.min(1800L, ttlSeconds));
+        long ttl = Math.max(30L, Math.min(1800L, runtimeAppConfigService.integration().getAppLaunchTokenTtlSeconds()));
         stringRedisTemplate.opsForValue().set(KEY_PREFIX + token, payload, Duration.ofSeconds(ttl));
         return new LaunchTicket(token, ServletContextPathUtil.join(servletContextPath, "/catalog/apps/launch") + "?token=" + token);
     }

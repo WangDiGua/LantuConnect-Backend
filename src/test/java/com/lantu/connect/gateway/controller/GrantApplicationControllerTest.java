@@ -27,23 +27,23 @@ class GrantApplicationControllerTest {
     @Test
     void pendingUsesKeywordWhenBothKeywordAndQProvided() {
         PageResult<GrantApplicationVO> empty = PageResult.of(java.util.List.of(), 0, 1, 20);
-        when(grantApplicationService.pagePendingApplications(eq("pending"), eq("from-keyword"), eq(1), eq(20)))
+        when(grantApplicationService.pagePendingApplications(eq(42L), eq("pending"), eq("from-keyword"), eq(1), eq(20)))
                 .thenReturn(empty);
 
-        R<PageResult<GrantApplicationVO>> r = controller.pendingApplications("pending", "from-keyword", "ignored-q", 1, 20);
+        R<PageResult<GrantApplicationVO>> r = controller.pendingApplications(42L, "pending", "from-keyword", "ignored-q", 1, 20);
         assertThat(r.getCode()).isZero();
-        verify(grantApplicationService).pagePendingApplications("pending", "from-keyword", 1, 20);
+        verify(grantApplicationService).pagePendingApplications(42L, "pending", "from-keyword", 1, 20);
     }
 
     @Test
     void pendingFallsBackToQWhenKeywordBlank() {
         PageResult<GrantApplicationVO> empty = PageResult.of(java.util.List.of(), 0, 1, 20);
-        when(grantApplicationService.pagePendingApplications(eq("pending"), eq("from-q"), eq(1), eq(20)))
+        when(grantApplicationService.pagePendingApplications(eq(1L), eq("pending"), eq("from-q"), eq(1), eq(20)))
                 .thenReturn(empty);
 
-        R<PageResult<GrantApplicationVO>> r = controller.pendingApplications("pending", null, "from-q", 1, 20);
+        R<PageResult<GrantApplicationVO>> r = controller.pendingApplications(1L, "pending", null, "from-q", 1, 20);
         assertThat(r.getCode()).isZero();
-        verify(grantApplicationService).pagePendingApplications("pending", "from-q", 1, 20);
+        verify(grantApplicationService).pagePendingApplications(1L, "pending", "from-q", 1, 20);
     }
 
     @Test

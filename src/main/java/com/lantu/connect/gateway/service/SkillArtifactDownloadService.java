@@ -10,9 +10,9 @@ import com.lantu.connect.gateway.security.GatewayUserPermissionService;
 import com.lantu.connect.gateway.security.ResourceInvokeGrantService;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
 import com.lantu.connect.usermgmt.entity.ApiKey;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -35,16 +35,17 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SkillArtifactDownloadService {
 
-    /** {@code local}（默认）或 {@code minio}，须与 {@link com.lantu.connect.common.service.FileStorageService} 一致 */
-    @Value("${file.storage-type:local}")
-    private String storageType;
-
     private final JdbcTemplate jdbcTemplate;
     private final GatewayUserPermissionService gatewayUserPermissionService;
     private final ApiKeyScopeService apiKeyScopeService;
     private final ResourceInvokeGrantService resourceInvokeGrantService;
     private final PlatformRoleMapper platformRoleMapper;
     private final FileStorageSupport fileStorageSupport;
+    private final RuntimeAppConfigService runtimeAppConfigService;
+
+    private String storageType() {
+        return runtimeAppConfigService.file().getStorageType();
+    }
 
     public void streamArtifact(Long resourceId, Long userId, ApiKey apiKey, HttpServletResponse response) throws java.io.IOException {
         if (userId == null && apiKey == null) {
@@ -77,7 +78,7 @@ public class SkillArtifactDownloadService {
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"");
 
         String uri = artifactUri.trim();
-        if ("minio".equalsIgnoreCase(storageType)) {
+        if ("minio".equalsIgnoreCase(storageType())) {
             String objectKey = fileStorageSupport.extractMinioObjectKey(uri);
             if (!StringUtils.hasText(objectKey)) {
                 throw new BusinessException(ResultCode.PARAM_ERROR,
@@ -87,9 +88,10 @@ public class SkillArtifactDownloadService {
             try (InputStream in = fileStorageSupport.openMinioObject(objectKey); OutputStream out = response.getOutputStream()) {
                 in.transferTo(out);
             }
+            recordSkillPackDownload(resourceId, longNullable(row.get("created_by")), userId, apiKey);
             return;
         }
-        if ("local".equalsIgnoreCase(storageType)) {
+        if ("local".equalsIgnoreCase(storageType())) {
             Path local = fileStorageSupport.resolveLocalArtifactPath(uri);
             if (local == null) {
                 throw new BusinessException(ResultCode.PARAM_ERROR,
@@ -102,10 +104,11 @@ public class SkillArtifactDownloadService {
             try (InputStream in = Files.newInputStream(local); OutputStream out = response.getOutputStream()) {
                 in.transferTo(out);
             }
+            recordSkillPackDownload(resourceId, longNullable(row.get("created_by")), userId, apiKey);
             return;
         }
         throw new BusinessException(ResultCode.PARAM_ERROR,
-                "file.storage-type 仅支持 local（默认）或 minio，当前值: " + storageType);
+                "file.storage-type 仅支持 local（默认）或 minio，当前值: " + storageType());
     }
 
     private void ensureCanDownload(Long resourceId, Long userId, ApiKey apiKey, Map<String, Object> row) {
@@ -131,6 +134,21 @@ public class SkillArtifactDownloadService {
         }
         apiKeyScopeService.ensureResolveAllowed(apiKey, "skill", String.valueOf(resourceId));
         resourceInvokeGrantService.ensureApiKeyGranted(apiKey, "resolve", "skill", resourceId, userId);
+    }
+
+    private void recordSkillPackDownload(Long resourceId, Long ownerUserId, Long downloaderUserId, ApiKey apiKey) {
+        if (ownerUserId == null || resourceId == null) {
+            return;
+        }
+        jdbcTemplate.update("""
+                        INSERT INTO t_skill_pack_download_event(
+                            resource_id, resource_type, owner_user_id, downloader_user_id, downloader_api_key_id)
+                        VALUES (?, 'skill', ?, ?, ?)
+                        """,
+                resourceId,
+                ownerUserId,
+                downloaderUserId,
+                apiKey != null ? apiKey.getId() : null);
     }
 
     private boolean isAdmin(Long userId) {

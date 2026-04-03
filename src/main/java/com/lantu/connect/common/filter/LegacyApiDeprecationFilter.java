@@ -1,7 +1,7 @@
 package com.lantu.connect.common.filter;
 
-import com.lantu.connect.common.config.LegacyApiDeprecationProperties;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -25,12 +25,13 @@ import java.nio.charset.StandardCharsets;
 @RequiredArgsConstructor
 public class LegacyApiDeprecationFilter extends OncePerRequestFilter {
 
-    private final LegacyApiDeprecationProperties properties;
+    private final RuntimeAppConfigService runtimeAppConfigService;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
+        var properties = runtimeAppConfigService.apiDeprecation();
         if (!properties.isEnabled()) {
             filterChain.doFilter(request, response);
             return;
@@ -51,7 +52,7 @@ public class LegacyApiDeprecationFilter extends OncePerRequestFilter {
     }
 
     private boolean isDeprecatedPath(String path) {
-        for (String pattern : properties.getDeprecatedPatterns()) {
+        for (String pattern : runtimeAppConfigService.apiDeprecation().getDeprecatedPatterns()) {
             if (pathMatcher.match(pattern, path)) {
                 return true;
             }
@@ -60,7 +61,7 @@ public class LegacyApiDeprecationFilter extends OncePerRequestFilter {
     }
 
     private boolean isWriteBlockedPath(String path) {
-        for (String pattern : properties.getWriteBlockedPatterns()) {
+        for (String pattern : runtimeAppConfigService.apiDeprecation().getWriteBlockedPatterns()) {
             if (pathMatcher.match(pattern, path)) {
                 return true;
             }

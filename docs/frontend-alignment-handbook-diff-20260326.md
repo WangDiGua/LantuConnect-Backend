@@ -17,8 +17,8 @@
 | 5 | 字段新增 | §5.3.1 ResourceUpsertRequest | **中** | 新增 `relatedResourceIds` 字段（Agent/App 资源关联） |
 | 6 | 错误码新增 | §2.7 错误映射 | **中** | 新增 3 个 ResultCode：4010/4011/4012 |
 | 7 | 控制器计数 | §4、07-controller-coverage-matrix | **中** | 控制器总数从 27 变为 28 |
-| 8 | 配置变更 | 全文未提及 | **低** | 新增 RabbitMQ / MinIO / HTTPS / 加密 / 多通道通知配置 |
-| 9 | 新增能力 | 全文未提及 | **低** | 多通道通知（邮件/短信）、消息队列事件、字段加密工具 |
+| 8 | 配置变更 | 全文未提及 | **低** | 新增 MinIO / HTTPS / 加密 / 多通道通知等配置 |
+| 9 | 新增能力 | 全文未提及 | **低** | 多通道通知（邮件/短信）、字段加密工具 |
 | 10 | 流程变更 | §5.6（流程图） | **中** | 缺少"授权申请→审批"流程图 |
 | 11 | 两级审核 | §2.8、§4.11 | **高** | 手册未体现两级审核模型（dept_admin 审核 → platform_admin 发布）|
 | 12 | 部门隔离 | §2.8 | **中** | dept_admin 审核列表/资源列表/Dashboard 已按部门 menuId 过滤，手册未说明 |
@@ -205,11 +205,6 @@ GET /dashboard/admin-overview    @RequirePermission(monitor:view) + header: X-Us
 
 | 配置路径 | 默认值 | 说明 |
 |---------|--------|------|
-| `spring.rabbitmq.host` | `localhost` | RabbitMQ 消息队列（条件激活） |
-| `spring.rabbitmq.port` | `5672` | |
-| `spring.rabbitmq.username` | `guest` | |
-| `spring.rabbitmq.password` | `guest` | |
-| `spring.rabbitmq.virtual-host` | `/` | |
 | `file.storage-type` | `local` | 文件存储策略：`local` 或 `minio` |
 | `file.minio.endpoint` | `http://localhost:9000` | MinIO 端点 |
 | `file.minio.access-key` | `minioadmin` | MinIO 密钥 |
@@ -231,7 +226,6 @@ GET /dashboard/admin-overview    @RequirePermission(monitor:view) + header: X-Us
 | 多通道通知 | `MultiChannelNotificationService` | 同时发送站内通知 + 邮件 + 短信 |
 | 邮件通知 | `EmailNotificationChannel` | 条件激活：`spring.mail.host` 配置时 |
 | 短信通知 | `SmsNotificationChannel` | 条件激活：`lantu.notification.sms-enabled=true` |
-| 消息队列事件 | `EventPublisher` + `PlatformEvent` | RabbitMQ 异步事件发布 |
 | 字段加密 | `FieldEncryptor` | AES-256-GCM 字段级加密/解密 |
 | HTTPS 强制 | `SecurityConfig` + `SecurityProperties.requireHttps` | 生产环境可强制 HTTPS |
 
@@ -358,4 +352,4 @@ GET /dashboard/admin-overview    @RequirePermission(monitor:view) + header: X-Us
 - §5.1-§5.5 核心接口字段级契约 — 无变化（除 ResourceUpsertRequest 外）
 - §7 旧接口下线附录 — 无变化
 - 认证/鉴权链路、Header 契约、响应/分页契约 — 无变化
-- `permissions.yml` — 无变化（4 个角色 39 个权限点）
+- `permissions.yml` — **已移除**（权限点以代码 / 数据模型为准；本条保留仅作历史对照）

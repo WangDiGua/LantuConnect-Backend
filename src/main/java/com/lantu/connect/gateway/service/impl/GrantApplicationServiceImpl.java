@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.common.security.CasbinAuthorizationService;
 import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.gateway.dto.GrantApplicationRequest;
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -39,6 +41,7 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
     private final SystemNotificationFacade systemNotificationFacade;
     private final JdbcTemplate jdbcTemplate;
     private final UserDisplayNameResolver userDisplayNameResolver;
+    private final CasbinAuthorizationService casbinAuthorizationService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -73,6 +76,7 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
         app.setUpdateTime(LocalDateTime.now());
         applicationMapper.insert(app);
 
+        notifyResourceOwnerNewGrantApplication(resourceType, resourceId, applicantUserId, request, app.getId());
         systemNotificationFacade.notifyPlatformAdmins(
                 NotificationEventCodes.GRANT_APPLICATION_NEW,
                 "新的资源授权申请待审批",
@@ -85,7 +89,7 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
                         资源: %s/%s
                         API Key: %s
                         诉求: %s
-                        建议: 请前往授权申请列表处理。
+                        建议: 资源拥有者可审批；平台管理员可全量处理。
                         """.formatted(
                         LocalDateTime.now(),
                         applicantUserId,
@@ -104,6 +108,7 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
     @Transactional(rollbackFor = Exception.class)
     public void approve(Long reviewerUserId, Long applicationId) {
         ResourceGrantApplication app = requirePending(applicationId);
+        resourceInvokeGrantService.ensureMayReviewGrantApplication(reviewerUserId, app.getResourceType(), app.getResourceId());
         app.setStatus("approved");
         app.setReviewerId(reviewerUserId);
         app.setReviewTime(LocalDateTime.now());
@@ -148,6 +153,7 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
             throw new BusinessException(ResultCode.REJECT_REASON_REQUIRED);
         }
         ResourceGrantApplication app = requirePending(applicationId);
+        resourceInvokeGrantService.ensureMayReviewGrantApplication(reviewerUserId, app.getResourceType(), app.getResourceId());
         app.setStatus("rejected");
         app.setReviewerId(reviewerUserId);
         app.setRejectReason(reason);
@@ -195,17 +201,126 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
     }
 
     @Override
-    public PageResult<GrantApplicationVO> pagePendingApplications(String status, String keyword, int page, int pageSize) {
-        String filterStatus = StringUtils.hasText(status) ? status.trim().toLowerCase() : "pending";
+    public PageResult<GrantApplicationVO> pagePendingApplications(Long operatorUserId, String status, String keyword, int page, int pageSize) {
+        if (operatorUserId == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证用户无法查看待办");
+        }
+        String filterStatus = StringUtils.hasText(status) ? status.trim().toLowerCase(Locale.ROOT) : "pending";
         Page<ResourceGrantApplication> p = new Page<>(page, pageSize);
         LambdaQueryWrapper<ResourceGrantApplication> w = new LambdaQueryWrapper<ResourceGrantApplication>()
                 .eq(ResourceGrantApplication::getStatus, filterStatus);
         applyGrantApplicationKeyword(w, keyword);
+        applyPendingScopeForReviewer(w, operatorUserId);
         w.orderByDesc(ResourceGrantApplication::getCreateTime);
         Page<ResourceGrantApplication> result = applicationMapper.selectPage(p, w);
         Map<Long, String> names = resolveUserNames(result.getRecords());
         return PageResult.of(result.getRecords().stream().map(app -> toVO(app, names)).toList(),
                 result.getTotal(), page, pageSize);
+    }
+
+    /**
+     * platform_admin/admin：全量；dept_admin：仅资源 owner 属本部门；其余用户：仅自己拥有资源上的申请。
+     */
+    private void applyPendingScopeForReviewer(LambdaQueryWrapper<ResourceGrantApplication> w, Long operatorUserId) {
+        if (casbinAuthorizationService.hasAnyRole(operatorUserId, new String[]{"platform_admin", "admin"})) {
+            return;
+        }
+        if (casbinAuthorizationService.isDeptAdminOnly(operatorUserId)) {
+            List<Long> deptUserIds = userIdsInSameMenuAs(operatorUserId);
+            if (deptUserIds.isEmpty()) {
+                w.apply("1 = 0");
+                return;
+            }
+            applyResourceOwnerCreatedByIn(w, deptUserIds);
+            return;
+        }
+        applyResourceOwnerCreatedByEquals(w, operatorUserId);
+    }
+
+    private List<Long> userIdsInSameMenuAs(Long userId) {
+        List<Map<String, Object>> menuRow = jdbcTemplate.queryForList(
+                "SELECT menu_id FROM t_user WHERE user_id = ? AND deleted = 0 LIMIT 1", userId);
+        if (menuRow.isEmpty()) {
+            return List.of(userId);
+        }
+        Object mid = menuRow.get(0).get("menu_id");
+        if (mid == null) {
+            return List.of(userId);
+        }
+        Long menuId;
+        try {
+            menuId = Long.valueOf(String.valueOf(mid));
+        } catch (NumberFormatException ex) {
+            return List.of(userId);
+        }
+        return jdbcTemplate.queryForList(
+                "SELECT user_id FROM t_user WHERE menu_id = ? AND deleted = 0", Long.class, menuId);
+    }
+
+    private static void applyResourceOwnerCreatedByEquals(LambdaQueryWrapper<ResourceGrantApplication> w, Long ownerUserId) {
+        w.apply("""
+                EXISTS (SELECT 1 FROM t_resource r WHERE r.deleted = 0 \
+                AND r.resource_type = t_resource_grant_application.resource_type \
+                AND r.id = t_resource_grant_application.resource_id AND r.created_by = {0})\
+                """, ownerUserId);
+    }
+
+    private static void applyResourceOwnerCreatedByIn(LambdaQueryWrapper<ResourceGrantApplication> w, List<Long> ownerIds) {
+        if (ownerIds.isEmpty()) {
+            w.apply("1 = 0");
+            return;
+        }
+        String placeholders = ownerIds.stream().map(i -> "?").collect(Collectors.joining(","));
+        String sql = """
+                EXISTS (SELECT 1 FROM t_resource r WHERE r.deleted = 0 \
+                AND r.resource_type = t_resource_grant_application.resource_type \
+                AND r.id = t_resource_grant_application.resource_id \
+                AND r.created_by IN (%s))\
+                """.formatted(placeholders);
+        w.apply(sql, ownerIds.toArray());
+    }
+
+    private void notifyResourceOwnerNewGrantApplication(String resourceType, Long resourceId, Long applicantUserId,
+                                                        GrantApplicationRequest request, Long applicationId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT created_by FROM t_resource WHERE deleted = 0 AND resource_type = ? AND id = ? LIMIT 1",
+                resourceType, resourceId);
+        if (rows.isEmpty()) {
+            return;
+        }
+        Object createdBy = rows.get(0).get("created_by");
+        if (createdBy == null) {
+            return;
+        }
+        long resourceOwnerId;
+        try {
+            resourceOwnerId = Long.parseLong(String.valueOf(createdBy));
+        } catch (NumberFormatException ex) {
+            return;
+        }
+        systemNotificationFacade.notifyToUser(
+                resourceOwnerId,
+                NotificationEventCodes.GRANT_APPLICATION_NEW,
+                "你的资源有待处理的授权申请",
+                """
+                        事件: 资源授权申请
+                        结果: 待你审批
+                        时间: %s
+                        详情:
+                        申请人: %s
+                        资源: %s/%s
+                        API Key: %s
+                        诉求: %s
+                        建议: 请在「授权申请-待办」中通过或驳回。
+                        """.formatted(
+                        LocalDateTime.now(),
+                        applicantUserId,
+                        resourceType,
+                        resourceId,
+                        request.getApiKeyId(),
+                        request.getUseCase()),
+                "grant_application",
+                String.valueOf(applicationId));
     }
 
     private void applyGrantApplicationKeyword(LambdaQueryWrapper<ResourceGrantApplication> w, String keyword) {

@@ -28,7 +28,7 @@
 ## 5. 运行与健康检查
 
 - 管理端口与上下文路径见 `application.yml`（如 `server.port`、`server.servlet.context-path`）。  
-- **Actuator 聚合健康**：若 RabbitMQ 等依赖未就绪，`/regis/actuator/health`（视 `server.servlet.context-path`）可能整体为 **503**，属预期；排查时可看各 `HealthIndicator` 明细。
+- **Actuator 聚合健康**：若 MySQL、Redis 等依赖未就绪，`/regis/actuator/health`（视 `server.servlet.context-path`）可能整体为 **503**，属预期；排查时可看各 `HealthIndicator` 明细。
 
 ## 6. 相关源码入口（便于检索）
 

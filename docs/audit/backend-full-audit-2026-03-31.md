@@ -73,13 +73,10 @@
 2. `docker-compose.yml` 与应用默认 DB 用户口令易错配  
    - MySQL 使用 `MYSQL_ROOT_PASSWORD` + `MYSQL_USER=lantu`；app 仅传 `DB_PASSWORD`，未显式 `DB_USER`。
 
-3. Compose 缺少 RabbitMQ 服务，而 `application.yml` 默认启用 host 配置  
-   - 在容器内 `localhost` 语义常与预期不一致。
-
-4. Prometheus 抓取路径与鉴权默认值需要显式协调  
+3. Prometheus 抓取路径与鉴权默认值需要显式协调  
    - `prometheus.yml` 访问 `/api/actuator/prometheus`；默认 `PERMIT_PROMETHEUS_WITHOUT_AUTH=false`。
 
-5. SQL 幂等性与基线漂移风险  
+4. SQL 幂等性与基线漂移风险  
    - `sql/migrations/20260401_skill_pack_validation.sql` 为非幂等 `ADD COLUMN/CREATE INDEX`；  
    - `sql/lantu_connect.sql` 已含同名字段/索引，重复执行会冲突。
 

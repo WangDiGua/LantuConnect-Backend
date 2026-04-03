@@ -4,9 +4,11 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.security.GatewayAuthDetails;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.gateway.dto.InvokeRequest;
+import com.lantu.connect.common.config.GatewayInvokeProperties;
 import com.lantu.connect.gateway.dto.InvokeResponse;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
+import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,7 +20,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,12 +44,17 @@ class SdkGatewayControllerTest {
     @Mock
     private ApiKeyScopeService apiKeyScopeService;
 
+    @Mock
+    private RuntimeAppConfigService runtimeAppConfigService;
+
     @InjectMocks
     private SdkGatewayController sdkGatewayController;
 
     @BeforeEach
     void wireGatewayFlags() {
-        ReflectionTestUtils.setField(sdkGatewayController, "invokeHttpStatusReflectsUpstream", true);
+        GatewayInvokeProperties gw = new GatewayInvokeProperties();
+        gw.setInvokeHttpStatusReflectsUpstream(true);
+        lenient().when(runtimeAppConfigService.gateway()).thenReturn(gw);
     }
 
     @Test

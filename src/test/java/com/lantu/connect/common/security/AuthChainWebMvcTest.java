@@ -13,6 +13,7 @@ import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.dashboard.controller.DashboardController;
 import com.lantu.connect.dashboard.dto.UsageStatsVO;
 import com.lantu.connect.dashboard.service.DashboardService;
+import com.lantu.connect.dashboard.service.OwnerDeveloperStatsService;
 import com.lantu.connect.useractivity.controller.UserActivityController;
 import com.lantu.connect.useractivity.service.UserActivityService;
 import io.jsonwebtoken.Claims;
@@ -68,7 +69,8 @@ class AuthChainWebMvcTest {
                 jwtUtil, accessTokenBlacklist, sessionRevocationRegistry, properties, apiKeyScopeService);
         UnassignedUserAccessFilter unassignedFilter = new UnassignedUserAccessFilter(userRoleRelMapper, properties);
 
-        DashboardController dashboardController = new DashboardController(dashboardService);
+        OwnerDeveloperStatsService ownerDeveloperStatsService = mock(OwnerDeveloperStatsService.class);
+        DashboardController dashboardController = new DashboardController(dashboardService, ownerDeveloperStatsService);
         DashboardController proxiedDashboard = proxyWithPermissionAspect(dashboardController, casbinAuthorizationService);
 
         UserActivityController userActivityController = new UserActivityController(userActivityService);
