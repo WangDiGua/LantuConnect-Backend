@@ -42,6 +42,16 @@ public class McpStreamSessionStore {
                 Duration.ofMinutes(minutes));
     }
 
+    /**
+     * 立刻删除已缓存的会话 id（上游已失效而本地 TTL 尚未到期时，由网关触发一次无 Session 重试）。
+     */
+    public void deleteSessionId(String apiKeyId, String endpoint) {
+        if (!StringUtils.hasText(apiKeyId) || !StringUtils.hasText(endpoint)) {
+            return;
+        }
+        stringRedisTemplate.delete(cacheKey(apiKeyId, endpoint));
+    }
+
     private static String cacheKey(String apiKeyId, String endpoint) {
         return KEY_PREFIX + sha256Hex((apiKeyId + "\n" + endpoint.trim().toLowerCase(Locale.ROOT)).getBytes(StandardCharsets.UTF_8));
     }

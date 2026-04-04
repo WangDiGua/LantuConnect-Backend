@@ -26,6 +26,11 @@
 }
 ```
 
+**严格上游（如魔搭 streamable_http）**：
+
+- `initialize` 须使用 MCP 规范完整 `params`（`protocolVersion`、`capabilities`、`clientInfo`），勿传空对象。
+- `tools/list`、`notifications/initialized` 等**无参**调用：网关对「空 `params`」会改为**省略 JSON-RPC 的 `params` 字段**（不再发 `"params":{}`）；`notifications/*` 会**省略 `id`**（按 JSON-RPC Notification）。否则部分上游统一返回 `-32602 Invalid request parameters`。
+
 **响应体**（`InvokeResponse` 外层为统一 `R<T>` 包装时以项目现有约定为准）：
 
 - `statusCode`：上游 HTTP 状态（WebSocket 路径在成功取到文本帧后固定为 `200`）。
@@ -40,7 +45,7 @@
 
 - **资源 `endpoint`**：`https://...` 常规 MCP HTTP 地址。
 - **行为**：网关使用 `java.net.http` 发起**单次**请求，读取**完整**响应体；若 `Content-Type` 为 `text/event-stream` 或正文像 SSE（含 `event:` / `data:`），服务端会解析 SSE，**尽量合并/挑选**与当前 `traceId` 匹配的 `data:` JSON 行，再放进 `InvokeResponse.body`。
-- **`Mcp-Session-Id`**：若上游在响应头返回 `Mcp-Session-Id`，网关会按 **`API Key 主键 id + endpoint`** 存入 Redis，并在**同一密钥**的下一次该 endpoint 调用请求头中自动带上 `Mcp-Session-Id`。TTL 由配置 `lantu.integration.mcp-session-ttl-minutes` 控制（默认 45 分钟，服务端 clamp 在 5～1440 分钟）。
+- **`Mcp-Session-Id`**：若上游在响应头返回 `Mcp-Session-Id`，网关会按 **`API Key 主键 id + endpoint`** 存入 Redis，并在**同一密钥**的下一次该 endpoint 调用请求头中自动带上 `Mcp-Session-Id`。TTL 由配置 `lantu.integration.mcp-session-ttl-minutes` 控制（默认 45 分钟，服务端 clamp 在 5～1440 分钟）。若上游先于本地 TTL 使会话失效（典型 HTTP 401 + body 含 `SessionExpired`），网关会**删除该缓存并自动用同一条 JSON-RPC 重发一次**（第二次请求不再带过期 `Mcp-Session-Id`），用户一般无需换 Key。
 - **前端要点**：
   - 多轮 MCP（如先 `initialize` 再 `tools/list` 再 `tools/call`）在 UI 上仍是**多次**调 ` /catalog/invoke`，**每次带好同一个 `X-Api-Key`** 即可复用会话；无需自己传 `Mcp-Session-Id`。
   - 建议**复用同一 `X-Trace-Id`** 贯穿一轮调试，便于在 `body` 中与 JSON-RPC `id` 对齐（服务端 SSE 解析会优先匹配带 `"id":"<traceId>"` 的 `data:` 行）。

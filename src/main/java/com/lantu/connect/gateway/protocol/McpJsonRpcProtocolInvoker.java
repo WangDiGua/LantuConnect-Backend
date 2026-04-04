@@ -84,7 +84,7 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
 
         HttpResponse<InputStream> resp;
         try {
-            resp = sendWithRedirectGuard(endpoint, to, traceId, bodyJson, accept, spec, ctx);
+            resp = sendWithRedirectGuard(endpoint, to, traceId, bodyJson, accept, spec, ctx, true);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("MCP 流式请求被中断", e);
@@ -94,8 +94,28 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
             throw new IOException("MCP 流式请求失败: " + e.getMessage(), e);
         }
         if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+            String err;
             try (InputStream in = resp.body()) {
-                String err = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                err = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            }
+            if (resp.statusCode() == 401 && ctx != null && StringUtils.hasText(ctx.apiKeyId())
+                    && McpUpstreamSessionSignals.isSessionExpiredResponseBody(err)) {
+                mcpStreamSessionStore.deleteSessionId(ctx.apiKeyId(), endpoint);
+                try {
+                    resp = sendWithRedirectGuard(endpoint, to, traceId, bodyJson, accept, spec, ctx, false);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("MCP 流式请求被中断", e);
+                } catch (Exception e) {
+                    throw new IOException("MCP 流式请求失败: " + e.getMessage(), e);
+                }
+                if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+                    try (InputStream in = resp.body()) {
+                        String err2 = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                        throw new IOException("MCP 上游 HTTP " + resp.statusCode() + ": " + err2);
+                    }
+                }
+            } else {
                 throw new IOException("MCP 上游 HTTP " + resp.statusCode() + ": " + err);
             }
         }
@@ -160,7 +180,20 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
         String accept = StringUtils.hasText(i().getMcpHttpAccept()) ? i().getMcpHttpAccept().trim() : "application/json, text/event-stream";
 
         long t0 = System.nanoTime();
-        HttpResponse<InputStream> resp = sendWithRedirectGuard(endpoint, to, traceId, bodyJson, accept, spec, ctx);
+        HttpResponse<InputStream> resp = sendWithRedirectGuard(endpoint, to, traceId, bodyJson, accept, spec, ctx, true);
+        if (resp.statusCode() == 401 && ctx != null && StringUtils.hasText(ctx.apiKeyId())) {
+            String errBody;
+            try (InputStream in = resp.body()) {
+                errBody = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            }
+            if (McpUpstreamSessionSignals.isSessionExpiredResponseBody(errBody)) {
+                mcpStreamSessionStore.deleteSessionId(ctx.apiKeyId(), endpoint);
+                resp = sendWithRedirectGuard(endpoint, to, traceId, bodyJson, accept, spec, ctx, false);
+            } else {
+                long ms = Math.max(0L, (System.nanoTime() - t0) / 1_000_000L);
+                return new ProtocolInvokeResult(401, errBody, ms);
+            }
+        }
         long ms = Math.max(0L, (System.nanoTime() - t0) / 1_000_000L);
         sessionFromResponse(resp).ifPresent(sid -> {
             if (ctx != null && StringUtils.hasText(ctx.apiKeyId())) {
@@ -178,7 +211,8 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
                                                  String bodyJson,
                                                  String accept,
                                                  Map<String, Object> spec,
-                                                 ProtocolInvokeContext ctx) {
+                                                 ProtocolInvokeContext ctx,
+                                                 boolean attachCachedMcpSession) {
         HttpRequest.Builder b = HttpRequest.newBuilder()
                 .uri(URI.create(endpoint))
                 .timeout(Duration.ofSeconds(to))
@@ -189,7 +223,7 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
 
         mcpOutboundHeaderBuilder.applyToHttpRequest(spec, b);
 
-        if (ctx != null && StringUtils.hasText(ctx.apiKeyId())) {
+        if (attachCachedMcpSession && ctx != null && StringUtils.hasText(ctx.apiKeyId())) {
             mcpStreamSessionStore.getSessionId(ctx.apiKeyId(), endpoint)
                     .ifPresent(sid -> b.header("Mcp-Session-Id", sid));
         }
@@ -264,9 +298,16 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
         Map<String, Object> rpcParams = mcpRpcParams(payload);
         Map<String, Object> rpc = new LinkedHashMap<>();
         rpc.put("jsonrpc", "2.0");
-        rpc.put("id", traceId);
+        // JSON-RPC 2.0：Notification 不得带 id。严格 MCP 上游对 notifications/initialized 带 id 或 params:{} 常返回 -32602。
+        boolean isNotification = rpcMethod.startsWith("notifications/");
+        if (!isNotification) {
+            rpc.put("id", traceId);
+        }
         rpc.put("method", rpcMethod);
-        rpc.put("params", rpcParams);
+        // 无参 method：省略 params；固定发 "params":{} 会被部分上游判为 Invalid request parameters。
+        if (!rpcParams.isEmpty()) {
+            rpc.put("params", rpcParams);
+        }
         return objectMapper.writeValueAsString(rpc);
     }
 
@@ -324,7 +365,8 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
                                                             String bodyJson,
                                                             String accept,
                                                             Map<String, Object> spec,
-                                                            ProtocolInvokeContext ctx) throws Exception {
+                                                            ProtocolInvokeContext ctx,
+                                                            boolean attachCachedMcpSession) throws Exception {
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(Math.min(timeoutSec, 120)))
                 .followRedirects(HttpClient.Redirect.NEVER)
@@ -334,7 +376,8 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
         int followed = 0;
         while (true) {
             validateOutboundEndpoint(current, false);
-            HttpRequest req = startHttpRequest(current.toString(), timeoutSec, traceId, bodyJson, accept, spec, ctx).build();
+            HttpRequest req = startHttpRequest(current.toString(), timeoutSec, traceId, bodyJson, accept, spec, ctx,
+                    attachCachedMcpSession).build();
             HttpResponse<InputStream> resp = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
             int code = resp.statusCode();
             if (code >= 300 && code < 400) {
