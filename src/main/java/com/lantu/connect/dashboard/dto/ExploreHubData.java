@@ -37,6 +37,8 @@ public class ExploreHubData {
         private Long favoriteCount;
         private Long reviewCount;
         private Double rating;
+        /** 发布者展示名（如 real_name），便于探索页展示归属 */
+        private String author;
         private String reason;
         private LocalDateTime publishedAt;
     }
@@ -53,6 +55,8 @@ public class ExploreHubData {
         private Boolean pinned;
         private LocalDateTime createdAt;
         private LocalDateTime createTime;
+        /** 正文（Markdown），详情弹窗使用；列表仍用 summary */
+        private String content;
     }
 
     @Data

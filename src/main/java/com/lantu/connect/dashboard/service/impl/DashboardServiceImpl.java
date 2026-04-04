@@ -28,7 +28,6 @@ import com.lantu.connect.useractivity.entity.Favorite;
 import com.lantu.connect.useractivity.entity.UsageRecord;
 import com.lantu.connect.useractivity.mapper.FavoriteMapper;
 import com.lantu.connect.useractivity.mapper.UsageRecordMapper;
-import com.lantu.connect.common.util.DeptScopeHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -64,30 +63,18 @@ public class DashboardServiceImpl implements DashboardService {
     private final CircuitBreakerMapper circuitBreakerMapper;
     private final AlertRecordMapper alertRecordMapper;
     private final AnnouncementMapper announcementMapper;
-    private final DeptScopeHelper deptScopeHelper;
 
     /**
      * 管理员总览：聚合用户、资源、审核与调用趋势等全局指标。
      */
     @Override
     public AdminOverviewVO adminOverview(Long operatorUserId) {
-        Long deptMenuId = null;
-        if (operatorUserId != null && deptScopeHelper.isDeptAdminOnly(operatorUserId)) {
-            deptMenuId = deptScopeHelper.getCurrentUserMenuId();
-        }
-
         Map<String, Object> summary = new LinkedHashMap<>();
-        if (deptMenuId != null) {
-            Long deptUsers = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM t_user WHERE menu_id = ? AND deleted = 0", Long.class, deptMenuId);
-            summary.put("totalUsers", deptUsers != null ? deptUsers : 0L);
-        } else {
-            summary.put("totalUsers", userMapper.selectCount(null));
-        }
-        summary.put("totalAgents", countResourceByType("agent", deptMenuId));
-        summary.put("totalSkills", countResourceByType("skill", deptMenuId));
-        summary.put("totalApps", countResourceByType("app", deptMenuId));
-        summary.put("totalDatasets", countResourceByType("dataset", deptMenuId));
+        summary.put("totalUsers", userMapper.selectCount(null));
+        summary.put("totalAgents", countResourceByType("agent"));
+        summary.put("totalSkills", countResourceByType("skill"));
+        summary.put("totalApps", countResourceByType("app"));
+        summary.put("totalDatasets", countResourceByType("dataset"));
         Long todayCalls = callLogMapper.selectTodayCount();
         summary.put("callLogsToday", todayCalls != null ? todayCalls : 0L);
         Long pending = auditItemMapper.selectCount(
@@ -327,12 +314,14 @@ public class DashboardServiceImpl implements DashboardService {
 
         List<ExploreHubData.ExploreResourceItem> trending = jdbcTemplate.query(
                 "SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, "
+                        + "u.real_name AS author, "
                         + "COALESCE(c.cnt, 0) AS call_count, "
                         + "COALESCE(f.fav_cnt, 0) AS favorite_count, "
                         + "COALESCE(rv.review_count, 0) AS review_count, "
                         + "COALESCE(rv.avg_rating, 0) AS rating, "
                         + "r.update_time "
                         + "FROM t_resource r "
+                        + "LEFT JOIN t_user u ON r.created_by = u.user_id "
                         + "LEFT JOIN (SELECT agent_id, COUNT(*) AS cnt FROM t_call_log "
                         + "WHERE create_time >= DATE_SUB(NOW(), INTERVAL 7 DAY) GROUP BY agent_id) c "
                         + "ON r.id = c.agent_id "
@@ -353,13 +342,16 @@ public class DashboardServiceImpl implements DashboardService {
                         .favoriteCount(rs.getLong("favorite_count"))
                         .reviewCount(rs.getLong("review_count"))
                         .rating(rs.getDouble("rating"))
+                        .author(rs.getString("author"))
                         .publishedAt(rs.getTimestamp("update_time") != null ? rs.getTimestamp("update_time").toLocalDateTime() : null)
                         .build());
 
         List<ExploreHubData.ExploreResourceItem> recentPublished = jdbcTemplate.query(
                 "SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.update_time, "
+                        + "u.real_name AS author, "
                         + "COALESCE(f.fav_cnt, 0) AS favorite_count, COALESCE(rv.review_count, 0) AS review_count, COALESCE(rv.avg_rating, 0) AS rating "
                         + "FROM t_resource r "
+                        + "LEFT JOIN t_user u ON r.created_by = u.user_id "
                         + "LEFT JOIN (SELECT target_type, target_id, COUNT(*) AS fav_cnt FROM t_favorite GROUP BY target_type, target_id) f "
                         + "ON r.id = f.target_id AND r.resource_type = f.target_type "
                         + "LEFT JOIN (SELECT target_type, target_id, AVG(rating) AS avg_rating, COUNT(*) AS review_count FROM t_review "
@@ -376,6 +368,7 @@ public class DashboardServiceImpl implements DashboardService {
                         .favoriteCount(rs.getLong("favorite_count"))
                         .reviewCount(rs.getLong("review_count"))
                         .rating(rs.getDouble("rating"))
+                        .author(rs.getString("author"))
                         .publishedAt(rs.getTimestamp("update_time") != null ? rs.getTimestamp("update_time").toLocalDateTime() : null)
                         .build());
 
@@ -393,6 +386,7 @@ public class DashboardServiceImpl implements DashboardService {
                         .favoriteCount(item.getFavoriteCount())
                         .reviewCount(item.getReviewCount())
                         .rating(item.getRating())
+                        .author(item.getAuthor())
                         .reason(buildRecommendationReason(item.getResourceType(), preferredTypeByRecentUse, preferredTypeByFavorite))
                         .publishedAt(item.getPublishedAt())
                         .build())
@@ -413,6 +407,7 @@ public class DashboardServiceImpl implements DashboardService {
                         .pinned(a.getPinned())
                         .createdAt(a.getCreateTime())
                         .createTime(a.getCreateTime())
+                        .content(a.getContent())
                         .build())
                 .toList();
 
@@ -662,16 +657,6 @@ public class DashboardServiceImpl implements DashboardService {
     }
 
     private long countResourceByType(String type) {
-        return countResourceByType(type, null);
-    }
-
-    private long countResourceByType(String type, Long deptMenuId) {
-        if (deptMenuId != null) {
-            Long cnt = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM t_resource WHERE deleted = 0 AND resource_type = ? AND created_by IN (SELECT user_id FROM t_user WHERE menu_id = ? AND deleted = 0)",
-                    Long.class, type, deptMenuId);
-            return cnt == null ? 0L : cnt;
-        }
         Long cnt = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM t_resource WHERE deleted = 0 AND resource_type = ?",
                 Long.class, type);
