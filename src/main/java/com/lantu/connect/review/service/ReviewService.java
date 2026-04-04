@@ -1,5 +1,6 @@
 package com.lantu.connect.review.service;
 
+import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.review.dto.ReviewCreateRequest;
 import com.lantu.connect.review.dto.ReviewSummaryVO;
 import com.lantu.connect.review.entity.Review;
@@ -15,6 +16,11 @@ import java.util.List;
 public interface ReviewService {
 
     List<Review> list(String targetType, Long targetId);
+
+    /**
+     * 分页列表；{@code pageSize} 最大 100。
+     */
+    PageResult<Review> pageList(String targetType, Long targetId, int page, int pageSize);
 
     ReviewSummaryVO summary(String targetType, Long targetId);
 

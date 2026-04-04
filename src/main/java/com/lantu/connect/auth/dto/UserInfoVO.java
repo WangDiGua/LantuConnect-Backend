@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 认证 UserInfoVO 数据传输对象
@@ -36,4 +37,7 @@ public class UserInfoVO {
     private String language;
     /** 是否开启两步验证（Redis，未设置则为 null） */
     private Boolean twoFactorEnabled;
+
+    /** 与 Casbin 一致的权限点列表（库表角色 permissions 合并），供控制台菜单与 JWT 主角色解耦 */
+    private List<String> permissions;
 }

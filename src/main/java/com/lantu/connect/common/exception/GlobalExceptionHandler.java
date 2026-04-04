@@ -146,7 +146,7 @@ public class GlobalExceptionHandler {
                 || root.contains("doesn't exist")
                 || root.contains("does not exist")) {
             return R.fail(ResultCode.INTERNAL_ERROR,
-                    "数据库表结构可能未更新，请执行 sql/migrations 中的增量脚本或在目标环境启用 Flyway 迁移");
+                    "数据库表结构可能未更新，请按 README 说明执行 sql/migrations 与 sql/incremental 中的增量脚本");
         }
         return R.fail(ResultCode.INTERNAL_ERROR, "数据访问失败，请稍后重试");
     }
@@ -184,7 +184,9 @@ public class GlobalExceptionHandler {
 
     private static HttpStatus resolveHttpStatus(int code) {
         if (code == ResultCode.PARAM_ERROR.getCode()
-                || code == ResultCode.GATEWAY_API_KEY_REQUIRED.getCode()) {
+                || code == ResultCode.GATEWAY_API_KEY_REQUIRED.getCode()
+                || code == ResultCode.REJECT_REASON_REQUIRED.getCode()
+                || code == ResultCode.CANNOT_REVIEW_OWN.getCode()) {
             return HttpStatus.BAD_REQUEST;
         }
         if (code == ResultCode.UNAUTHORIZED.getCode()
@@ -192,15 +194,23 @@ public class GlobalExceptionHandler {
                 || code == ResultCode.REFRESH_TOKEN_INVALID.getCode()) {
             return HttpStatus.UNAUTHORIZED;
         }
-        if (code == ResultCode.FORBIDDEN.getCode()) {
+        if (code == ResultCode.FORBIDDEN.getCode()
+                || code == ResultCode.DATASET_ACCESS_DENIED.getCode()
+                || code == ResultCode.CANNOT_DELETE_SYSTEM_ROLE.getCode()) {
             return HttpStatus.FORBIDDEN;
         }
-        if (code == ResultCode.NOT_FOUND.getCode()) {
+        if (code == ResultCode.NOT_FOUND.getCode()
+                || code == ResultCode.GRANT_APPLICATION_NOT_FOUND.getCode()) {
             return HttpStatus.NOT_FOUND;
         }
         if (code == ResultCode.CONFLICT.getCode()
                 || code == ResultCode.DUPLICATE_SUBMIT.getCode()
                 || code == ResultCode.DUPLICATE_NAME.getCode()
+                || code == ResultCode.DUPLICATE_VERSION.getCode()
+                || code == ResultCode.CANNOT_DELETE_PUBLISHED.getCode()
+                || code == ResultCode.FAVORITE_EXISTS.getCode()
+                || code == ResultCode.GRANT_APPLICATION_DUPLICATE.getCode()
+                || code == ResultCode.GRANT_APPLICATION_NOT_PENDING.getCode()
                 || code == ResultCode.ILLEGAL_STATE_TRANSITION.getCode()) {
             return HttpStatus.CONFLICT;
         }

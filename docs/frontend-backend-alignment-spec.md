@@ -177,7 +177,7 @@
 | 用户管理、角色、组织、API Key | `/user-mgmt/*` | 保留 | 同现状 |
 | 监控与告警 | `/monitoring/*` | 保留 | 同现状 |
 | 健康检查与熔断 | `/health/*` | 保留 | 同现状 |
-| 系统配置 | `/system-config/*`、`/system-config/model-configs`、`/system-config/rate-limits` | 保留 | 同现状 |
+| 系统配置 | `/system-config/*`、`/system-config/rate-limits`（`/system-config/model-configs*` **已移除**） | 保留 | 同现状 |
 | 配额与运营限流 | `/quotas`、`/rate-limits` | 保留 | 同现状 |
 | 看板 | `/dashboard/*` | 保留 | 同现状 |
 | 评论评价 | `/reviews/*` | 保留 | 同现状 |
@@ -227,7 +227,7 @@
 | `circuit-breaker` | 保留 | `/health/circuit-breakers*` |
 | `category-management` | 下线 | 旧 `/v1/categories/**` 已删除 |
 | `tag-management` | 保留 | `/tags*` |
-| `model-config` | 保留 | `/system-config/model-configs*` |
+| `model-config` | **已移除** | 产品不提供大模型配置；API 与表已删（见 Flyway V18） |
 | `security-settings` | 保留 | `/system-config/security` |
 | `quota-management` | 保留 | `/quotas*`,`/rate-limits*` |
 | `rate-limit-policy` | 保留 | `/system-config/rate-limits*` |
@@ -431,11 +431,6 @@
 | GET | `/system-config/audit-logs` | `@RequireRole(platform_admin)` + query:`AuditLogQueryRequest` | 保留 |
 | POST | `/system-config/network/apply` | `@RequireRole(platform_admin)` | 保留 |
 | POST | `/system-config/acl/publish` | `@RequireRole(platform_admin)` | 保留 |
-| POST | `/system-config/model-configs` | `@RequireRole(platform_admin)` + body:`ModelConfigCreateRequest` | 保留 |
-| PUT | `/system-config/model-configs/{id}` | `@RequireRole(platform_admin)` + body:`ModelConfigUpdateRequest` | 保留 |
-| DELETE | `/system-config/model-configs/{id}` | `@RequireRole(platform_admin)` + path:`id` | 保留 |
-| GET | `/system-config/model-configs/{id}` | `@RequireRole(platform_admin)` + path:`id` | 保留 |
-| GET | `/system-config/model-configs` | `@RequireRole(platform_admin)` + query:`ModelConfigQueryRequest` | 保留 |
 | POST | `/system-config/rate-limits` | `@RequireRole(platform_admin)` + body:`RateLimitRuleCreateRequest` | 保留 |
 | PUT | `/system-config/rate-limits/{id}` | `@RequireRole(platform_admin)` + body:`RateLimitRuleUpdateRequest` | 保留 |
 | DELETE | `/system-config/rate-limits/{id}` | `@RequireRole(platform_admin)` + path:`id` | 保留 |
@@ -791,7 +786,6 @@ revokeGrant --> invoke
 | Health | `/health/circuit-breakers*` | `monitoring/dto/CircuitBreakerUpdateRequest`,`CircuitBreakerManualRequest`,`monitoring/entity/CircuitBreaker` |
 | SystemConfig | `/system-config/params`,`/security` | `sysconfig/dto/SystemParamUpsertRequest`,`SecuritySettingUpsertRequest` |
 | SystemConfig | `/system-config/audit-logs` | `sysconfig/dto/AuditLogQueryRequest`,`sysconfig/entity/AuditLog` |
-| ModelConfig | `/system-config/model-configs*` | `sysconfig/dto/ModelConfigCreateRequest`,`ModelConfigUpdateRequest`,`ModelConfigQueryRequest` |
 | RateLimitRule | `/system-config/rate-limits*` | `sysconfig/dto/RateLimitRuleCreateRequest`,`RateLimitRuleUpdateRequest` |
 | Quota | `/quotas*` | `sysconfig/dto/QuotaCreateRequest`,`QuotaUpdateRequest`,`sysconfig/entity/Quota` |
 | QuotaRateLimit | `/rate-limits*` | `sysconfig/dto/QuotaRateLimitCreateRequest`,`QuotaRateLimitToggleRequest` |

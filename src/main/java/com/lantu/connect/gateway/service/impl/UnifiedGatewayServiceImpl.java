@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.exception.BusinessException;
+import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.common.web.ServletContextPathUtil;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.ResultCode;
@@ -92,6 +93,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private final ProtocolInvokerRegistry protocolInvokerRegistry;
     private final McpJsonRpcProtocolInvoker mcpJsonRpcProtocolInvoker;
     private final RuntimeAppConfigService runtimeAppConfigService;
+    private final UserDisplayNameResolver userDisplayNameResolver;
 
     /**
      * 统一资源目录查询：固定从新模型主表检索，再叠加用户权限和 API Key scope 裁剪。
@@ -210,6 +212,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                             .sourceType(valueOf(row.get("source_type")))
                             .accessPolicy(ResourceAccessPolicy.fromStored(row.get("access_policy")).wireValue())
                             .updateTime(toDateTime(row.get("update_time")))
+                            .createdBy(longOrNull(row.get("created_by")))
                             .tags(new ArrayList<>())
                             .build());
                 }
@@ -221,8 +224,88 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             }
         }
         attachCatalogTagNames(paged);
+        attachCatalogCreatorNames(paged);
+        attachCatalogReviewAggregates(paged);
         attachIncludesToCatalogItems(paged, includes);
         return PageResult.of(paged, filteredCount, page, pageSize);
+    }
+
+    private void attachCatalogCreatorNames(List<ResourceCatalogItemVO> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        List<Long> ids = new ArrayList<>();
+        for (ResourceCatalogItemVO vo : items) {
+            if (vo.getCreatedBy() != null) {
+                ids.add(vo.getCreatedBy());
+            }
+        }
+        if (ids.isEmpty()) {
+            return;
+        }
+        Map<Long, String> names = userDisplayNameResolver.resolveDisplayNames(ids);
+        for (ResourceCatalogItemVO vo : items) {
+            if (vo.getCreatedBy() != null) {
+                vo.setCreatedByName(names.get(vo.getCreatedBy()));
+            }
+        }
+    }
+
+    private void attachCatalogReviewAggregates(List<ResourceCatalogItemVO> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        StringBuilder orClause = new StringBuilder();
+        List<Object> args = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            if (i > 0) {
+                orClause.append(" OR ");
+            }
+            orClause.append("(target_type = ? AND target_id = ?)");
+            ResourceCatalogItemVO vo = items.get(i);
+            args.add(vo.getResourceType());
+            try {
+                args.add(Long.parseLong(vo.getResourceId()));
+            } catch (Exception ex) {
+                args.add(-1L);
+            }
+        }
+        String sql = "SELECT target_type, target_id, AVG(rating) AS avg_r, COUNT(*) AS cnt FROM t_review WHERE deleted = 0 AND ("
+                + orClause + ") GROUP BY target_type, target_id";
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, args.toArray());
+        Map<String, AggRatingRow> byKey = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            String t = valueOf(row.get("target_type")).trim().toLowerCase(Locale.ROOT);
+            String idPart = valueOf(row.get("target_id")).trim();
+            String key = t + ":" + idPart;
+            double avgR = 0.0;
+            Object ar = row.get("avg_r");
+            if (ar instanceof BigDecimal bd) {
+                avgR = bd.doubleValue();
+            } else if (ar instanceof Number n) {
+                avgR = n.doubleValue();
+            }
+            long cnt = row.get("cnt") instanceof Number n ? n.longValue() : 0L;
+            byKey.put(key, new AggRatingRow(avgR, cnt));
+        }
+        for (ResourceCatalogItemVO vo : items) {
+            String key = vo.getResourceType().trim().toLowerCase(Locale.ROOT) + ":" + vo.getResourceId();
+            AggRatingRow agg = byKey.get(key);
+            if (agg != null) {
+                vo.setRatingAvg(agg.avgRating);
+                vo.setReviewCount(agg.reviewCount);
+            }
+        }
+    }
+
+    private static final class AggRatingRow {
+        final double avgRating;
+        final long reviewCount;
+
+        AggRatingRow(double avgRating, long reviewCount) {
+            this.avgRating = avgRating;
+            this.reviewCount = reviewCount;
+        }
     }
 
     private void attachCatalogTagNames(List<ResourceCatalogItemVO> items) {
@@ -334,7 +417,15 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             merged = issueAppLaunchTicket(merged, apiKey, userId, action);
         }
         merged = attachIncludesToResolve(merged, parseIncludes(include));
+        enrichResolveCreator(merged);
         return ResourceResolveSpecSanitizer.sanitize(merged);
+    }
+
+    private void enrichResolveCreator(ResourceResolveVO vo) {
+        if (vo == null || vo.getCreatedBy() == null) {
+            return;
+        }
+        vo.setCreatedByName(userDisplayNameResolver.resolveDisplayName(vo.getCreatedBy()));
     }
 
     /**
@@ -410,9 +501,6 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         log.setStatus(status);
         log.setStatusCode(statusCode);
         log.setLatencyMs((int) Math.max(0L, latencyMs));
-        log.setInputTokens(0);
-        log.setOutputTokens(0);
-        log.setCost(BigDecimal.ZERO);
         log.setErrorMessage(errMsg);
         log.setIp(StringUtils.hasText(ip) ? ip : "0.0.0.0");
         log.setCreateTime(LocalDateTime.now());
@@ -547,9 +635,6 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         log.setStatus(status[0]);
         log.setStatusCode(statusCode[0]);
         log.setLatencyMs((int) latencyMs);
-        log.setInputTokens(0);
-        log.setOutputTokens(0);
-        log.setCost(BigDecimal.ZERO);
         log.setErrorMessage(errMsg[0]);
         log.setIp(StringUtils.hasText(ip) ? ip : "0.0.0.0");
         log.setCreateTime(LocalDateTime.now());
@@ -621,7 +706,6 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         usage.setDisplayName(StringUtils.hasText(resolved.getDisplayName()) ? resolved.getDisplayName() : resolved.getResourceCode());
         usage.setInputPreview(safePreview(request == null ? null : request.getPayload(), 300));
         usage.setOutputPreview(null);
-        usage.setTokenCost(0);
         usage.setLatencyMs((int) Math.max(0L, latencyMs));
         usage.setStatus(status);
         return usage;
@@ -650,7 +734,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
     private Map<String, Object> findResourceBase(String type, Long id) {
         List<Map<String, Object>> list = jdbcTemplate.queryForList(
-                "SELECT id, resource_type, resource_code, display_name, description, status FROM t_resource WHERE deleted = 0 AND resource_type = ? AND id = ? LIMIT 1",
+                "SELECT id, resource_type, resource_code, display_name, description, status, created_by FROM t_resource WHERE deleted = 0 AND resource_type = ? AND id = ? LIMIT 1",
                 type, id);
         if (list.isEmpty()) {
             throw new BusinessException(ResultCode.NOT_FOUND, "资源不存在");
@@ -672,6 +756,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .resourceCode(valueOf(base.get("resource_code")))
                 .displayName(valueOf(base.get("display_name")))
                 .status(valueOf(base.get("status")))
+                .createdBy(longOrNull(base.get("created_by")))
                 .invokeType(invokeType)
                 .endpoint(specUrl(spec))
                 .spec(spec)
@@ -729,6 +814,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .resourceCode(valueOf(base.get("resource_code")))
                 .displayName(valueOf(base.get("display_name")))
                 .status(valueOf(base.get("status")))
+                .createdBy(longOrNull(base.get("created_by")))
                 .invokeType("artifact")
                 .endpoint(endpointOut)
                 .spec(spec)
@@ -772,6 +858,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .resourceCode(valueOf(base.get("resource_code")))
                 .displayName(valueOf(base.get("display_name")))
                 .status(valueOf(base.get("status")))
+                .createdBy(longOrNull(base.get("created_by")))
                 .invokeType(protocol)
                 .endpoint(endpoint)
                 .spec(spec)
@@ -798,6 +885,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .resourceCode(valueOf(base.get("resource_code")))
                 .displayName(valueOf(base.get("display_name")))
                 .status(valueOf(base.get("status")))
+                .createdBy(longOrNull(base.get("created_by")))
                 .invokeType("redirect")
                 .endpoint(valueOf(ext == null ? null : ext.get("app_url")))
                 .spec(spec)
@@ -862,6 +950,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .resourceCode(valueOf(base.get("resource_code")))
                 .displayName(valueOf(base.get("display_name")))
                 .status(valueOf(base.get("status")))
+                .createdBy(longOrNull(base.get("created_by")))
                 .invokeType("metadata")
                 .endpoint(null)
                 .spec(spec)
@@ -1201,6 +1290,24 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         return t.length() <= maxLen ? t : t.substring(0, maxLen) + "...";
     }
 
+    private static Long longOrNull(Object v) {
+        if (v == null) {
+            return null;
+        }
+        if (v instanceof Number n) {
+            return n.longValue();
+        }
+        try {
+            String s = String.valueOf(v).trim();
+            if (!StringUtils.hasText(s)) {
+                return null;
+            }
+            return Long.valueOf(s);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private static Long longValue(Object v) {
         if (v == null) {
             return 0L;
@@ -1371,16 +1478,22 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         int fetchCap = Math.min(200, lim * 15);
 
         StringBuilder sql = new StringBuilder(
-                "SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, "
+                "SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.created_by, "
                         + "COALESCE(c.cnt, 0) AS call_count, "
-                        + "COALESCE(rv.avg_rating, 0) AS rating, "
+                        + "rv.avg_rating AS rating, "
+                        + "COALESCE(rv.review_count, 0) AS review_count, "
+                        + "COALESCE(fav.fav_cnt, 0) AS favorite_count, "
                         + "r.update_time "
                         + "FROM t_resource r "
                         + "LEFT JOIN (SELECT agent_id, COUNT(*) AS cnt FROM t_call_log "
                         + "WHERE create_time >= DATE_SUB(NOW(), INTERVAL 7 DAY) GROUP BY agent_id) c "
                         + "ON r.id = c.agent_id "
-                        + "LEFT JOIN (SELECT target_id, AVG(rating) AS avg_rating FROM t_review "
-                        + "WHERE deleted = 0 GROUP BY target_id) rv ON r.id = rv.target_id "
+                        + "LEFT JOIN (SELECT target_type, target_id, AVG(rating) AS avg_rating, COUNT(*) AS review_count FROM t_review "
+                        + "WHERE deleted = 0 GROUP BY target_type, target_id) rv "
+                        + "ON r.resource_type = rv.target_type AND r.id = rv.target_id "
+                        + "LEFT JOIN (SELECT target_type, target_id, COUNT(*) AS fav_cnt FROM t_favorite "
+                        + "GROUP BY target_type, target_id) fav "
+                        + "ON r.resource_type = fav.target_type AND r.id = fav.target_id "
                         + "WHERE r.deleted = 0 AND r.status = 'published' ");
         List<Object> args = new ArrayList<>();
         if (StringUtils.hasText(type)) {
@@ -1390,23 +1503,56 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         sql.append(" ORDER BY call_count DESC LIMIT ? ");
         args.add(fetchCap);
 
-        List<ExploreHubData.ExploreResourceItem> rows = jdbcTemplate.query(sql.toString(), args.toArray(), (rs, i) ->
-                ExploreHubData.ExploreResourceItem.builder()
-                        .resourceType(rs.getString("resource_type"))
-                        .resourceId(String.valueOf(rs.getLong("id")))
-                        .resourceCode(rs.getString("resource_code"))
-                        .displayName(rs.getString("display_name"))
-                        .description(rs.getString("description"))
-                        .status(rs.getString("status"))
-                        .callCount(rs.getLong("call_count"))
-                        .rating(rs.getDouble("rating"))
-                        .publishedAt(rs.getTimestamp("update_time") != null
-                                ? rs.getTimestamp("update_time").toLocalDateTime() : null)
-                        .build());
-        return rows.stream()
+        List<ExploreHubData.ExploreResourceItem> rows = jdbcTemplate.query(sql.toString(), args.toArray(), (rs, i) -> {
+            Double ratingVal = null;
+            double ratingRaw = rs.getDouble("rating");
+            if (!rs.wasNull()) {
+                ratingVal = ratingRaw;
+            }
+            return ExploreHubData.ExploreResourceItem.builder()
+                    .resourceType(rs.getString("resource_type"))
+                    .resourceId(String.valueOf(rs.getLong("id")))
+                    .resourceCode(rs.getString("resource_code"))
+                    .displayName(rs.getString("display_name"))
+                    .description(rs.getString("description"))
+                    .status(rs.getString("status"))
+                    .callCount(rs.getLong("call_count"))
+                    .reviewCount(rs.getLong("review_count"))
+                    .favoriteCount(rs.getLong("favorite_count"))
+                    .rating(ratingVal)
+                    .creatorUserId(longOrNull(rs.getObject("created_by")))
+                    .publishedAt(rs.getTimestamp("update_time") != null
+                            ? rs.getTimestamp("update_time").toLocalDateTime() : null)
+                    .build();
+        });
+        List<ExploreHubData.ExploreResourceItem> out = rows.stream()
                 .filter(item -> typeOk.allow(item.getResourceType()))
                 .limit(lim)
-                .toList();
+                .collect(Collectors.toList());
+        attachTrendingAuthors(out);
+        return out;
+    }
+
+    private void attachTrendingAuthors(List<ExploreHubData.ExploreResourceItem> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        List<Long> ids = items.stream()
+                .map(ExploreHubData.ExploreResourceItem::getCreatorUserId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (ids.isEmpty()) {
+            return;
+        }
+        Map<Long, String> names = userDisplayNameResolver.resolveDisplayNames(ids);
+        for (ExploreHubData.ExploreResourceItem item : items) {
+            Long uid = item.getCreatorUserId();
+            if (uid != null) {
+                item.setAuthor(names.get(uid));
+            }
+            item.setCreatorUserId(null);
+        }
     }
 
     @Override

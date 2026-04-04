@@ -24,8 +24,17 @@ public interface MonitoringService {
 
     /**
      * 近 24 小时按小时聚合的延迟与请求量（依赖 t_call_log，MySQL DATE_FORMAT）。
+     *
+     * @param resourceType {@code null}/空/{@code all} 表示全部类型；{@code unknown} 表示类型为空或 unknown
      */
-    List<Map<String, Object>> performance();
+    List<Map<String, Object>> performance(String resourceType);
+
+    /**
+     * 时间窗内按 resource_type 汇总的调用次数（用于监控概览五类资源占比）。
+     *
+     * @param windowHours 回看小时数，默认 24，最大 168
+     */
+    List<Map<String, Object>> callSummaryByResource(int windowHours);
 
     PageResult<CallLog> callLogs(PageQuery query);
 

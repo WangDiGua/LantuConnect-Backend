@@ -26,6 +26,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -62,17 +63,68 @@ public class MonitoringServiceImpl implements MonitoringService {
     }
 
     @Override
-    public List<Map<String, Object>> performance() {
+    public List<Map<String, Object>> performance(String resourceType) {
         QueryWrapper<CallLog> qw = new QueryWrapper<>();
         qw.select(
                         "DATE_FORMAT(create_time, '%Y-%m-%d %H:00:00') AS bucket",
                         "ROUND(AVG(latency_ms), 2) AS avgLatencyMs",
-                        "COUNT(*) AS requestCount")
+                        "COUNT(*) AS requestCount",
+                        "SUM(CASE WHEN status <> 'success' THEN 1 ELSE 0 END) AS errorCount")
                 .ge("create_time", LocalDateTime.now().minusHours(24))
                 .groupBy("DATE_FORMAT(create_time, '%Y-%m-%d %H:00:00')")
                 .orderByAsc("DATE_FORMAT(create_time, '%Y-%m-%d %H:00:00')");
+        applyResourceTypeToQueryWrapper(qw, resourceType);
         List<Map<String, Object>> rows = callLogMapper.selectMaps(qw);
-        return rows != null ? rows : Collections.emptyList();
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Map<String, Object>> out = new ArrayList<>(rows.size());
+        for (Map<String, Object> src : rows) {
+            Map<String, Object> row = new LinkedHashMap<>(src);
+            long req = parseLong(row.get("requestCount"));
+            long err = parseLong(row.get("errorCount"));
+            double er = req <= 0 ? 0D : (double) err / (double) req;
+            double avg = parseDouble(row.get("avgLatencyMs"));
+            row.put("errorRate", er);
+            row.put("service", "gateway");
+            row.put("timestamp", row.get("bucket"));
+            row.put("cpu", 0D);
+            row.put("memory", 0D);
+            row.put("network", 0D);
+            row.put("disk", 0D);
+            row.put("p50Latency", avg);
+            row.put("p99Latency", avg);
+            row.put("latencyP50", avg);
+            row.put("latencyP99", avg);
+            row.put("throughput", (double) req);
+            out.add(row);
+        }
+        return out;
+    }
+
+    @Override
+    public List<Map<String, Object>> callSummaryByResource(int windowHours) {
+        int h = Math.max(1, Math.min(windowHours <= 0 ? 24 : windowHours, 168));
+        List<Map<String, Object>> raw = jdbcTemplate.queryForList(
+                "SELECT COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown') AS resource_type, "
+                        + "COUNT(*) AS calls, "
+                        + "SUM(CASE WHEN status <> 'success' THEN 1 ELSE 0 END) AS errors, "
+                        + "ROUND(AVG(latency_ms), 2) AS avg_latency_ms "
+                        + "FROM t_call_log WHERE create_time >= DATE_SUB(NOW(), INTERVAL ? HOUR) "
+                        + "GROUP BY COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown') "
+                        + "ORDER BY calls DESC",
+                h);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> row : raw) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("type", String.valueOf(row.get("resource_type")).toLowerCase());
+            m.put("resource_type", String.valueOf(row.get("resource_type")).toLowerCase());
+            m.put("calls", parseLong(row.get("calls")));
+            m.put("errors", parseLong(row.get("errors")));
+            m.put("avgLatencyMs", parseDouble(row.get("avg_latency_ms")));
+            out.add(m);
+        }
+        return out;
     }
 
     @Override
@@ -89,6 +141,7 @@ public class MonitoringServiceImpl implements MonitoringService {
         if (StringUtils.hasText(callStatus) && !"all".equalsIgnoreCase(callStatus.trim())) {
             q.eq(CallLog::getStatus, callStatus.trim());
         }
+        applyResourceTypeToLambda(q, query.getResourceType());
         q.orderByDesc(CallLog::getCreateTime);
         Page<CallLog> result = callLogMapper.selectPage(page, q);
         enrichCallLogUserNames(result.getRecords());
@@ -116,6 +169,7 @@ public class MonitoringServiceImpl implements MonitoringService {
         if (StringUtils.hasText(ast) && !"all".equalsIgnoreCase(ast.trim())) {
             q.eq(AlertRecord::getStatus, ast.trim());
         }
+        applyAlertResourceTypeFilter(q, query.getResourceType());
         q.orderByDesc(AlertRecord::getFiredAt);
         Page<AlertRecord> result = alertRecordMapper.selectPage(page, q);
         return PageResults.from(result);
@@ -171,6 +225,51 @@ public class MonitoringServiceImpl implements MonitoringService {
                     .build());
         }
         return result;
+    }
+
+    private static void applyResourceTypeToQueryWrapper(QueryWrapper<CallLog> qw, String resourceType) {
+        if (!StringUtils.hasText(resourceType) || "all".equalsIgnoreCase(resourceType.trim())) {
+            return;
+        }
+        String rt = resourceType.trim().toLowerCase();
+        if ("unknown".equals(rt)) {
+            qw.and(w -> w.isNull("resource_type")
+                    .or().eq("resource_type", "")
+                    .or().eq("resource_type", "unknown"));
+        } else {
+            qw.eq("resource_type", rt);
+        }
+    }
+
+    private static void applyResourceTypeToLambda(LambdaQueryWrapper<CallLog> q, String resourceType) {
+        if (!StringUtils.hasText(resourceType) || "all".equalsIgnoreCase(resourceType.trim())) {
+            return;
+        }
+        String rt = resourceType.trim().toLowerCase();
+        if ("unknown".equals(rt)) {
+            q.and(w -> w.isNull(CallLog::getResourceType)
+                    .or().eq(CallLog::getResourceType, "")
+                    .or().eq(CallLog::getResourceType, "unknown"));
+        } else {
+            q.eq(CallLog::getResourceType, rt);
+        }
+    }
+
+    private static void applyAlertResourceTypeFilter(LambdaQueryWrapper<AlertRecord> q, String resourceType) {
+        if (!StringUtils.hasText(resourceType) || "all".equalsIgnoreCase(resourceType.trim())) {
+            return;
+        }
+        String rt = resourceType.trim().toLowerCase();
+        if ("unknown".equals(rt)) {
+            q.apply("(labels IS NULL "
+                    + "OR JSON_EXTRACT(labels, '$.resource_type') IS NULL "
+                    + "OR TRIM(IFNULL(JSON_UNQUOTE(JSON_EXTRACT(labels, '$.resource_type')), '')) IN ('', 'unknown'))");
+            return;
+        }
+        q.and(w -> w.apply(
+                "(LOWER(JSON_UNQUOTE(JSON_EXTRACT(labels, '$.resource_type'))) = {0} "
+                        + "OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(labels, '$.resourceType'))) = {0})",
+                rt));
     }
 
     private void enrichCallLogUserNames(List<CallLog> records) {

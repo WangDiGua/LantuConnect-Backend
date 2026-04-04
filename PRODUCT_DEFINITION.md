@@ -38,7 +38,12 @@
 
 ## 4. 与「注册平台」的关系
 
-- **是**「注册 + 目录 + 授权 + 消费出口」一体化的平台：生命周期（登记 → 审核 → 发布）、目录、`resolve`、API Key / Grant、网关与审计等均围绕此展开。其中 **`testing → published` 的发布动作**由资源 **owner**、**与 owner 同部门的 dept_admin** 或 **platform_admin/admin** 执行（与 Grant 代管范围一致）；**平台跨租户强制下架**为单独的 `platform-force-deprecate` 能力（详见 `docs/permission-flow-comparison-and-plan.md` 阶段 D241）。**`consumer`** 系统角色仅含目录浏览类权限（与 `GatewayUserPermissionService` 一致，`mcp` 走 `skill:read`），用于「只逛市场」账号（阶段 E）。
+- **是**「注册 + 目录 + 授权 + 消费出口」一体化的平台：生命周期（登记 → 审核 → 发布）、目录、`resolve`、API Key / Grant、网关与审计等均围绕此展开。其中 **`testing → published` 的发布动作**由资源 **owner**、**与 owner 同部门的 dept_admin** 或 **platform_admin** 执行（与 Grant 代管范围一致）；**平台跨租户强制下架**为单独的 `platform-force-deprecate` 能力（详见 `docs/permission-flow-comparison-and-plan.md` 阶段 D241）。
+- **系统四类角色（平台 RBAC）**：
+  - **平台管理员**：管理平台全局事宜（用户、组织、角色、系统配置、全平台资源与审核等）。
+  - **部门管理员**：管理对应部门的**开发者与消费者**，以及本部门范围内的资源协同与审核边界。
+  - **开发者**：负责**五类资源的登记、维护、审核流中与「自己的资源」相关的发布与修订**；不包含把「全校师生默认」都当作开发者。
+  - **消费者**：有权**使用已上架的五类资源**（浏览目录、Grant 申请、个人 API Key、`resolve`/网关等约定消费路径）；**可申请开发者入驻**；**个人资料、改密、登录历史**等账号能力对其开放；Casbin 侧目录读权限与 `GatewayUserPermissionService` 一致（**`mcp` 与 `skill` 共用 `skill:read`**）。自助注册默认绑定 **consumer**（见 `AuthServiceImpl.register`）。
 - **不是**「所有条目都同质可 RPC」的纯服务注册中心：`skill` 与 `dataset` 的分叉是**领域设计**，符合门户对**资产多样性**的预期。
 - **资源消费策略（`t_resource.access_policy`）**：开发者在注册/更新资源时可配置（默认 `grant_required`）。`grant_required`：须 per-resource Grant（及 Key scope）。`open_org`：用户归属的 API Key 且 Key 所属用户与资源 **owner 的部门（`menu_id`）一致** 时免 Grant。`open_platform`：租户内已认证 API Key 在满足 scope 前提下免 Grant。**仅 `published` 资源可被消费**的规则不变；开放策略不改变 skill/dataset 的 invoke 边界（见 §2–§3）。
 

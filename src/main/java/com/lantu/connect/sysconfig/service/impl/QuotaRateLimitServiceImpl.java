@@ -14,8 +14,11 @@ import com.lantu.connect.sysconfig.service.QuotaRateLimitService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * 系统配置QuotaRateLimit服务实现
@@ -27,19 +30,54 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class QuotaRateLimitServiceImpl implements QuotaRateLimitService {
 
+    private static final Set<String> RESOURCE_TARGET_TYPES = Set.of(
+            "agent", "skill", "mcp", "app", "dataset");
+
     private final QuotaRateLimitMapper quotaRateLimitMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long create(QuotaRateLimitCreateRequest request) {
+        if (request.getQuotaId() != null) {
+            QuotaRateLimit entity = new QuotaRateLimit();
+            String key = StringUtils.hasText(request.getRuleKey()) ? request.getRuleKey() : "quota-rule";
+            entity.setName(key);
+            entity.setTargetType("quota");
+            entity.setTargetId(request.getQuotaId());
+            entity.setTargetName("quota:" + request.getQuotaId());
+            entity.setMaxRequestsPerMin(60);
+            entity.setMaxRequestsPerHour(3600);
+            entity.setMaxConcurrent(10);
+            entity.setEnabled(request.getEnabled() == null || request.getEnabled() != 0);
+            LocalDateTime now = LocalDateTime.now();
+            entity.setCreateTime(now);
+            entity.setUpdateTime(now);
+            quotaRateLimitMapper.insert(entity);
+            return entity.getId();
+        }
+
+        if (!StringUtils.hasText(request.getName())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "name 不能为空");
+        }
+        if (!StringUtils.hasText(request.getTargetType())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "targetType 不能为空");
+        }
+        String tt = request.getTargetType().trim().toLowerCase(Locale.ROOT);
+        if (!RESOURCE_TARGET_TYPES.contains(tt)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "targetType 须为 agent/skill/mcp/app/dataset");
+        }
+        if (request.getTargetId() == null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "targetId 不能为空");
+        }
+
         QuotaRateLimit entity = new QuotaRateLimit();
-        entity.setName(request.getRuleKey());
-        entity.setTargetType("quota");
-        entity.setTargetId(request.getQuotaId());
-        entity.setTargetName("quota:" + request.getQuotaId());
-        entity.setMaxRequestsPerMin(60);
-        entity.setMaxRequestsPerHour(3600);
-        entity.setMaxConcurrent(10);
+        entity.setName(request.getName().trim());
+        entity.setTargetType(tt);
+        entity.setTargetId(request.getTargetId());
+        entity.setTargetName(StringUtils.hasText(request.getTargetName()) ? request.getTargetName().trim() : tt + ":" + request.getTargetId());
+        entity.setMaxRequestsPerMin(request.getMaxRequestsPerMin() != null ? request.getMaxRequestsPerMin() : 60);
+        entity.setMaxRequestsPerHour(request.getMaxRequestsPerHour() != null ? request.getMaxRequestsPerHour() : 3600);
+        entity.setMaxConcurrent(request.getMaxConcurrent() != null ? request.getMaxConcurrent() : 10);
         entity.setEnabled(request.getEnabled() == null || request.getEnabled() != 0);
         LocalDateTime now = LocalDateTime.now();
         entity.setCreateTime(now);

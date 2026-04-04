@@ -140,7 +140,6 @@
 | `ProviderManagementPage` | `authType` | `none`、`api_key`、`oauth2`、`basic` |
 | `AgentList` / `AppList` / `DatasetList` / `SkillList` | 状态 / 来源 / 类型 | filter 集合应与 **§1.2–1.4** 一致（注意 `_` 与拼写） |
 | `RateLimitPage` | 目标类型 / 动作 | `RATE_LIMIT_TARGET_OPTIONS`、`RATE_LIMIT_ACTION_OPTIONS`（见页面常量） |
-| `ModelConfigPage` | 模型提供方 | `MODEL_PROVIDER_OPTIONS`（前端品牌枚举，**后端可对齐或改由配置下发**） |
 | `QuotaManagementPage` | 配额范围 / 限流目标 | 与 `quota.ts` 一致 |
 | `CircuitBreakerPage` | 状态筛选 | `all`、`CLOSED`、`OPEN`、`HALF_OPEN`（[仅前端] 内存过滤也可接受） |
 | `HealthConfigPage` | 健康状态筛选 + 检查方式 | `healthy`、`degraded`、`down`；`http`、`tcp`、`ping` |
@@ -160,7 +159,6 @@
 |------|------|
 | 审计日志 `action` | 前端为示例列表；请提供完整枚举或 `GET /system-config/audit-actions` |
 | 告警规则 `metric` | 前端 3 项示例；请 OpenAPI enum 或字典接口 |
-| 模型提供商 / 厂商 | `ModelConfigPage` 可能滞后于实际接入；建议配置化 |
 | 标签业务分类 | `TAG_CATEGORIES` 与 DB 是否一致需产品+后端确认 |
 
 ---

@@ -1,11 +1,9 @@
 package com.lantu.connect.common.config;
 
-import com.lantu.connect.auth.mapper.UserRoleRelMapper;
 import com.lantu.connect.auth.support.AccessTokenBlacklist;
 import com.lantu.connect.auth.support.SessionRevocationRegistry;
 import com.lantu.connect.common.filter.JwtAuthenticationFilter;
 import com.lantu.connect.common.filter.PathRateLimitWebFilter;
-import com.lantu.connect.common.filter.UnassignedUserAccessFilter;
 import com.lantu.connect.common.web.ClientIpResolver;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.common.idempotency.IdempotencyFilter;
@@ -59,7 +57,6 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http,
                                            PathRateLimitWebFilter pathRateLimitWebFilter,
                                            JwtAuthenticationFilter jwtAuthenticationFilter,
-                                           UnassignedUserAccessFilter unassignedUserAccessFilter,
                                            IdempotencyFilter idempotencyFilter) throws Exception {
         List<String> permitList = new ArrayList<>(securityProperties.getPermitPatterns());
         if (!securityProperties.isExposeApiDocs()) {
@@ -102,8 +99,7 @@ public class SecurityConfig {
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(pathRateLimitWebFilter, JwtAuthenticationFilter.class)
-                .addFilterAfter(unassignedUserAccessFilter, JwtAuthenticationFilter.class)
-                .addFilterAfter(idempotencyFilter, UnassignedUserAccessFilter.class);
+                .addFilterAfter(idempotencyFilter, JwtAuthenticationFilter.class);
         return http.build();
     }
 
@@ -122,12 +118,6 @@ public class SecurityConfig {
                                                            ApiKeyScopeService apiKeyScopeService) {
         return new JwtAuthenticationFilter(
                 jwtUtil, accessTokenBlacklist, sessionRevocationRegistry, securityProperties, apiKeyScopeService);
-    }
-
-    @Bean
-    public UnassignedUserAccessFilter unassignedUserAccessFilter(UserRoleRelMapper userRoleRelMapper,
-                                                                 SecurityProperties securityProperties) {
-        return new UnassignedUserAccessFilter(userRoleRelMapper, securityProperties);
     }
 
     private static void writeJsonError(HttpServletResponse response, int httpStatus, int code, String message)

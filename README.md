@@ -68,9 +68,10 @@ src/main/java/com/lantu/connect/
 mysql -u root -p < sql/lantu_connect.sql
 ```
 
-**增量升级（非首次建库）**：按 [`sql/migrations/README.md`](sql/migrations/README.md) 对 `sql/migrations/*.sql` 按名字顺序执行（或与 Flyway 二选一，见下）。
+**增量升级（非首次建库）**：
 
-**Flyway（可选）**：若启用 `spring.flyway.enabled`，增量见 `src/main/resources/db/migration/`（当前含 V1～V5，与部分 `sql/migrations` 同内容，如技能包校验列、`skill_root_path` 等）。
+1. 按 [`sql/migrations/README.md`](sql/migrations/README.md) 对 `sql/migrations/*.sql` 按文件名顺序执行；
+2. 将 [`sql/incremental/`](sql/incremental/) 下以 `V数字__` 开头的脚本按版本号顺序在 MySQL 中手工执行（原 Flyway 脚本归档于此，不再由应用自动跑）。
 
 ### 2. 配置说明
 
@@ -117,7 +118,7 @@ mvnw.cmd spring-boot:run -DskipTests
 服务启动后访问：
 
 - API 基础路径：`http://localhost:8080/regis`
-- Swagger 文档：`http://localhost:8080/regis/swagger-ui.html`
+- Swagger 文档：`http://localhost:8080/regis/swagger-ui.html`（须启用 springdoc 与 `expose-api-docs`；契约摘要见 [docs/api/public-catalog-contract.md](docs/api/public-catalog-contract.md)）
 - Actuator：`http://localhost:8080/regis/actuator/health`
 
 ## 资源中心与技能包（摘要）

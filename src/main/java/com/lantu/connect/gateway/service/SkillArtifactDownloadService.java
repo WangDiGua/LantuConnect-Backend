@@ -157,7 +157,7 @@ public class SkillArtifactDownloadService {
         }
         List<PlatformRole> roles = platformRoleMapper.selectRolesByUserId(userId);
         return roles.stream().map(PlatformRole::getRoleCode).anyMatch(code ->
-                "platform_admin".equals(code) || "dept_admin".equals(code));
+                "platform_admin".equals(code) || "admin".equals(code) || "reviewer".equals(code));
     }
 
     private static boolean truthy(Object o) {

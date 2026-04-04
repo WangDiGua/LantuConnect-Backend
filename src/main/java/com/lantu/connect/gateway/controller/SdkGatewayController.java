@@ -15,9 +15,11 @@ import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
 import com.lantu.connect.gateway.support.GatewayInvokeResponseSupport;
 import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
+import com.lantu.connect.common.config.OpenApiConfiguration;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -36,14 +38,18 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/sdk/v1")
 @RequiredArgsConstructor
-@Tag(name = "SDK统一网关", description = "供开发者SDK稳定调用的v1接口")
+@Tag(name = "SDK统一网关", description = """
+        稳定 v1 路径，语义与同服务根路径目录/解析/invoke 一致；本组所有接口必须携带有效 X-Api-Key。
+        `include`（目录/详情/解析）为逗号分隔：observability、quality、tags。
+        资源 `access_policy`（grant_required / open_org / open_platform）影响 Grant 是否豁免，见 ResourceInvokeGrantService。""")
+@SecurityRequirement(name = OpenApiConfiguration.API_KEY_SECURITY)
 public class SdkGatewayController {
 
     private final UnifiedGatewayService unifiedGatewayService;
     private final ApiKeyScopeService apiKeyScopeService;
     private final RuntimeAppConfigService runtimeAppConfigService;
 
-    @Operation(summary = "资源目录分页查询")
+    @Operation(summary = "资源目录分页查询", description = "查询参数与 GET /catalog/resources 一致；须 Key。")
     @GetMapping("/resources")
     public R<PageResult<ResourceCatalogItemVO>> catalog(ResourceCatalogQueryRequest request,
                                                         @Parameter(description = "应用API Key")
@@ -53,11 +59,12 @@ public class SdkGatewayController {
         return R.ok(unifiedGatewayService.catalog(request, apiKey, userId));
     }
 
-    @Operation(summary = "按类型与ID查询资源详情")
+    @Operation(summary = "按类型与ID查询资源详情", description = "等同 GET /catalog/resources/{type}/{id}；app 类型含 launch 逻辑时依赖 JWT 与 Key 归属。")
     @GetMapping("/resources/{type}/{id}")
     public R<ResourceResolveVO> getByTypeAndId(@PathVariable String type,
                                                @PathVariable String id,
-                                               @RequestParam(value = "include", required = false) String include,
+                                               @RequestParam(value = "include", required = false)
+                                               @Parameter(description = "可选：observability、quality、tags，逗号分隔") String include,
                                                @Parameter(description = "应用API Key")
                                                @RequestHeader(value = "X-Api-Key") String apiKeyRaw) {
         Long userId = resolveTrustedUserId();
@@ -65,7 +72,7 @@ public class SdkGatewayController {
         return R.ok(unifiedGatewayService.getByTypeAndId(type, id, include, apiKey, userId));
     }
 
-    @Operation(summary = "资源解析")
+    @Operation(summary = "资源解析", description = "等同 POST /catalog/resolve；请求体见 ResourceResolveRequest。")
     @PostMapping("/resolve")
     public R<ResourceResolveVO> resolve(@Valid @RequestBody ResourceResolveRequest request,
                                         @Parameter(description = "应用API Key")
@@ -75,7 +82,7 @@ public class SdkGatewayController {
         return R.ok(unifiedGatewayService.resolve(request, apiKey, userId));
     }
 
-    @Operation(summary = "统一调用入口")
+    @Operation(summary = "统一调用入口", description = "等同 POST /invoke；skill 不可 invoke。")
     @PostMapping("/invoke")
     public ResponseEntity<R<InvokeResponse>> invoke(
                                     @Parameter(description = "链路追踪ID，可为空")
@@ -95,7 +102,7 @@ public class SdkGatewayController {
         return ResponseEntity.status(GatewayInvokeResponseSupport.toHttpStatus(data)).body(body);
     }
 
-    @Operation(summary = "MCP 流式调用（SSE/原始流）")
+    @Operation(summary = "MCP 流式调用（SSE/原始流）", description = "等同 POST /invoke-stream，响应 Content-Type: text/event-stream。")
     @PostMapping(value = "/invoke-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<StreamingResponseBody> invokeStream(
                                                               @Parameter(description = "链路追踪ID，可为空")

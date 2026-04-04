@@ -1,5 +1,6 @@
 package com.lantu.connect.dashboard.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -39,6 +40,13 @@ public class ExploreHubData {
         private Double rating;
         /** 发布者展示名（如 real_name），便于探索页展示归属 */
         private String author;
+
+        /**
+         * 仅服务端用于解析 {@link com.lantu.connect.common.util.UserDisplayNameResolver}，不参与 JSON 序列化。
+         */
+        @JsonIgnore
+        private Long creatorUserId;
+
         private String reason;
         private LocalDateTime publishedAt;
     }

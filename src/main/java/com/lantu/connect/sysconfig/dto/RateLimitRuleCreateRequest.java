@@ -14,8 +14,23 @@ public class RateLimitRuleCreateRequest {
 
     @NotBlank
     private String name;
+
+    /** 路径限流（HTTP Filter）遗留字段：与 target=path 等价 */
     private String pathPattern;
     private Integer limitPerMinute;
     private Integer limitPerDay;
     private Integer enabled;
+
+    /** 网关侧 user/role/global/ip/api_key/path 等 */
+    private String target;
+    private String targetValue;
+    private Long windowMs;
+    private Integer maxRequests;
+    private Integer maxTokens;
+    private Integer burstLimit;
+    private String action;
+    private Integer priority;
+
+    /** null / all：任意资源；否则仅对该 resource_type 的调用累计 */
+    private String resourceScope;
 }

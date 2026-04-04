@@ -28,7 +28,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -205,10 +204,11 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
         if (operatorUserId == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证用户无法查看待办");
         }
-        String filterStatus = StringUtils.hasText(status) ? status.trim().toLowerCase(Locale.ROOT) : "pending";
         Page<ResourceGrantApplication> p = new Page<>(page, pageSize);
-        LambdaQueryWrapper<ResourceGrantApplication> w = new LambdaQueryWrapper<ResourceGrantApplication>()
-                .eq(ResourceGrantApplication::getStatus, filterStatus);
+        LambdaQueryWrapper<ResourceGrantApplication> w = new LambdaQueryWrapper<ResourceGrantApplication>();
+        if (StringUtils.hasText(status) && !"all".equalsIgnoreCase(status.trim())) {
+            w.eq(ResourceGrantApplication::getStatus, status.trim().toLowerCase(Locale.ROOT));
+        }
         applyGrantApplicationKeyword(w, keyword);
         applyPendingScopeForReviewer(w, operatorUserId);
         w.orderByDesc(ResourceGrantApplication::getCreateTime);
@@ -219,42 +219,14 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
     }
 
     /**
-     * platform_admin/admin：全量；dept_admin：仅资源 owner 属本部门；其余用户：仅自己拥有资源上的申请。
+     * platform_admin/admin/reviewer：全量待办；其余用户：仅自己拥有资源上的申请。
      */
     private void applyPendingScopeForReviewer(LambdaQueryWrapper<ResourceGrantApplication> w, Long operatorUserId) {
-        if (casbinAuthorizationService.hasAnyRole(operatorUserId, new String[]{"platform_admin", "admin"})) {
-            return;
-        }
-        if (casbinAuthorizationService.isDeptAdminOnly(operatorUserId)) {
-            List<Long> deptUserIds = userIdsInSameMenuAs(operatorUserId);
-            if (deptUserIds.isEmpty()) {
-                w.apply("1 = 0");
-                return;
-            }
-            applyResourceOwnerCreatedByIn(w, deptUserIds);
+        if (casbinAuthorizationService.hasAnyRole(operatorUserId,
+                new String[]{"platform_admin", "admin", "reviewer"})) {
             return;
         }
         applyResourceOwnerCreatedByEquals(w, operatorUserId);
-    }
-
-    private List<Long> userIdsInSameMenuAs(Long userId) {
-        List<Map<String, Object>> menuRow = jdbcTemplate.queryForList(
-                "SELECT menu_id FROM t_user WHERE user_id = ? AND deleted = 0 LIMIT 1", userId);
-        if (menuRow.isEmpty()) {
-            return List.of(userId);
-        }
-        Object mid = menuRow.get(0).get("menu_id");
-        if (mid == null) {
-            return List.of(userId);
-        }
-        Long menuId;
-        try {
-            menuId = Long.valueOf(String.valueOf(mid));
-        } catch (NumberFormatException ex) {
-            return List.of(userId);
-        }
-        return jdbcTemplate.queryForList(
-                "SELECT user_id FROM t_user WHERE menu_id = ? AND deleted = 0", Long.class, menuId);
     }
 
     private static void applyResourceOwnerCreatedByEquals(LambdaQueryWrapper<ResourceGrantApplication> w, Long ownerUserId) {
@@ -263,21 +235,6 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
                 AND r.resource_type = t_resource_grant_application.resource_type \
                 AND r.id = t_resource_grant_application.resource_id AND r.created_by = {0})\
                 """, ownerUserId);
-    }
-
-    private static void applyResourceOwnerCreatedByIn(LambdaQueryWrapper<ResourceGrantApplication> w, List<Long> ownerIds) {
-        if (ownerIds.isEmpty()) {
-            w.apply("1 = 0");
-            return;
-        }
-        String placeholders = ownerIds.stream().map(i -> "?").collect(Collectors.joining(","));
-        String sql = """
-                EXISTS (SELECT 1 FROM t_resource r WHERE r.deleted = 0 \
-                AND r.resource_type = t_resource_grant_application.resource_type \
-                AND r.id = t_resource_grant_application.resource_id \
-                AND r.created_by IN (%s))\
-                """.formatted(placeholders);
-        w.apply(sql, ownerIds.toArray());
     }
 
     private void notifyResourceOwnerNewGrantApplication(String resourceType, Long resourceId, Long applicantUserId,

@@ -26,6 +26,16 @@ public class DashboardController {
     private final DashboardService dashboardService;
     private final OwnerDeveloperStatsService ownerDeveloperStatsService;
 
+    /**
+     * 管理总览（全平台口径；需 monitor:view，通常 reviewer / 超管）。
+     * <p>{@code summary} 键含义：<ul>
+     * <li>{@code totalUsers} — {@code t_user} 未删除用户总数</li>
+     * <li>{@code totalAgents}/{@code totalSkills}/{@code totalApps}/{@code totalDatasets} — {@code t_resource} 按 {@code resource_type} 且 {@code deleted=0}</li>
+     * <li>{@code callLogsToday} — 当日 {@code t_call_log} 条数（网关侧调用日志，非 usage_record 全量）</li>
+     * <li>{@code pendingAudits} — {@code t_audit_item.status=pending_review} 数量（全平台待审）</li>
+     * </ul>
+     * {@code charts[0].id=calls_last_7d}：近 7 日按天的 call_log 计数，与「用户用量」口径不同。
+     */
     @GetMapping("/admin-overview")
     @RequirePermission({"monitor:view"})
     public R<AdminOverviewVO> adminOverview(@RequestHeader("X-User-Id") Long userId) {
@@ -38,7 +48,7 @@ public class DashboardController {
     }
 
     /**
-     * Owner 维度统计（网关 invoke / usage_record invoke / 技能包下载）。权限：本人、同部门 dept_admin 只读、platform_admin/admin。
+     * Owner 维度统计（网关 invoke / usage_record invoke / 技能包下载）。权限：本人、reviewer、platform_admin/admin。
      */
     @GetMapping("/owner-resource-stats")
     public R<OwnerDeveloperStatsVO> ownerResourceStats(

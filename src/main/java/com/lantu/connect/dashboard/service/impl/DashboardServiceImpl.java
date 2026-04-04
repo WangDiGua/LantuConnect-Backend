@@ -192,18 +192,11 @@ public class DashboardServiceImpl implements DashboardService {
     @Override
     public UsageStatsVO usageStats(String range) {
         String r = StringUtils.hasText(range) ? range : "7d";
-        int days = 7;
-        if (r.endsWith("d")) {
-            try {
-                days = Math.max(1, Math.min(90, Integer.parseInt(r.replace("d", ""))));
-            } catch (NumberFormatException ignored) {
-                days = 7;
-            }
-        }
-        LocalDateTime from = LocalDateTime.now().minusDays(days);
+        ReportWindow w = resolveReportWindow(r, null, null);
         QueryWrapper<CallLog> q = new QueryWrapper<>();
         q.select("DATE(create_time) AS day", "COUNT(*) AS cnt", "ROUND(AVG(latency_ms), 2) AS avgLatencyMs")
-                .ge("create_time", from)
+                .ge("create_time", w.from())
+                .le("create_time", w.toInclusive())
                 .groupBy("DATE(create_time)")
                 .orderByAsc("DATE(create_time)");
         List<Map<String, Object>> series = callLogMapper.selectMaps(q);
@@ -216,11 +209,13 @@ public class DashboardServiceImpl implements DashboardService {
         Map<String, Object> breakdown = new LinkedHashMap<>();
         QueryWrapper<CallLog> topPath = new QueryWrapper<>();
         topPath.select("method AS path", "COUNT(*) AS cnt")
-                .ge("create_time", from)
+                .ge("create_time", w.from())
+                .le("create_time", w.toInclusive())
                 .groupBy("method")
                 .orderByDesc("cnt")
                 .last("LIMIT 10");
         breakdown.put("topPaths", callLogMapper.selectMaps(topPath));
+        breakdown.put("callsByResourceType", buildCallsByResourceTypeRows(w.from(), w.toInclusive()));
 
         return UsageStatsVO.builder()
                 .aggregates(aggregates)
@@ -231,55 +226,143 @@ public class DashboardServiceImpl implements DashboardService {
 
     @Override
     public Map<String, Object> dataReports(String range) {
-        String r = StringUtils.hasText(range) ? range : "7d";
-        int days = 7;
-        if (r.endsWith("d")) {
-            try {
-                days = Math.max(1, Math.min(90, Integer.parseInt(r.replace("d", ""))));
-            } catch (NumberFormatException ignored) {
-                days = 7;
-            }
-        }
-        QueryWrapper<CallLog> q = new QueryWrapper<>();
-        q.select("method AS path", "COUNT(*) AS requests", "ROUND(AVG(latency_ms), 2) AS avgLatencyMs")
-                .ge("create_time", LocalDateTime.now().minusDays(days))
-                .groupBy("method")
-                .orderByDesc("requests")
-                .last("LIMIT 20");
-        List<Map<String, Object>> rows = callLogMapper.selectMaps(q);
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("range", r);
-        body.put("rows", rows != null ? rows : List.of());
-        return body;
+        ReportWindow w = resolveReportWindow(StringUtils.hasText(range) ? range : "7d", null, null);
+        return buildDataReportsBody(w, StringUtils.hasText(range) ? range : "7d", null, null);
     }
 
     @Override
     public Map<String, Object> dataReports(String range, String startDate, String endDate) {
-        LocalDateTime from;
-        LocalDateTime to = LocalDateTime.now();
+        ReportWindow w = resolveReportWindow(
+                StringUtils.hasText(range) ? range : "7d", startDate, endDate);
+        String rangeLabel = StringUtils.hasText(startDate) && StringUtils.hasText(endDate) ? "custom"
+                : (StringUtils.hasText(range) ? range : "custom");
+        return buildDataReportsBody(w, rangeLabel, startDate, endDate);
+    }
+
+    /** 数据报表 / 用量统计共用的时间窗口。 */
+    private record ReportWindow(LocalDateTime from, LocalDateTime toInclusive) {}
+
+    private ReportWindow resolveReportWindow(String range, String startDate, String endDate) {
         if (StringUtils.hasText(startDate) && StringUtils.hasText(endDate)) {
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-            from = LocalDate.parse(startDate, fmt).atStartOfDay();
-            to = LocalDate.parse(endDate, fmt).plusDays(1).atStartOfDay();
-        } else {
-            String r = StringUtils.hasText(range) ? range : "7d";
-            int days = parseDays(r);
-            from = LocalDateTime.now().minusDays(days);
+            LocalDateTime from = LocalDate.parse(startDate, fmt).atStartOfDay();
+            LocalDateTime to = LocalDate.parse(endDate, fmt).atTime(23, 59, 59);
+            return new ReportWindow(from, to);
         }
-        QueryWrapper<CallLog> q = new QueryWrapper<>();
-        q.select("method AS path", "COUNT(*) AS requests", "ROUND(AVG(latency_ms), 2) AS avgLatencyMs")
-                .ge("create_time", from)
-                .le("create_time", to)
-                .groupBy("method")
-                .orderByDesc("requests")
-                .last("LIMIT 20");
-        List<Map<String, Object>> rows = callLogMapper.selectMaps(q);
+        LocalDateTime to = LocalDateTime.now();
+        String r = StringUtils.hasText(range) ? range.trim() : "7d";
+        if ("today".equalsIgnoreCase(r)) {
+            return new ReportWindow(LocalDate.now().atStartOfDay(), to);
+        }
+        int days = r.endsWith("d") ? parseDays(r) : 7;
+        return new ReportWindow(to.minusDays(days), to);
+    }
+
+    private Map<String, Object> buildDataReportsBody(ReportWindow w, String rangeLabel, String startDate, String endDate) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("range", StringUtils.hasText(range) ? range : "custom");
-        body.put("startDate", startDate);
-        body.put("endDate", endDate);
-        body.put("rows", rows != null ? rows : List.of());
+        body.put("range", rangeLabel);
+        if (startDate != null) {
+            body.put("startDate", startDate);
+        }
+        if (endDate != null) {
+            body.put("endDate", endDate);
+        }
+        List<Map<String, Object>> methodRows = jdbcTemplate.queryForList(
+                "SELECT method AS path, COUNT(*) AS requests, ROUND(AVG(latency_ms), 2) AS avgLatencyMs "
+                        + "FROM t_call_log WHERE create_time >= ? AND create_time <= ? "
+                        + "GROUP BY method ORDER BY requests DESC LIMIT 20",
+                w.from(), w.toInclusive());
+        body.put("rows", methodRows != null ? methodRows : List.of());
+        body.put("callsByResourceType", buildCallsByResourceTypeRows(w.from(), w.toInclusive()));
+
+        List<Map<String, Object>> topRaw = jdbcTemplate.queryForList(
+                "SELECT COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown') AS resource_type, agent_name, "
+                        + "COUNT(*) AS calls, SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_calls "
+                        + "FROM t_call_log WHERE create_time >= ? AND create_time <= ? "
+                        + "GROUP BY COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown'), agent_name "
+                        + "ORDER BY calls DESC LIMIT 40",
+                w.from(), w.toInclusive());
+        List<Map<String, Object>> topResources = new ArrayList<>();
+        for (Map<String, Object> row : topRaw) {
+            topResources.add(mapTopResourceRow(row));
+        }
+        body.put("topResources", topResources);
+        body.put("topAgents", filterTopByResourceType(topResources, "agent", 10));
+        body.put("topSkills", filterTopByResourceType(topResources, "skill", 10));
+        body.put("topMcps", filterTopByResourceType(topResources, "mcp", 10));
+        body.put("topApps", filterTopByResourceType(topResources, "app", 10));
+        body.put("topDatasets", filterTopByResourceType(topResources, "dataset", 10));
+
+        List<Map<String, Object>> deptRaw = jdbcTemplate.queryForList(
+                "SELECT COALESCE(u.school_id, -1) AS department_key, "
+                        + "COUNT(DISTINCT cl.user_id) AS users, COUNT(*) AS calls "
+                        + "FROM t_call_log cl "
+                        + "LEFT JOIN t_user u ON u.user_id = CAST(cl.user_id AS UNSIGNED) AND u.deleted = 0 "
+                        + "WHERE cl.create_time >= ? AND cl.create_time <= ? "
+                        + "GROUP BY COALESCE(u.school_id, -1) ORDER BY calls DESC LIMIT 25",
+                w.from(), w.toInclusive());
+        List<Map<String, Object>> departmentUsage = new ArrayList<>();
+        for (Map<String, Object> row : deptRaw) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            Object key = row.get("department_key");
+            long k = key instanceof Number n ? n.longValue() : -1L;
+            m.put("department", k < 0 ? "未关联用户/院系" : ("院系 ID " + k));
+            m.put("users", numberToLong(row.get("users")));
+            m.put("calls", numberToLong(row.get("calls")));
+            departmentUsage.add(m);
+        }
+        body.put("departmentUsage", departmentUsage);
         return body;
+    }
+
+    private List<Map<String, Object>> buildCallsByResourceTypeRows(LocalDateTime from, LocalDateTime toInclusive) {
+        List<Map<String, Object>> raw = jdbcTemplate.queryForList(
+                "SELECT COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown') AS resource_type, "
+                        + "COUNT(*) AS calls, SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_calls "
+                        + "FROM t_call_log WHERE create_time >= ? AND create_time <= ? "
+                        + "GROUP BY COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown') ORDER BY calls DESC",
+                from, toInclusive);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> row : raw) {
+            out.add(mapTypeCallsRow(row));
+        }
+        return out;
+    }
+
+    private static Map<String, Object> mapTypeCallsRow(Map<String, Object> row) {
+        long calls = numberToLong(row.get("calls"));
+        long success = numberToLong(row.get("success_calls"));
+        double rate = calls > 0 ? Math.round(success * 1000.0 / calls) / 10.0 : 0.0;
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("type", String.valueOf(row.get("resource_type")));
+        m.put("calls", calls);
+        m.put("successRate", rate);
+        return m;
+    }
+
+    private static Map<String, Object> mapTopResourceRow(Map<String, Object> row) {
+        long calls = numberToLong(row.get("calls"));
+        long success = numberToLong(row.get("success_calls"));
+        double rate = calls > 0 ? Math.round(success * 1000.0 / calls) / 10.0 : 0.0;
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("resourceType", String.valueOf(row.get("resource_type")));
+        m.put("name", String.valueOf(row.get("agent_name")));
+        m.put("calls", calls);
+        m.put("successRate", rate);
+        return m;
+    }
+
+    private static List<Map<String, Object>> filterTopByResourceType(List<Map<String, Object>> all, String type, int limit) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> r : all) {
+            if (type.equalsIgnoreCase(String.valueOf(r.get("resourceType")))) {
+                out.add(r);
+                if (out.size() >= limit) {
+                    break;
+                }
+            }
+        }
+        return out;
     }
 
     @Override
@@ -314,7 +397,7 @@ public class DashboardServiceImpl implements DashboardService {
 
         List<ExploreHubData.ExploreResourceItem> trending = jdbcTemplate.query(
                 "SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, "
-                        + "u.real_name AS author, "
+                        + "COALESCE(NULLIF(TRIM(u.real_name), ''), u.username) AS author, "
                         + "COALESCE(c.cnt, 0) AS call_count, "
                         + "COALESCE(f.fav_cnt, 0) AS favorite_count, "
                         + "COALESCE(rv.review_count, 0) AS review_count, "
@@ -348,7 +431,7 @@ public class DashboardServiceImpl implements DashboardService {
 
         List<ExploreHubData.ExploreResourceItem> recentPublished = jdbcTemplate.query(
                 "SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.update_time, "
-                        + "u.real_name AS author, "
+                        + "COALESCE(NULLIF(TRIM(u.real_name), ''), u.username) AS author, "
                         + "COALESCE(cl_all.cnt, 0) AS call_count, "
                         + "COALESCE(f.fav_cnt, 0) AS favorite_count, COALESCE(rv.review_count, 0) AS review_count, COALESCE(rv.avg_rating, 0) AS rating "
                         + "FROM t_resource r "
@@ -523,6 +606,100 @@ public class DashboardServiceImpl implements DashboardService {
         }
     }
 
+    /**
+     * 今日 0–23 时完整 24 桶（无调用为 0），避免前端把「无桶」误判为「接口无数据」。
+     */
+    private List<Map<String, Object>> buildCallTrendToday24h() {
+        List<Map<String, Object>> raw = jdbcTemplate.queryForList(
+                "SELECT HOUR(create_time) AS hour, COUNT(*) AS cnt "
+                        + "FROM t_call_log WHERE DATE(create_time) = CURDATE() "
+                        + "GROUP BY HOUR(create_time) ORDER BY hour");
+        Map<Integer, Long> byHour = new HashMap<>();
+        for (Map<String, Object> row : raw) {
+            Object h = row.get("hour");
+            if (h == null) {
+                continue;
+            }
+            byHour.put(((Number) h).intValue(), numberToLong(row.get("cnt")));
+        }
+        List<Map<String, Object>> out = new ArrayList<>(24);
+        for (int hour = 0; hour < 24; hour++) {
+            long c = byHour.getOrDefault(hour, 0L);
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("hour", hour);
+            m.put("calls", c);
+            m.put("cnt", c);
+            out.add(m);
+        }
+        return out;
+    }
+
+    private static String normalizeHealthStatusToken(Object raw) {
+        if (raw == null) {
+            return "degraded";
+        }
+        String s = String.valueOf(raw).trim().toLowerCase();
+        if ("healthy".equals(s) || "up".equals(s)) {
+            return "healthy";
+        }
+        if ("down".equals(s) || "offline".equals(s) || "unhealthy".equals(s)) {
+            return "down";
+        }
+        if ("degraded".equals(s) || "warning".equals(s) || "unknown".equals(s)) {
+            return "degraded";
+        }
+        return "degraded";
+    }
+
+    private boolean pingDbFast() {
+        try {
+            Integer one = jdbcTemplate.queryForObject("SELECT 1", Integer.class);
+            return one != null && one == 1;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 管理概览「系统健康」：优先展示已配置的资源健康项；若表为空则回退到基础设施探测，避免整块空白。
+     */
+    private List<Map<String, Object>> buildSystemHealthForAdminOverview() {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT COALESCE(NULLIF(TRIM(display_name), ''), resource_code) AS name, health_status "
+                        + "FROM t_resource_health_config ORDER BY id ASC LIMIT 30");
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            String comp = String.valueOf(row.get("name"));
+            if (!StringUtils.hasText(comp)) {
+                continue;
+            }
+            String st = normalizeHealthStatusToken(row.get("health_status"));
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("component", comp);
+            m.put("name", comp);
+            m.put("status", st);
+            m.put("health_status", st);
+            out.add(m);
+        }
+        if (!out.isEmpty()) {
+            return out;
+        }
+        Map<String, Object> dbRow = new LinkedHashMap<>();
+        dbRow.put("component", "数据库 (MySQL)");
+        dbRow.put("name", "数据库 (MySQL)");
+        String dbSt = pingDbFast() ? "healthy" : "down";
+        dbRow.put("status", dbSt);
+        dbRow.put("health_status", dbSt);
+        out.add(dbRow);
+        Map<String, Object> apiRow = new LinkedHashMap<>();
+        apiRow.put("component", "平台接口服务");
+        apiRow.put("name", "平台接口服务");
+        apiRow.put("status", "healthy");
+        apiRow.put("health_status", "healthy");
+        out.add(apiRow);
+        return out;
+    }
+
     @Override
     public AdminRealtimeData adminRealtime() {
         Long todayCalls = callLogMapper.selectTodayCount();
@@ -539,10 +716,7 @@ public class DashboardServiceImpl implements DashboardService {
                 Long.class);
         if (activeUsers == null) activeUsers = 0L;
 
-        List<Map<String, Object>> callTrend = jdbcTemplate.queryForList(
-                "SELECT HOUR(create_time) AS hour, COUNT(*) AS cnt "
-                        + "FROM t_call_log WHERE DATE(create_time) = CURDATE() "
-                        + "GROUP BY HOUR(create_time) ORDER BY hour");
+        List<Map<String, Object>> callTrend = buildCallTrendToday24h();
 
         List<Map<String, Object>> resourceTrend = jdbcTemplate.queryForList(
                 "SELECT DATE(create_time) AS day, COUNT(*) AS cnt "
@@ -562,14 +736,41 @@ public class DashboardServiceImpl implements DashboardService {
                 new LambdaQueryWrapper<AlertRecord>().eq(AlertRecord::getStatus, "firing"));
         if (activeAlerts == null) activeAlerts = 0L;
 
-        List<Map<String, Object>> topResources = jdbcTemplate.queryForList(
-                "SELECT agent_name, agent_id, COUNT(*) AS cnt "
+        List<Map<String, Object>> topRaw = jdbcTemplate.queryForList(
+                "SELECT COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown') AS resource_type, agent_name, "
+                        + "COUNT(*) AS cnt, SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_calls "
                         + "FROM t_call_log WHERE create_time >= DATE_SUB(NOW(), INTERVAL 7 DAY) "
-                        + "GROUP BY agent_name, agent_id ORDER BY cnt DESC LIMIT 10");
+                        + "GROUP BY COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown'), agent_name "
+                        + "ORDER BY cnt DESC LIMIT 12");
+        List<Map<String, Object>> topResources = new ArrayList<>();
+        for (Map<String, Object> row : topRaw) {
+            long cnt = numberToLong(row.get("cnt"));
+            long ok = numberToLong(row.get("success_calls"));
+            double rate = cnt > 0 ? Math.round(ok * 1000.0 / cnt) / 10.0 : 0.0;
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("name", row.get("agent_name"));
+            m.put("agent_name", row.get("agent_name"));
+            m.put("type", row.get("resource_type"));
+            m.put("resource_type", row.get("resource_type"));
+            m.put("calls", cnt);
+            m.put("cnt", cnt);
+            m.put("successRate", rate);
+            topResources.add(m);
+        }
 
-        List<Map<String, Object>> systemHealth = jdbcTemplate.queryForList(
-                "SELECT resource_id, COALESCE(display_name, resource_code) AS name, health_status "
-                        + "FROM t_resource_health_config");
+        List<Map<String, Object>> systemHealth = buildSystemHealthForAdminOverview();
+
+        Map<String, Long> publishedResourceCounts = new LinkedHashMap<>();
+        publishedResourceCounts.put("agent", countResourceByType("agent"));
+        publishedResourceCounts.put("skill", countResourceByType("skill"));
+        publishedResourceCounts.put("mcp", countResourceByType("mcp"));
+        publishedResourceCounts.put("app", countResourceByType("app"));
+        publishedResourceCounts.put("dataset", countResourceByType("dataset"));
+
+        List<Map<String, Object>> callsByResourceType7d = jdbcTemplate.queryForList(
+                "SELECT COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown') AS type, COUNT(*) AS calls "
+                        + "FROM t_call_log WHERE create_time >= DATE_SUB(NOW(), INTERVAL 7 DAY) "
+                        + "GROUP BY COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown') ORDER BY calls DESC");
 
         return AdminRealtimeData.builder()
                 .todayCalls(todayCalls)
@@ -583,6 +784,8 @@ public class DashboardServiceImpl implements DashboardService {
                 .activeAlerts(activeAlerts)
                 .topResourcesByCall(topResources)
                 .systemHealth(systemHealth)
+                .publishedResourceCounts(publishedResourceCounts)
+                .callsByResourceType7d(callsByResourceType7d)
                 .build();
     }
 
@@ -594,8 +797,9 @@ public class DashboardServiceImpl implements DashboardService {
         Map<String, Object> quotaRow = null;
         try {
             quotaRow = jdbcTemplate.queryForMap(
-                    "SELECT daily_limit, daily_used, monthly_limit, monthly_used "
-                            + "FROM t_quota WHERE target_type = 'user' AND target_id = ? AND enabled = 1 LIMIT 1",
+                    "SELECT daily_limit, daily_used, monthly_limit, monthly_used FROM t_quota "
+                            + "WHERE target_type = 'user' AND target_id = ? AND enabled = 1 "
+                            + "AND resource_category = 'all' ORDER BY id LIMIT 1",
                     userId);
         } catch (Exception ignored) {
         }

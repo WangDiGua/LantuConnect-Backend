@@ -1,5 +1,6 @@
 package com.lantu.connect.common.security;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lantu.connect.auth.entity.PlatformRole;
 import com.lantu.connect.auth.entity.User;
 import com.lantu.connect.auth.mapper.PlatformRoleMapper;
@@ -10,13 +11,16 @@ import org.casbin.jcasbin.model.Model;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 
 /**
  * Casbin 授权门面：
- * - RBAC：用户-角色、角色-权限
+ * - RBAC：用户-角色、角色-权限（以 {@code t_user_role_rel} + 角色 permissions JSON 为准）
+ * - 未绑定任何平台角色时，与自助注册一致按 {@code user} 权限集评估（库中须存在 {@code role_code=user}）
  * - ABAC：提供 owner/department 维度辅助判断
  */
 @Service
@@ -93,19 +97,7 @@ public class CasbinAuthorizationService {
         if (ownerUserId != null && ownerUserId.equals(operatorUserId)) {
             return true;
         }
-        return hasAnyRole(operatorUserId, new String[]{"platform_admin", "dept_admin"});
-    }
-
-    /**
-     * ABAC：是否部门管理员且非平台管理员。
-     */
-    public boolean isDeptAdminOnly(Long userId) {
-        if (userId == null) {
-            return false;
-        }
-        boolean deptAdmin = hasAnyRole(userId, new String[]{"dept_admin"});
-        boolean platformAdmin = hasAnyRole(userId, new String[]{"platform_admin", "admin"});
-        return deptAdmin && !platformAdmin;
+        return hasAnyRole(operatorUserId, new String[]{"platform_admin", "reviewer"});
     }
 
     public Long userDepartmentMenuId(Long userId) {
@@ -114,6 +106,38 @@ public class CasbinAuthorizationService {
         }
         User user = userMapper.selectById(userId);
         return user != null ? user.getMenuId() : null;
+    }
+
+    /**
+     * 与 {@link #buildEnforcer(Long)} 相同来源：用户绑定角色的 permissions JSON 合并（无绑定时回落到 {@code user} 角色）。
+     * 字符串经 {@link #normalize} 归一化，与 Casbin 评估一致，供前端菜单与 JWT 主角色展示解耦。
+     */
+    public List<String> effectivePermissionStrings(Long userId) {
+        if (userId == null) {
+            return List.of();
+        }
+        List<PlatformRole> roles = new ArrayList<>(platformRoleMapper.selectRolesByUserId(userId));
+        if (roles.isEmpty()) {
+            PlatformRole endUser = platformRoleMapper.selectOne(
+                    new LambdaQueryWrapper<PlatformRole>().eq(PlatformRole::getRoleCode, "user"));
+            if (endUser != null) {
+                roles.add(endUser);
+            }
+        }
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        for (PlatformRole role : roles) {
+            List<String> permissions = role.getPermissions();
+            if (permissions == null) {
+                continue;
+            }
+            for (String perm : permissions) {
+                if (!StringUtils.hasText(perm)) {
+                    continue;
+                }
+                out.add(normalize(perm));
+            }
+        }
+        return new ArrayList<>(out);
     }
 
     private boolean enforcePermission(Enforcer enforcer, String subject, String permission) {
@@ -148,30 +172,42 @@ public class CasbinAuthorizationService {
         Enforcer enforcer = new Enforcer(model);
 
         String subject = subject(userId);
-        List<PlatformRole> roles = platformRoleMapper.selectRolesByUserId(userId);
-        for (PlatformRole role : roles) {
-            String roleCode = normalize(role.getRoleCode());
-            String roleSubject = "role:" + roleCode;
-            enforcer.addRoleForUser(subject, roleSubject);
-
-            // 角色策略：用于 @RequireRole
-            enforcer.addPermissionForUser(roleSubject, "role", roleCode, "*");
-
-            List<String> permissions = role.getPermissions();
-            if (permissions == null) {
-                continue;
-            }
-            for (String perm : permissions) {
-                if (!StringUtils.hasText(perm)) {
-                    continue;
-                }
-                String[] parts = normalize(perm).split(":", 2);
-                String obj = parts.length == 2 ? parts[0] : parts[0];
-                String act = parts.length == 2 ? parts[1] : "*";
-                enforcer.addPermissionForUser(roleSubject, obj, act, "*");
+        List<PlatformRole> roles = new ArrayList<>(platformRoleMapper.selectRolesByUserId(userId));
+        // 无 t_user_role_rel 时与自助注册一致：按 end-user（user）权限评估（库中须存在 role_code=user）
+        if (roles.isEmpty()) {
+            PlatformRole endUser = platformRoleMapper.selectOne(
+                    new LambdaQueryWrapper<PlatformRole>().eq(PlatformRole::getRoleCode, "user"));
+            if (endUser != null) {
+                roles.add(endUser);
             }
         }
+        for (PlatformRole role : roles) {
+            attachPlatformRole(enforcer, subject, role);
+        }
         return enforcer;
+    }
+
+    private void attachPlatformRole(Enforcer enforcer, String userSubject, PlatformRole role) {
+        String roleCode = normalize(role.getRoleCode());
+        if (!StringUtils.hasText(roleCode)) {
+            return;
+        }
+        String roleSubject = "role:" + roleCode;
+        enforcer.addRoleForUser(userSubject, roleSubject);
+        enforcer.addPermissionForUser(roleSubject, "role", roleCode, "*");
+        List<String> permissions = role.getPermissions();
+        if (permissions == null) {
+            return;
+        }
+        for (String perm : permissions) {
+            if (!StringUtils.hasText(perm)) {
+                continue;
+            }
+            String[] parts = normalize(perm).split(":", 2);
+            String obj = parts.length == 2 ? parts[0] : parts[0];
+            String act = parts.length == 2 ? parts[1] : "*";
+            enforcer.addPermissionForUser(roleSubject, obj, act, "*");
+        }
     }
 
     private static String subject(Long userId) {

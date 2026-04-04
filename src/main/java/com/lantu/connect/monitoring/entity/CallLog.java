@@ -6,7 +6,6 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -40,11 +39,6 @@ public class CallLog {
     private Integer statusCode;
 
     private Integer latencyMs;
-
-    private Integer inputTokens;
-    private Integer outputTokens;
-
-    private BigDecimal cost;
 
     @TableField("error_message")
     private String errorMessage;

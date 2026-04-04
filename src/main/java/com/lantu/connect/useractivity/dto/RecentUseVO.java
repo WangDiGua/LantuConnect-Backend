@@ -22,7 +22,6 @@ public class RecentUseVO {
     private String targetName;
     private String action;
     private String status;
-    private Integer tokenCost;
     private Integer latencyMs;
     private LocalDateTime createTime;
 }

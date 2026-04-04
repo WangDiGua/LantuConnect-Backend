@@ -12,11 +12,14 @@ import com.lantu.connect.auth.mapper.OrgMenuMapper;
 import com.lantu.connect.auth.mapper.PlatformRoleMapper;
 import com.lantu.connect.auth.mapper.SmsVerifyCodeMapper;
 import com.lantu.connect.auth.mapper.UserMapper;
+import com.lantu.connect.auth.mapper.UserRoleRelMapper;
+import com.lantu.connect.auth.entity.UserRoleRel;
 import com.lantu.connect.auth.service.AuthService;
 import com.lantu.connect.auth.support.AccessTokenBlacklist;
 import com.lantu.connect.auth.support.SessionRevocationRegistry;
 import com.lantu.connect.common.captcha.CaptchaService;
 import com.lantu.connect.common.geo.GeoIpLookupService;
+import com.lantu.connect.common.security.CasbinAuthorizationService;
 import com.lantu.connect.common.security.RedisAuthRateLimiter;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.PageResult;
@@ -49,8 +52,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.security.SecureRandom;
@@ -74,6 +79,7 @@ public class AuthServiceImpl implements AuthService {
     private static final String SMS_RATE_PREFIX = "sms:ratelimit:";
 
     private final UserMapper userMapper;
+    private final UserRoleRelMapper userRoleRelMapper;
     private final PlatformRoleMapper platformRoleMapper;
     private final OrgMenuMapper orgMenuMapper;
     private final PasswordEncoder passwordEncoder;
@@ -92,8 +98,13 @@ public class AuthServiceImpl implements AuthService {
     private final RedisAuthRateLimiter redisAuthRateLimiter;
     private final ObjectMapper objectMapper;
     private final ClientIpResolver clientIpResolver;
+    private final CasbinAuthorizationService casbinAuthorizationService;
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    /** JWT /me 主角色：多角色时取职级最高者（与 {@code ORDER BY r.id} 无关）。 */
+    private static final List<String> PLATFORM_ROLE_PRECEDENCE = List.of(
+            "platform_admin", "admin", "reviewer", "developer", "user");
 
     @Value("${jwt.access-token-expiry}")
     private long accessTokenExpiry;
@@ -153,10 +164,21 @@ public class AuthServiceImpl implements AuthService {
         user.setMobile(request.getPhone());
         user.setSex(0);
         user.setSchoolId(1L);
-        user.setRole(0);
+        /** 自助注册默认 {@code user}：使用已上架五类资源、Grant、个人资料与 Key 等；可申请开发者入驻；无资源注册/发布/平台级审核。 */
+        user.setRole(1);
         user.setStatus("active");
         user.setLastLoginTime(LocalDateTime.now());
         userMapper.insert(user);
+
+        PlatformRole endUserRole = platformRoleMapper.selectOne(
+                new LambdaQueryWrapper<PlatformRole>().eq(PlatformRole::getRoleCode, "user"));
+        if (endUserRole == null) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "系统未配置 user 平台角色，无法完成注册");
+        }
+        UserRoleRel rel = new UserRoleRel();
+        rel.setUserId(user.getUserId());
+        rel.setRoleId(endUserRole.getId());
+        userRoleRelMapper.insert(rel);
 
         return buildLoginResponse(user);
     }
@@ -499,13 +521,40 @@ public class AuthServiceImpl implements AuthService {
                 .createdAt(user.getCreateTime())
                 .updatedAt(user.getUpdateTime())
                 .language(user.getLanguage() != null ? user.getLanguage() : "zh-CN")
-                .twoFactorEnabled(user.getTwoStep() != null ? user.getTwoStep() : false);
+                .twoFactorEnabled(user.getTwoStep() != null ? user.getTwoStep() : false)
+                .permissions(casbinAuthorizationService.effectivePermissionStrings(user.getUserId()));
         return b.build();
     }
 
     private String resolvePrimaryRoleCode(Long userId) {
         List<PlatformRole> roles = platformRoleMapper.selectRolesByUserId(userId);
-        return roles.isEmpty() ? "unassigned" : roles.get(0).getRoleCode();
+        if (roles.isEmpty()) {
+            PlatformRole endUserRole = platformRoleMapper.selectOne(
+                    new LambdaQueryWrapper<PlatformRole>().eq(PlatformRole::getRoleCode, "user"));
+            return endUserRole != null ? normalizeRoleCode(endUserRole.getRoleCode()) : "unassigned";
+        }
+        return roles.stream()
+                .map(PlatformRole::getRoleCode)
+                .min(Comparator.comparingInt(code -> {
+                    String n = normalizeRoleCode(code);
+                    int idx = PLATFORM_ROLE_PRECEDENCE.indexOf(n);
+                    return idx < 0 ? PLATFORM_ROLE_PRECEDENCE.size() : idx;
+                }))
+                .map(this::normalizeRoleCode)
+                .orElseGet(() -> normalizeRoleCode(roles.get(0).getRoleCode()));
+    }
+
+    private String normalizeRoleCode(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String n = raw.trim().toLowerCase(Locale.ROOT);
+        // 兼容迁移前 JWT/库中旧码
+        return switch (n) {
+            case "consumer" -> "user";
+            case "dept_admin" -> "reviewer";
+            default -> n;
+        };
     }
 
     @Override

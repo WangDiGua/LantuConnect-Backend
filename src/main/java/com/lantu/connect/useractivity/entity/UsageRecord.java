@@ -33,7 +33,6 @@ public class UsageRecord {
     private String action;
     private String inputPreview;
     private String outputPreview;
-    private Integer tokenCost;
     private Integer latencyMs;
     private String status;
 

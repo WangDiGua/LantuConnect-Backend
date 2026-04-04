@@ -1,18 +1,17 @@
 package com.lantu.connect.gateway.controller;
 
-import com.lantu.connect.auth.mapper.UserRoleRelMapper;
 import com.lantu.connect.auth.support.AccessTokenBlacklist;
 import com.lantu.connect.auth.support.SessionRevocationRegistry;
 import com.lantu.connect.common.config.SecurityProperties;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.exception.GlobalExceptionHandler;
 import com.lantu.connect.common.filter.JwtAuthenticationFilter;
-import com.lantu.connect.common.filter.UnassignedUserAccessFilter;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.util.JwtUtil;
 import com.lantu.connect.gateway.dto.ResourceManageVO;
 import com.lantu.connect.gateway.dto.ResourceVersionVO;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
+import com.lantu.connect.gateway.service.McpConnectivityProbeService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.SkillArtifactDownloadService;
 import com.lantu.connect.gateway.service.SkillPackChunkedUploadService;
@@ -24,8 +23,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.LocalDateTime;
-import java.util.List;
-
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -44,6 +41,7 @@ class ResourceRegistryControllerWebMvcTest {
     private SkillPackChunkedUploadService skillPackChunkedUploadService;
     private SkillArtifactDownloadService skillArtifactDownloadService;
     private ApiKeyScopeService apiKeyScopeService;
+    private McpConnectivityProbeService mcpConnectivityProbeService;
 
     @BeforeEach
     void setUp() {
@@ -52,26 +50,21 @@ class ResourceRegistryControllerWebMvcTest {
         skillPackChunkedUploadService = mock(SkillPackChunkedUploadService.class);
         skillArtifactDownloadService = mock(SkillArtifactDownloadService.class);
         apiKeyScopeService = mock(ApiKeyScopeService.class);
+        mcpConnectivityProbeService = mock(McpConnectivityProbeService.class);
         JwtUtil jwtUtil = mock(JwtUtil.class);
         AccessTokenBlacklist blacklist = mock(AccessTokenBlacklist.class);
         SessionRevocationRegistry sessionRevocationRegistry = mock(SessionRevocationRegistry.class);
-        UserRoleRelMapper userRoleRelMapper = mock(UserRoleRelMapper.class);
-
         SecurityProperties properties = new SecurityProperties();
         properties.setJwtEnabled(true);
         properties.setAllowHeaderUserIdFallback(false);
         when(sessionRevocationRegistry.isRevoked(any())).thenReturn(false);
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(
                 jwtUtil, blacklist, sessionRevocationRegistry, properties, apiKeyScopeService);
-        UnassignedUserAccessFilter unassignedFilter = new UnassignedUserAccessFilter(userRoleRelMapper, properties);
-
         Claims claims = mock(Claims.class);
         when(claims.getSubject()).thenReturn("1");
         when(claims.get("type", String.class)).thenReturn("access");
         when(blacklist.contains(any())).thenReturn(false);
         when(jwtUtil.parseToken("token-user")).thenReturn(claims);
-        when(userRoleRelMapper.selectRoleIdsByUserId(1L)).thenReturn(List.of(10L));
-
         when(resourceRegistryService.create(anyLong(), any()))
                 .thenReturn(ResourceManageVO.builder()
                         .id(101L)
@@ -94,9 +87,10 @@ class ResourceRegistryControllerWebMvcTest {
 
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new ResourceRegistryController(
-                        resourceRegistryService, skillPackUploadService, skillPackChunkedUploadService, skillArtifactDownloadService, apiKeyScopeService))
+                        resourceRegistryService, skillPackUploadService, skillPackChunkedUploadService, skillArtifactDownloadService, apiKeyScopeService,
+                        mcpConnectivityProbeService))
                 .setControllerAdvice(new GlobalExceptionHandler())
-                .addFilters(jwtFilter, unassignedFilter)
+                .addFilters(jwtFilter)
                 .build();
     }
 

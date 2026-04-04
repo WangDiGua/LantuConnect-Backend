@@ -19,4 +19,14 @@ public class RateLimitRuleUpdateRequest {
     private Integer limitPerMinute;
     private Integer limitPerDay;
     private Integer enabled;
+
+    private String target;
+    private String targetValue;
+    private Long windowMs;
+    private Integer maxRequests;
+    private Integer maxTokens;
+    private Integer burstLimit;
+    private String action;
+    private Integer priority;
+    private String resourceScope;
 }

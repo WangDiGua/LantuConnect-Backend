@@ -22,7 +22,6 @@
 | `MonitoringController`           | `/monitoring`                  | `02`、`04`      |
 | `HealthController`               | `/health`                      | `02`、`04`      |
 | `SystemParamController`          | `/system-config`               | `02`           |
-| `ModelConfigController`          | `/system-config/model-configs` | `02`           |
 | `RateLimitRuleController`        | `/system-config/rate-limits`   | `02`           |
 | `QuotaController`                | `/quotas`                      | `02`           |
 | `QuotaRateLimitController`       | `/rate-limits`                 | `02`           |

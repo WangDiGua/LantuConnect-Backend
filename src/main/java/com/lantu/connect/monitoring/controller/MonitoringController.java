@@ -61,8 +61,18 @@ public class MonitoringController {
 
     @GetMapping("/performance")
     @RequirePermission({"monitor:view"})
-    public R<List<Map<String, Object>>> performance() {
-        return R.ok(monitoringService.performance());
+    public R<List<Map<String, Object>>> performance(@RequestParam(required = false) String resourceType) {
+        return R.ok(monitoringService.performance(resourceType));
+    }
+
+    /**
+     * 监控概览：近 N 小时按统一 resource_type（含 unknown）聚合的调用量与错误数。
+     */
+    @GetMapping("/call-summary-by-resource")
+    @RequirePermission({"monitor:view"})
+    public R<List<Map<String, Object>>> callSummaryByResource(
+            @RequestParam(required = false, defaultValue = "24") int hours) {
+        return R.ok(monitoringService.callSummaryByResource(hours));
     }
 
     @GetMapping("/call-logs")
@@ -121,11 +131,19 @@ public class MonitoringController {
         return R.ok(alertRuleService.page(page, pageSize, filter));
     }
 
-    /** 告警规则指标 id，与前端 METRIC_OPTIONS / handoff 02 对齐；扩展指标可改为读配置或 DB */
+    /**
+     * 告警规则指标 id（平台级）；规则触发时可在 labels 中写入 resource_type 以便按五类资源分流告警。
+     * 扩展指标可改为读配置或 DB。
+     */
     @GetMapping("/alert-rule-metrics")
     @RequirePermission({"monitor:view"})
     public R<List<String>> alertRuleMetrics() {
-        return R.ok(List.of("http_5xx_rate", "latency_p99", "error_rate"));
+        return R.ok(List.of(
+                "http_5xx_rate",
+                "latency_p99",
+                "error_rate",
+                "gateway_invoke_total_1h",
+                "gateway_invoke_errors_1h"));
     }
 
     @PostMapping("/alert-rules/{id}/dry-run")

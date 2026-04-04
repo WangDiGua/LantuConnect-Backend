@@ -25,6 +25,11 @@ public class AuditLogQueryRequest {
     private String userId;
     private String action;
 
+    /**
+     * 按统一资源大类过滤：匹配 action 或 resource 字段中包含该关键字（如 agent、skill、mcp）。
+     */
+    private String resourceType;
+
     /** 对 operator/username、action、resource、详情、ip 等做 OR 模糊匹配 */
     private String keyword;
 

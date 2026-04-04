@@ -4,7 +4,10 @@ import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.annotation.AuditLog;
 import com.lantu.connect.common.security.RequireRole;
+import com.lantu.connect.sysconfig.dto.AclPathRulePayload;
+import com.lantu.connect.sysconfig.dto.AclPublishRequest;
 import com.lantu.connect.sysconfig.dto.AuditLogQueryRequest;
+import com.lantu.connect.sysconfig.dto.NetworkWhitelistApplyRequest;
 import com.lantu.connect.sysconfig.dto.SecuritySettingUpsertRequest;
 import com.lantu.connect.sysconfig.dto.SystemParamUpsertRequest;
 import com.lantu.connect.sysconfig.entity.SecuritySetting;
@@ -72,15 +75,25 @@ public class SystemParamController {
         return R.ok(systemParamFacadeService.listDistinctAuditActions());
     }
 
+    @GetMapping("/network/allowlist")
+    public R<Map<String, Object>> networkAllowlist() {
+        return R.ok(Map.of("rules", systemParamFacadeService.getNetworkAllowlist()));
+    }
+
     @PostMapping("/network/apply")
     @AuditLog(action = "apply_network", resource = "system-config")
-    public R<Map<String, Object>> applyNetwork(@RequestHeader("X-User-Id") Long operatorUserId) {
-        return R.ok(systemParamFacadeService.applyNetwork(operatorUserId));
+    public R<Map<String, Object>> applyNetwork(@RequestHeader("X-User-Id") Long operatorUserId,
+                                              @RequestBody(required = false) NetworkWhitelistApplyRequest body) {
+        List<String> rules = body != null && body.getRules() != null ? body.getRules() : List.of();
+        return R.ok(systemParamFacadeService.applyNetwork(operatorUserId, rules));
     }
 
     @PostMapping("/acl/publish")
     @AuditLog(action = "publish_acl", resource = "system-config")
-    public R<Map<String, Object>> publishAcl(@RequestHeader("X-User-Id") Long operatorUserId) {
-        return R.ok(systemParamFacadeService.publishAcl(operatorUserId));
+    public R<Map<String, Object>> publishAcl(@RequestHeader("X-User-Id") Long operatorUserId,
+                                             @RequestBody(required = false) AclPublishRequest body) {
+        List<AclPathRulePayload> rules =
+                body != null && body.getRules() != null ? body.getRules() : List.of();
+        return R.ok(systemParamFacadeService.publishAcl(operatorUserId, rules));
     }
 }

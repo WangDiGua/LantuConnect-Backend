@@ -24,10 +24,6 @@ public interface CallLogMapper extends BaseMapper<CallLog> {
     @Select("SELECT COUNT(*) FROM t_call_log WHERE DATE(create_time) = CURDATE() AND status = 'success'")
     Long selectTodaySuccessCount();
 
-    @Select("SELECT COALESCE(SUM(COALESCE(input_tokens,0) + COALESCE(output_tokens,0)), 0) FROM t_call_log "
-            + "WHERE user_id = #{userId} AND create_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)")
-    Long sumTokensLast30Days(@Param("userId") String userId);
-
     @Select("SELECT COUNT(*) FROM t_call_log WHERE user_id = #{userId} AND create_time >= DATE_SUB(NOW(), INTERVAL 1 DAY)")
     Long countCallsLast24Hours(@Param("userId") String userId);
 }

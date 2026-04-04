@@ -104,7 +104,7 @@
 | `monitoring` | `health-config` | 探针配置表单 | 新增/更新/删除探针 | `/health/configs*` |
 | `monitoring` | `circuit-breaker` | 熔断列表 + 操作弹窗 | 打开/恢复熔断 | `/health/circuit-breakers*` |
 | `system-config` | `tag-management` | 标签表 + 表单 | 新增/批量导入/删除 | `/tags*` |
-| `system-config` | `model-config` | 模型配置表 + 表单 | 新增/更新/删除 | `/system-config/model-configs*` |
+| `system-config` | ~~`model-config`~~（已移除） | — | — | — |
 | `system-config` | `security-settings` | 安全配置表单 | 保存安全策略 | `/system-config/security` |
 | `system-config` | `quota-management` | 配额表 + 编辑弹窗 | 新增/更新/删除 | `/quotas*` |
 | `system-config` | `rate-limit-policy` | 限流策略表 + 表单 | 新增/更新/删除 | `/system-config/rate-limits*`、`/rate-limits*` |

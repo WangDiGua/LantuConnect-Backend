@@ -27,7 +27,6 @@
 | `NotificationController` | `/notifications` | `02`、`05` |
 | `ReviewController` | `/reviews` | `02`、`04` |
 | `SystemParamController` | `/system-config` | `02` |
-| `ModelConfigController` | `/system-config/model-configs` | `02` |
 | `RateLimitRuleController` | `/system-config/rate-limits` | `02` |
 | `AnnouncementController` | `/system-config/announcements` | `02` |
 | `QuotaController` | `/quotas` | `02` |

@@ -19,7 +19,7 @@
 | 用户活动 | `my-favorites/recent-use/my-*` | `GET /user/usage-records`、`GET /user/favorites`、`POST /user/favorites`、`DELETE /user/favorites/{id}`、`GET /user/usage-stats`、`GET /user/my-agents`、`GET /user/my-skills`、`GET /user/authorized-skills`、`GET /user/recent-use` | 登录态用户 | `type/dateRange/page/pageSize` | 收藏、最近使用、统计字段 |
 | 用户与组织 | `user-list/role-management/organization/api-key-management` | `/user-mgmt/users*`、`/user-mgmt/roles*`、`/user-mgmt/api-keys*`、`/user-mgmt/org-tree`、`/user-mgmt/orgs*`、`/user-mgmt/users/{id}/org*`、`/user-mgmt/users/{id}/roles*` | `user:manage` 等权限点 | `keyword/status/page/pageSize/orgId/roleId` | 用户/角色/组织/API Key 字段 |
 | 监控与健康 | `monitoring/*`、`health-config`、`circuit-breaker` | `/monitoring/kpis`、`/monitoring/performance`、`/monitoring/call-logs`、`/monitoring/alerts`、`/monitoring/traces`、`/monitoring/alert-rules*`、`/monitoring/alert-rules/{id}/dry-run`、`/health/configs*`、`/health/circuit-breakers*`、`/health/security-config` | `monitor:view` / `system:config` | `keyword/status/level/timeRange/page/pageSize` | KPI、日志、告警、trace、熔断状态 |
-| 系统治理 | `system-config/*`、配额限流、标签公告、文件上传 | `/system-config/params|security|audit-logs|network/apply|acl/publish`、`/system-config/model-configs*`、`/system-config/rate-limits*`、`/system-config/announcements*`、`/quotas*`、`/rate-limits*`、`/tags*`、`/sensitive-words*`、`POST /files/upload` | `system:config` 或业务权限 | `keyword/category/status/page/pageSize` | 配置项、配额、限流、标签、敏感词、公告、上传结果 |
+| 系统治理 | `system-config/*`、配额限流、标签公告、文件上传 | `/system-config/params|security|audit-logs|network/apply|acl/publish`、`/system-config/rate-limits*`、`/system-config/announcements*`、`/quotas*`、`/rate-limits*`、`/tags*`、`/sensitive-words*`、`POST /files/upload`（`/system-config/model-configs*` **已移除**） | `system:config` 或业务权限 | `keyword/category/status/page/pageSize` | 配置项、配额、限流、标签、敏感词、公告、上传结果 |
 | 消息与评价 | 顶栏消息、市场评价 | `GET /notifications`、`GET /notifications/unread-count`、`POST /notifications/{id}/read`、`POST /notifications/read-all`、`GET /reviews`、`GET /reviews/summary`、`POST /reviews`、`POST /reviews/{id}/helpful` | 登录态用户 | `page/pageSize/type/status`、评价 `resourceType/resourceId` | `unreadCount`、通知字段、评价字段 |
 
 ## 完整性检查清单
@@ -57,7 +57,7 @@
 | admin | `developer-applications` | 开发者入驻审批 | `/developer/applications*` |
 | admin | `monitoring-overview/call-logs/performance-analysis/alert-management/alert-rules` | 监控告警 | `/monitoring/*` |
 | admin | `health-config/circuit-breaker` | 健康与熔断 | `/health/*` |
-| admin | `tag-management/model-config/security-settings/quota-management/rate-limit-policy/access-control/audit-log/sensitive-words/announcements` | 系统治理 | `/tags*`、`/system-config*`、`/quotas*`、`/rate-limits*`、`/sensitive-words*` |
+| admin | `tag-management/security-settings/quota-management/rate-limit-policy/access-control/audit-log/sensitive-words/announcements` | 系统治理 | `/tags*`、`/system-config*`、`/quotas*`、`/rate-limits*`、`/sensitive-words*` |
 | admin | `api-docs/sdk-download/api-playground/developer-statistics` | 开发者门户 | `/catalog/*`、`/sdk/v1/*`、`/developer/my-statistics` |
 | user | `hub/workspace` | 用户看板与探索 | `/dashboard/explore-hub`、`/dashboard/user-workspace` |
 | user | `agent-market/skill-market/mcp-market/app-market/dataset-market` | 五市场检索与详情 | `/catalog/resources*`、`/catalog/resolve`、`/invoke` |
@@ -90,7 +90,6 @@
 | `MonitoringController` | `GET /monitoring/kpis`、`GET /monitoring/performance`、`GET /monitoring/call-logs`、`GET /monitoring/alerts`、`GET /monitoring/traces`、`POST /monitoring/alert-rules`、`PUT /monitoring/alert-rules/{id}`、`DELETE /monitoring/alert-rules/{id}`、`GET /monitoring/alert-rules/{id}`、`GET /monitoring/alert-rules`、`POST /monitoring/alert-rules/{id}/dry-run` |
 | `HealthController` | `GET /health/configs`、`POST /health/configs`、`PUT /health/configs/{id}`、`DELETE /health/configs/{id}`、`GET /health/circuit-breakers`、`PUT /health/circuit-breakers/{id}`、`POST /health/circuit-breakers/{id}/break`、`POST /health/circuit-breakers/{id}/recover`、`GET /health/security-config` |
 | `SystemParamController` | `GET|PUT /system-config/params`、`GET|PUT /system-config/security`、`GET /system-config/audit-logs`、`POST /system-config/network/apply`、`POST /system-config/acl/publish` |
-| `ModelConfigController` | `POST /system-config/model-configs`、`PUT /system-config/model-configs/{id}`、`DELETE /system-config/model-configs/{id}`、`GET /system-config/model-configs/{id}`、`GET /system-config/model-configs` |
 | `RateLimitRuleController` | `POST /system-config/rate-limits`、`PUT /system-config/rate-limits/{id}`、`DELETE /system-config/rate-limits/{id}`、`GET /system-config/rate-limits/{id}`、`GET /system-config/rate-limits` |
 | `QuotaController` | `POST /quotas`、`PUT /quotas`、`DELETE /quotas/{id}`、`GET /quotas/{id}`、`GET /quotas` |
 | `QuotaRateLimitController` | `POST /rate-limits`、`DELETE /rate-limits/{id}`、`GET /rate-limits/{id}`、`GET /rate-limits`、`PATCH /rate-limits/{id}` |

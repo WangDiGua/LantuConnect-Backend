@@ -23,8 +23,6 @@ public class UserStatsVO {
 
     private Long totalApiCalls;
 
-    private Long tokenUsage;
-
     private Long storageUsedMb;
 
     private Long activeSessions;

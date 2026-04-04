@@ -1,12 +1,10 @@
 package com.lantu.connect.common.security;
 
-import com.lantu.connect.auth.mapper.UserRoleRelMapper;
 import com.lantu.connect.auth.support.AccessTokenBlacklist;
 import com.lantu.connect.auth.support.SessionRevocationRegistry;
 import com.lantu.connect.common.config.SecurityProperties;
 import com.lantu.connect.common.exception.GlobalExceptionHandler;
 import com.lantu.connect.common.filter.JwtAuthenticationFilter;
-import com.lantu.connect.common.filter.UnassignedUserAccessFilter;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.util.JwtUtil;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
@@ -45,7 +43,6 @@ class AuthChainWebMvcTest {
     private JwtUtil jwtUtil;
     private AccessTokenBlacklist accessTokenBlacklist;
     private SessionRevocationRegistry sessionRevocationRegistry;
-    private UserRoleRelMapper userRoleRelMapper;
     private CasbinAuthorizationService casbinAuthorizationService;
     private UserActivityService userActivityService;
     private DashboardService dashboardService;
@@ -55,7 +52,6 @@ class AuthChainWebMvcTest {
         jwtUtil = mock(JwtUtil.class);
         accessTokenBlacklist = mock(AccessTokenBlacklist.class);
         sessionRevocationRegistry = mock(SessionRevocationRegistry.class);
-        userRoleRelMapper = mock(UserRoleRelMapper.class);
         casbinAuthorizationService = mock(CasbinAuthorizationService.class);
         userActivityService = mock(UserActivityService.class);
         dashboardService = mock(DashboardService.class);
@@ -67,8 +63,6 @@ class AuthChainWebMvcTest {
         ApiKeyScopeService apiKeyScopeService = mock(ApiKeyScopeService.class);
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(
                 jwtUtil, accessTokenBlacklist, sessionRevocationRegistry, properties, apiKeyScopeService);
-        UnassignedUserAccessFilter unassignedFilter = new UnassignedUserAccessFilter(userRoleRelMapper, properties);
-
         OwnerDeveloperStatsService ownerDeveloperStatsService = mock(OwnerDeveloperStatsService.class);
         DashboardController dashboardController = new DashboardController(dashboardService, ownerDeveloperStatsService);
         DashboardController proxiedDashboard = proxyWithPermissionAspect(dashboardController, casbinAuthorizationService);
@@ -78,7 +72,7 @@ class AuthChainWebMvcTest {
         mockMvc = MockMvcBuilders
                 .standaloneSetup(userActivityController, proxiedDashboard)
                 .setControllerAdvice(new GlobalExceptionHandler())
-                .addFilters(jwtFilter, unassignedFilter)
+                .addFilters(jwtFilter)
                 .build();
 
         Claims userClaims = mock(Claims.class);
@@ -91,9 +85,6 @@ class AuthChainWebMvcTest {
         when(accessTokenBlacklist.contains(anyString())).thenReturn(false);
         when(jwtUtil.parseToken("token-user")).thenReturn(userClaims);
         when(jwtUtil.parseToken("token-monitor")).thenReturn(monitorClaims);
-
-        when(userRoleRelMapper.selectRoleIdsByUserId(1L)).thenReturn(List.of(10L));
-        when(userRoleRelMapper.selectRoleIdsByUserId(2L)).thenReturn(List.of(20L));
 
         when(casbinAuthorizationService.hasPermissions(eq(1L), any(String[].class), any())).thenReturn(false);
         when(casbinAuthorizationService.hasPermissions(eq(2L), any(String[].class), any())).thenReturn(true);

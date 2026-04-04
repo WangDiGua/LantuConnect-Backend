@@ -16,6 +16,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * 数据集Tag服务实现
@@ -83,12 +84,27 @@ public class TagServiceImpl implements TagService {
             entity.setName(request.getName());
         }
         if (request.getCategory() != null) {
-            entity.setCategory(request.getCategory());
+            entity.setCategory(resolveCategory(request.getCategory()));
         }
         tagMapper.updateById(entity);
     }
 
+    /**
+     * 与统一资源五类对齐：agent/skill/mcp/app/dataset；general 为通用标签。
+     * 兼容管理端中文分类名。
+     */
     private static String resolveCategory(String raw) {
-        return StringUtils.hasText(raw) ? raw.trim() : "general";
+        if (!StringUtils.hasText(raw)) {
+            return "general";
+        }
+        String s = raw.trim();
+        String lower = s.toLowerCase(Locale.ROOT);
+        return switch (lower) {
+            case "agent", "skill", "mcp", "app", "dataset", "general" -> lower;
+            case "应用" -> "app";
+            case "数据集" -> "dataset";
+            case "通用" -> "general";
+            default -> "general";
+        };
     }
 }

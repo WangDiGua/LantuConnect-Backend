@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping({"/providers", "/dataset/providers"})
 @RequiredArgsConstructor
-@RequireRole({"platform_admin", "dept_admin"})
+@RequireRole({"platform_admin", "admin"})
 public class ProviderController {
 
     private final ProviderService providerService;

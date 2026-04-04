@@ -8,6 +8,8 @@ import com.lantu.connect.gateway.dto.LifecycleTimelineVO;
 import com.lantu.connect.gateway.dto.ObservabilitySummaryVO;
 import com.lantu.connect.gateway.dto.ResourceUpsertRequest;
 import com.lantu.connect.gateway.dto.ResourceVersionCreateRequest;
+import com.lantu.connect.gateway.dto.McpConnectivityProbeRequest;
+import com.lantu.connect.gateway.dto.McpConnectivityProbeResult;
 import com.lantu.connect.gateway.dto.ResourceVersionVO;
 import com.lantu.connect.gateway.dto.SkillPackChunkInitRequest;
 import com.lantu.connect.gateway.dto.SkillPackChunkInitResponse;
@@ -15,6 +17,7 @@ import com.lantu.connect.gateway.dto.SkillPackChunkStatusResponse;
 import com.lantu.connect.gateway.dto.SkillPackJsonUploadRequest;
 import com.lantu.connect.gateway.dto.SkillPackUrlImportRequest;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
+import com.lantu.connect.gateway.service.McpConnectivityProbeService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.SkillArtifactDownloadService;
 import com.lantu.connect.gateway.service.SkillPackChunkedUploadService;
@@ -52,6 +55,16 @@ public class ResourceRegistryController {
     private final SkillPackChunkedUploadService skillPackChunkedUploadService;
     private final SkillArtifactDownloadService skillArtifactDownloadService;
     private final ApiKeyScopeService apiKeyScopeService;
+    private final McpConnectivityProbeService mcpConnectivityProbeService;
+
+    /**
+     * 登记前探测用户自管 MCP 是否可达（JSON-RPC initialize，短超时；不落库、不托管服务）。
+     */
+    @PostMapping("/mcp/connectivity-probe")
+    public R<McpConnectivityProbeResult> probeMcpConnectivity(@RequestHeader("X-User-Id") Long userId,
+                                                              @Valid @RequestBody McpConnectivityProbeRequest body) {
+        return R.ok(mcpConnectivityProbeService.probe(body));
+    }
 
     @PostMapping
     @AuditLog(action = "resource_create", resource = "resource-center")

@@ -218,7 +218,7 @@ INSERT INTO `t_audit_log` VALUES ('al-002', '1', 'admin', 'create_agent', 'agent
 INSERT INTO `t_audit_log` VALUES ('al-003', '1', 'admin', 'create_agent', 'agent', '2', '创建Agent：智能备课助手', '10.0.0.1', NULL, 'success', '2026-03-22 10:58:54');
 INSERT INTO `t_audit_log` VALUES ('al-004', '3', 'developer', 'create_agent', 'agent', '5', '创建Agent：图像生成', '10.0.0.2', NULL, 'success', '2026-03-22 10:58:54');
 INSERT INTO `t_audit_log` VALUES ('al-005', '1', 'admin', 'approve', 'audit', '1', '审核通过：联网搜索', '10.0.0.1', NULL, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_audit_log` VALUES ('al-006', '1', 'admin', 'update_model_config', 'system-config', 'mc-001', '更新模型配置：通义千问-Turbo', '10.0.0.1', NULL, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_audit_log` VALUES ('al-006', '1', 'admin', 'update_system_param', 'system-config', 'session_timeout_minutes', '更新系统参数：会话超时（分钟）', '10.0.0.1', NULL, 'success', '2026-03-22 10:58:54');
 INSERT INTO `t_audit_log` VALUES ('b5767acb-d0bd-4c14-bea9-21a8c987505a', '1', 'user-1', 'resource_submit', 'resource-center', NULL, 'elapsedMs=10', '0:0:0:0:0:0:0:1', NULL, 'success', '2026-03-25 00:12:55');
 INSERT INTO `t_audit_log` VALUES ('be275927-affa-4f65-8818-558ce3e3d172', '1', 'user-1', 'resource_version_switch', 'resource-center', NULL, 'elapsedMs=8', '0:0:0:0:0:0:0:1', NULL, 'success', '2026-03-25 00:10:50');
 
@@ -233,14 +233,10 @@ CREATE TABLE `t_call_log`  (
   `agent_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `resource_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '网关调用目标资源类型',
   `user_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `model` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
   `method` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `status_code` smallint NOT NULL,
   `latency_ms` int NOT NULL,
-  `input_tokens` int NULL DEFAULT 0,
-  `output_tokens` int NULL DEFAULT 0,
-  `cost` decimal(10, 6) NULL DEFAULT 0.000000,
   `error_message` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
   `ip` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
@@ -256,16 +252,16 @@ CREATE TABLE `t_call_log`  (
 -- ----------------------------
 -- Records of t_call_log
 -- ----------------------------
-INSERT INTO `t_call_log` VALUES ('cl-001', 'trace-a001', '1', 'web-search', NULL, '4', 'qwen-turbo', 'POST /chat', 'success', 200, 1150, 120, 350, 0.009400, NULL, '10.0.0.1', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-002', 'trace-a002', '1', 'web-search', NULL, '4', 'qwen-turbo', 'POST /chat', 'success', 200, 980, 80, 280, 0.007200, NULL, '10.0.0.1', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-003', 'trace-a003', '2', 'smart-tutor', NULL, '3', 'qwen-turbo', 'POST /chat', 'success', 200, 2800, 200, 1500, 0.034000, NULL, '10.0.0.2', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-004', 'trace-a004', '3', 'paper-polish', NULL, '3', 'gpt-4o', 'POST /chat', 'success', 200, 3500, 500, 800, 6.500000, NULL, '10.0.0.2', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-005', 'trace-a005', '4', 'campus-qa', NULL, '4', 'qwen-turbo', 'POST /chat', 'success', 200, 650, 50, 200, 0.005000, NULL, '10.0.0.3', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-006', 'trace-a006', '6', 'code-assistant', NULL, '3', 'qwen-turbo', 'POST /chat', 'success', 200, 1900, 300, 600, 0.018000, NULL, '10.0.0.2', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-007', 'trace-a007', '1', 'web-search', NULL, '2', 'qwen-turbo', 'POST /chat', 'error', 500, 5200, 100, 0, 0.002000, NULL, '10.0.0.4', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-008', 'trace-a008', '6', 'code-assistant', NULL, '4', 'qwen-turbo', 'POST /chat', 'success', 200, 1600, 250, 550, 0.016000, NULL, '10.0.0.3', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-009', 'trace-a009', '2', 'smart-tutor', NULL, '2', 'qwen-turbo', 'POST /chat', 'success', 200, 2200, 180, 1200, 0.027600, NULL, '10.0.0.4', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-010', 'trace-a010', '4', 'campus-qa', NULL, '4', 'qwen-turbo', 'POST /chat', 'timeout', 504, 15000, 60, 0, 0.001200, NULL, '10.0.0.3', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` VALUES ('cl-001', 'trace-a001', '1', 'web-search', NULL, '4', 'POST /chat', 'success', 200, 1150, NULL, '10.0.0.1', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` VALUES ('cl-002', 'trace-a002', '1', 'web-search', NULL, '4', 'POST /chat', 'success', 200, 980, NULL, '10.0.0.1', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` VALUES ('cl-003', 'trace-a003', '2', 'smart-tutor', NULL, '3', 'POST /chat', 'success', 200, 2800, NULL, '10.0.0.2', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` VALUES ('cl-004', 'trace-a004', '3', 'paper-polish', NULL, '3', 'POST /chat', 'success', 200, 3500, NULL, '10.0.0.2', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` VALUES ('cl-005', 'trace-a005', '4', 'campus-qa', NULL, '4', 'POST /chat', 'success', 200, 650, NULL, '10.0.0.3', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` VALUES ('cl-006', 'trace-a006', '6', 'code-assistant', NULL, '3', 'POST /chat', 'success', 200, 1900, NULL, '10.0.0.2', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` VALUES ('cl-007', 'trace-a007', '1', 'web-search', NULL, '2', 'POST /chat', 'error', 500, 5200, NULL, '10.0.0.4', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` VALUES ('cl-008', 'trace-a008', '6', 'code-assistant', NULL, '4', 'POST /chat', 'success', 200, 1600, NULL, '10.0.0.3', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` VALUES ('cl-009', 'trace-a009', '2', 'smart-tutor', NULL, '2', 'POST /chat', 'success', 200, 2200, NULL, '10.0.0.4', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` VALUES ('cl-010', 'trace-a010', '4', 'campus-qa', NULL, '4', 'POST /chat', 'timeout', 504, 15000, NULL, '10.0.0.3', '2026-03-22 10:58:54');
 
 -- ----------------------------
 -- Table structure for t_category
@@ -459,35 +455,6 @@ INSERT INTO `t_login_history` VALUES (74, 3, 'developer', '2026-03-25 17:05:19',
 INSERT INTO `t_login_history` VALUES (75, 3, 'developer', '2026-03-25 17:47:15', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36', 'password', 'success', NULL, NULL, NULL, NULL, NULL);
 
 -- ----------------------------
--- Table structure for t_model_config
--- ----------------------------
-DROP TABLE IF EXISTS `t_model_config`;
-CREATE TABLE `t_model_config`  (
-  `id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `provider` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `model_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `endpoint` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `api_key` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
-  `max_tokens` int NOT NULL,
-  `temperature` decimal(3, 2) NULL DEFAULT 0.70,
-  `top_p` decimal(3, 2) NULL DEFAULT 0.90,
-  `enabled` tinyint(1) NULL DEFAULT 1,
-  `rate_limit` int NULL DEFAULT 50,
-  `cost_per_token` decimal(10, 8) NULL DEFAULT 0.00000000,
-  `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
-  `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
-  `update_time` datetime NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '模型配置表' ROW_FORMAT = DYNAMIC;
-
--- ----------------------------
--- Records of t_model_config
--- ----------------------------
-INSERT INTO `t_model_config` VALUES ('mc-001', '通义千问-Turbo', '阿里云', 'qwen-turbo', 'https://dashscope.aliyuncs.com/v1', 'sk-demo-dashscope', 8192, 0.70, 0.90, 1, 100, 0.00002000, '校内默认模型，性价比最优', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_model_config` VALUES ('mc-002', 'GPT-4o', 'OpenAI', 'gpt-4o', 'https://api.openai.com/v1', 'sk-demo-openai', 128000, 0.70, 0.90, 1, 50, 0.00500000, '高级模型，用于复杂推理任务', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-
--- ----------------------------
 -- Table structure for t_notification
 -- ----------------------------
 DROP TABLE IF EXISTS `t_notification`;
@@ -607,6 +574,7 @@ CREATE TABLE `t_quota`  (
   `target_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `target_id` bigint NULL DEFAULT NULL,
   `target_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `resource_category` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'all',
   `daily_limit` int NOT NULL,
   `monthly_limit` int NOT NULL,
   `daily_used` int NULL DEFAULT 0,
@@ -620,10 +588,10 @@ CREATE TABLE `t_quota`  (
 -- ----------------------------
 -- Records of t_quota
 -- ----------------------------
-INSERT INTO `t_quota` VALUES (1, 'global', NULL, '全局配额', 100000, 2000000, 0, 428000, 1, '2026-03-22 10:58:54', '2026-03-23 00:00:19');
-INSERT INTO `t_quota` VALUES (2, 'department', 2, '计算机学院', 5000, 100000, 0, 28500, 1, '2026-03-22 10:58:54', '2026-03-23 00:00:19');
-INSERT INTO `t_quota` VALUES (3, 'department', 3, '信息技术中心', 10000, 200000, 0, 85000, 1, '2026-03-22 10:58:54', '2026-03-23 00:00:19');
-INSERT INTO `t_quota` VALUES (4, 'user', 3, '王开发', 500, 10000, 0, 1350, 1, '2026-03-22 10:58:54', '2026-03-23 00:00:19');
+INSERT INTO `t_quota` VALUES (1, 'global', NULL, '全局配额', 'all', 100000, 2000000, 0, 428000, 1, '2026-03-22 10:58:54', '2026-03-23 00:00:19');
+INSERT INTO `t_quota` VALUES (2, 'department', 2, '计算机学院', 'all', 5000, 100000, 0, 28500, 1, '2026-03-22 10:58:54', '2026-03-23 00:00:19');
+INSERT INTO `t_quota` VALUES (3, 'department', 3, '信息技术中心', 'all', 10000, 200000, 0, 85000, 1, '2026-03-22 10:58:54', '2026-03-23 00:00:19');
+INSERT INTO `t_quota` VALUES (4, 'user', 3, '王开发', 'all', 500, 10000, 0, 1350, 1, '2026-03-22 10:58:54', '2026-03-23 00:00:19');
 
 -- ----------------------------
 -- Table structure for t_quota_rate_limit
@@ -659,6 +627,7 @@ CREATE TABLE `t_rate_limit_rule`  (
   `name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `target` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `target_value` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
+  `resource_scope` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
   `window_ms` bigint NOT NULL,
   `max_requests` int NOT NULL,
   `max_tokens` int NULL DEFAULT NULL,
@@ -674,9 +643,9 @@ CREATE TABLE `t_rate_limit_rule`  (
 -- ----------------------------
 -- Records of t_rate_limit_rule
 -- ----------------------------
-INSERT INTO `t_rate_limit_rule` VALUES ('rl-001', '全局默认限流', 'global', NULL, 60000, 100, 50000, 20, 'throttle', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_rate_limit_rule` VALUES ('rl-002', '单用户限流', 'user', NULL, 60000, 30, 10000, 10, 'reject', 1, 10, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_rate_limit_rule` VALUES ('rl-003', '管理员豁免', 'role', 'platform_admin', 60000, 9999, 999999, 999, 'reject', 1, 20, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_rate_limit_rule` VALUES ('rl-001', '全局默认限流', 'global', NULL, NULL, 60000, 100, 50000, 20, 'throttle', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_rate_limit_rule` VALUES ('rl-002', '单用户限流', 'user', NULL, NULL, 60000, 30, 10000, 10, 'reject', 1, 10, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_rate_limit_rule` VALUES ('rl-003', '管理员豁免', 'role', 'platform_admin', NULL, 60000, 9999, 999999, 999, 'reject', 1, 20, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
 
 -- ----------------------------
 -- Table structure for t_resource
@@ -896,6 +865,32 @@ CREATE TABLE `t_resource_invoke_grant`  (
 -- ----------------------------
 -- Records of t_resource_invoke_grant
 -- ----------------------------
+
+-- ----------------------------
+-- Table structure for t_resource_grant_application
+-- ----------------------------
+DROP TABLE IF EXISTS `t_resource_grant_application`;
+CREATE TABLE `t_resource_grant_application` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `applicant_id` bigint NOT NULL COMMENT '申请人 user_id',
+  `resource_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '资源类型: agent/skill/mcp/app/dataset',
+  `resource_id` bigint NOT NULL COMMENT '目标资源 ID',
+  `api_key_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '申请绑定的 API Key ID',
+  `actions` json NOT NULL COMMENT '申请的操作权限: catalog/resolve/invoke JSON 数组',
+  `use_case` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '使用场景说明',
+  `call_frequency` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '预估调用频次',
+  `status` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'pending' COMMENT 'pending/approved/rejected',
+  `reviewer_id` bigint NULL DEFAULT NULL COMMENT '审批人 user_id',
+  `reject_reason` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '驳回原因',
+  `review_time` datetime NULL DEFAULT NULL COMMENT '审批时间',
+  `expires_at` datetime NULL DEFAULT NULL COMMENT '申请的授权过期时间（可选）',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`) USING BTREE,
+  INDEX `idx_applicant`(`applicant_id` ASC) USING BTREE,
+  INDEX `idx_resource`(`resource_type` ASC, `resource_id` ASC) USING BTREE,
+  INDEX `idx_status`(`status` ASC) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源授权申请工单' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Table structure for t_resource_mcp_ext
@@ -1233,7 +1228,6 @@ CREATE TABLE `t_system_param`  (
 -- Records of t_system_param
 -- ----------------------------
 INSERT INTO `t_system_param` VALUES ('auto_lock_attempts', '5', 'number', '连续登录失败锁定次数', '安全', 1, '2026-03-22 00:32:55');
-INSERT INTO `t_system_param` VALUES ('default_model_id', 'qwen-turbo', 'string', '默认模型标识', '模型', 1, '2026-03-22 00:32:55');
 INSERT INTO `t_system_param` VALUES ('enable_registration', 'true', 'boolean', '是否开放注册', '系统', 1, '2026-03-22 00:32:55');
 INSERT INTO `t_system_param` VALUES ('maintenance_mode', 'false', 'boolean', '维护模式', '系统', 0, '2026-03-22 00:32:55');
 INSERT INTO `t_system_param` VALUES ('max_concurrent_sessions', '5', 'number', '最大同时在线会话数', '用户', 1, '2026-03-22 00:32:55');
@@ -1307,7 +1301,6 @@ CREATE TABLE `t_usage_record`  (
   `action` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `input_preview` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
   `output_preview` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
-  `token_cost` int NULL DEFAULT 0,
   `latency_ms` int NULL DEFAULT 0,
   `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1321,11 +1314,11 @@ CREATE TABLE `t_usage_record`  (
 -- ----------------------------
 -- Records of t_usage_record
 -- ----------------------------
-INSERT INTO `t_usage_record` VALUES (1, 4, 'web-search', '联网搜索', 'agent', NULL, '对话', '兰州大学2026年招生政策', '根据最新公布的招生简章...', 470, 1150, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_usage_record` VALUES (2, 4, 'campus-qa', '校园问答', 'agent', NULL, '对话', '图书馆几点关门', '兰州大学图书馆开放时间为...', 250, 650, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_usage_record` VALUES (3, 3, 'smart-tutor', '智能备课助手', 'agent', NULL, '对话', '生成高等数学第一章教案', '教案：高等数学 - 函数与极限...', 1700, 2800, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_usage_record` VALUES (4, 3, 'code-assistant', '代码助手', 'agent', NULL, '对话', '用Python写一个快速排序', 'def quick_sort(arr):...', 900, 1900, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_usage_record` VALUES (5, 4, 'local-kb-search', '本地知识库搜索', 'skill', NULL, '调用', '机器学习期末考试重点', '根据知识库检索到3篇相关文档...', 150, 650, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_usage_record` VALUES (1, 4, 'web-search', '联网搜索', 'agent', NULL, '对话', '兰州大学2026年招生政策', '根据最新公布的招生简章...', 1150, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_usage_record` VALUES (2, 4, 'campus-qa', '校园问答', 'agent', NULL, '对话', '图书馆几点关门', '兰州大学图书馆开放时间为...', 650, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_usage_record` VALUES (3, 3, 'smart-tutor', '智能备课助手', 'agent', NULL, '对话', '生成高等数学第一章教案', '教案：高等数学 - 函数与极限...', 2800, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_usage_record` VALUES (4, 3, 'code-assistant', '代码助手', 'agent', NULL, '对话', '用Python写一个快速排序', 'def quick_sort(arr):...', 1900, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_usage_record` VALUES (5, 4, 'local-kb-search', '本地知识库搜索', 'skill', NULL, '调用', '机器学习期末考试重点', '根据知识库检索到3篇相关文档...', 650, 'success', '2026-03-22 10:58:54');
 
 -- ----------------------------
 -- Table structure for t_skill_pack_download_event

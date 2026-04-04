@@ -4,9 +4,13 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lantu.connect.auth.entity.PlatformRole;
 import com.lantu.connect.auth.mapper.PlatformRoleMapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.util.ListQueryKeyword;
+import com.lantu.connect.sysconfig.dto.AclPathRulePayload;
 import com.lantu.connect.sysconfig.dto.AuditLogQueryRequest;
 import com.lantu.connect.sysconfig.dto.SecuritySettingUpsertRequest;
 import com.lantu.connect.sysconfig.dto.SystemParamUpsertRequest;
@@ -30,6 +34,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * 系统配置SystemParamFacade服务实现
@@ -41,12 +47,18 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
 
+    /** 管理端 IP 白名单：JSON 字符串数组，如 ["10.0.0.0/8"] */
+    public static final String PARAM_ADMIN_NETWORK_ALLOWLIST = "admin_network_allowlist";
+    /** API 路径级 ACL：JSON 数组，元素含 id / path / roles */
+    public static final String PARAM_API_PATH_ACL_RULES = "api_path_acl_rules";
+
     private final SystemParamMapper systemParamMapper;
     private final SecuritySettingMapper securitySettingMapper;
     private final AuditLogMapper auditLogMapper;
     private final PlatformRoleMapper platformRoleMapper;
     private final SystemNotificationFacade systemNotificationFacade;
     private final RuntimeAppConfigService runtimeAppConfigService;
+    private final ObjectMapper objectMapper;
 
     @Override
     public List<SystemParam> listParams() {
@@ -128,6 +140,10 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
         if (StringUtils.hasText(request.getAction())) {
             q.eq(AuditLog::getAction, request.getAction());
         }
+        if (StringUtils.hasText(request.getResourceType())) {
+            String rt = request.getResourceType().trim();
+            q.and(w -> w.like(AuditLog::getAction, rt).or().like(AuditLog::getResource, rt));
+        }
         if (StringUtils.hasText(request.getResult())) {
             String r = request.getResult().trim().toLowerCase();
             if ("success".equals(r) || "failure".equals(r)) {
@@ -167,14 +183,31 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
     }
 
     @Override
-    public Map<String, Object> applyNetwork(Long operatorUserId) {
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> applyNetwork(Long operatorUserId, List<String> rules) {
+        List<String> normalized = (rules == null ? List.<String>of() : rules).stream()
+                .map(s -> s == null ? "" : s.trim())
+                .filter(StringUtils::hasText)
+                .distinct()
+                .collect(Collectors.toList());
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(normalized);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("serialize network allowlist failed", e);
+        }
+        upsertInternalParam(PARAM_ADMIN_NETWORK_ALLOWLIST, json,
+                "管理端 IP 白名单 CIDR 列表（JSON 字符串数组）", "security");
+
         boolean integrationMock = runtimeAppConfigService.system().isIntegrationMock();
         Map<String, Object> body = new HashMap<>();
         body.put("applied", true);
         body.put("mock", integrationMock);
+        body.put("rules", normalized);
+        body.put("rulesCount", normalized.size());
         body.put("message", integrationMock
-                ? "network apply simulated (set lantu.system.integration-mock=false to wire real infra)"
-                : "network apply acknowledged (implement infra hook here)");
+                ? "白名单已落库；集成模拟模式下未调用外部网关（lantu.system.integration-mock=false 时可接真实下发）"
+                : "白名单已落库；网关联动请同步 infra 管道");
         systemNotificationFacade.notifySystemSecurityOperation(
                 operatorUserId,
                 NotificationEventCodes.SYSTEM_NETWORK_APPLIED,
@@ -184,14 +217,40 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
     }
 
     @Override
-    public Map<String, Object> publishAcl(Long operatorUserId) {
+    public List<String> getNetworkAllowlist() {
+        SystemParam p = systemParamMapper.selectById(PARAM_ADMIN_NETWORK_ALLOWLIST);
+        if (p == null || !StringUtils.hasText(p.getValue())) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(p.getValue().trim(), new TypeReference<>() {
+            });
+        } catch (Exception ex) {
+            return List.of();
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> publishAcl(Long operatorUserId, List<AclPathRulePayload> rules) {
+        List<AclPathRulePayload> normalized = normalizeAclRules(rules);
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(normalized);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("serialize acl rules failed", e);
+        }
+        upsertInternalParam(PARAM_API_PATH_ACL_RULES, json,
+                "API 路径级 ACL 规则（JSON：[{id,path,roles}]）", "security");
+
         boolean integrationMock = runtimeAppConfigService.system().isIntegrationMock();
         Map<String, Object> body = new HashMap<>();
         body.put("published", true);
         body.put("mock", integrationMock);
+        body.put("ruleCount", normalized.size());
         body.put("message", integrationMock
-                ? "acl publish simulated (set lantu.system.integration-mock=false to wire real infra)"
-                : "acl publish acknowledged (implement infra hook here)");
+                ? "ACL 已落库；集成模拟模式下未推送 Casbin（关闭 mock 后可接同步任务）"
+                : "ACL 已落库；请确认网关/网关侧 Casbin 加载任务已订阅");
         systemNotificationFacade.notifySystemSecurityOperation(
                 operatorUserId,
                 NotificationEventCodes.SYSTEM_ACL_PUBLISHED,
@@ -202,24 +261,90 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
 
     @Override
     public Map<String, Object> getAclRules() {
+        List<AclPathRulePayload> pathRules = readPathAclRulesFromParam();
+        List<Map<String, Object>> asMaps = new ArrayList<>();
+        for (AclPathRulePayload r : pathRules) {
+            Map<String, Object> row = new HashMap<>();
+            row.put("id", r.getId());
+            row.put("path", r.getPath());
+            row.put("roles", r.getRoles());
+            asMaps.add(row);
+        }
         List<PlatformRole> roles = platformRoleMapper.selectList(
                 new LambdaQueryWrapper<PlatformRole>().orderByAsc(PlatformRole::getRoleCode));
-        List<Map<String, Object>> rules = new ArrayList<>();
+        List<Map<String, Object>> roleCatalog = new ArrayList<>();
         if (roles != null) {
             for (PlatformRole r : roles) {
                 Map<String, Object> row = new HashMap<>();
                 row.put("roleCode", r.getRoleCode());
                 row.put("roleName", r.getRoleName());
-                row.put("description", r.getDescription());
-                row.put("permissions", r.getPermissions() != null ? r.getPermissions() : List.of());
-                row.put("isSystem", r.getIsSystem());
-                rules.add(row);
+                roleCatalog.add(row);
             }
         }
         Map<String, Object> body = new HashMap<>();
-        body.put("rules", rules);
-        body.put("source", "t_platform_role");
+        body.put("rules", asMaps);
+        body.put("source", PARAM_API_PATH_ACL_RULES);
+        body.put("roleCatalog", roleCatalog);
         return body;
+    }
+
+    private void upsertInternalParam(String key, String value, String description, String category) {
+        LocalDateTime now = LocalDateTime.now();
+        SystemParam existing = systemParamMapper.selectById(key);
+        if (existing == null) {
+            SystemParam entity = new SystemParam();
+            entity.setKey(key);
+            entity.setValue(value);
+            entity.setDescription(description);
+            entity.setType("json");
+            entity.setCategory(category);
+            entity.setEditable(true);
+            entity.setUpdateTime(now);
+            systemParamMapper.insert(entity);
+        } else {
+            existing.setValue(value);
+            existing.setUpdateTime(now);
+            if (description != null) {
+                existing.setDescription(description);
+            }
+            systemParamMapper.updateById(existing);
+        }
+    }
+
+    private List<AclPathRulePayload> readPathAclRulesFromParam() {
+        SystemParam p = systemParamMapper.selectById(PARAM_API_PATH_ACL_RULES);
+        if (p == null || !StringUtils.hasText(p.getValue())) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(p.getValue().trim(), new TypeReference<>() {
+            });
+        } catch (Exception ex) {
+            return List.of();
+        }
+    }
+
+    private List<AclPathRulePayload> normalizeAclRules(List<AclPathRulePayload> raw) {
+        if (raw == null) {
+            return List.of();
+        }
+        List<AclPathRulePayload> out = new ArrayList<>();
+        for (AclPathRulePayload r : raw) {
+            if (r == null) {
+                continue;
+            }
+            String path = r.getPath() == null ? "" : r.getPath().trim();
+            if (!StringUtils.hasText(path)) {
+                continue;
+            }
+            AclPathRulePayload n = new AclPathRulePayload();
+            n.setPath(path);
+            n.setRoles(r.getRoles() == null ? "" : r.getRoles().trim());
+            String id = r.getId() == null ? "" : r.getId().trim();
+            n.setId(StringUtils.hasText(id) ? id : "r-" + UUID.randomUUID());
+            out.add(n);
+        }
+        return out;
     }
 
     @Override

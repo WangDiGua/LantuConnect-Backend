@@ -68,13 +68,13 @@
 
 ## Batch 4 — 其余业务域（REST 清单）
 
-以下与 [`controller-inventory.md`](controller-inventory.md) 一致（28 `@RestController` + `GlobalExceptionHandler` 为 Advice）：
+以下与 [`controller-inventory.md`](controller-inventory.md) 一致（**31** `@RestController`；`GlobalExceptionHandler` 为 `@RestControllerAdvice`）：
 
 | 模块 | Controller |
 |------|------------|
 | monitoring | `HealthController`, `MonitoringController` |
 | dashboard | `DashboardController` |
-| sysconfig | `SystemParamController`, `ModelConfigController`, `RateLimitRuleController`, `AnnouncementController`, `QuotaController`, `QuotaRateLimitController` |
+| sysconfig | `SystemParamController`, `RateLimitRuleController`, `AnnouncementController`, `QuotaController`, `QuotaRateLimitController` |
 | audit | `AuditController` |
 | usermgmt | `UserMgmtController` |
 | usersettings | `UserSettingsController` |
@@ -97,7 +97,7 @@
 | 项 | 结论 |
 |----|------|
 | MyBatis XML | `classpath:mapper/**/*.xml` 在仓库中**无对应 XML**（`src/main/resources` 下仅有 `logback-spring.xml`）；持久化以 **MyBatis-Plus 注解 Mapper + 部分 JdbcTemplate** 为主 |
-| Flyway | 已引入 `flyway-core` / `flyway-mysql`，默认 `spring.flyway.enabled: false`（`FLYWAY_ENABLED`）；脚本目录 [`db/migration`](../../src/main/resources/db/migration)；**既有库**仍建议先执行 [`sql/`](../../sql) 下脚本再开启 Flyway 钉扎 |
+| 库结构升级 | **无 Flyway**；手工执行 [`sql/migrations/`](../../sql/migrations)（按 README 顺序）及 [`sql/incremental/`](../../sql/incremental) 中以 `V数字__` 命名的历史增量脚本 |
 | `@TableName` 实体 | 已 grep 全量：覆盖 `t_user`、`t_resource_*`、`t_alert_*`、`t_quota*`、`t_provider` 等（详见代码内注解） |
 | `t_resource` | **无**单独 JPA/MP 实体类；由 `ResourceRegistryServiceImpl`、`UnifiedGatewayServiceImpl`、`SkillPackUploadService` 等 **原生 SQL** 访问 — **Schema 变更需人工审所有 SQL 字符串** |
 
@@ -116,7 +116,7 @@
 2. **默认 Mock 短信**（`lantu.sms.provider` 未配置）。  
 3. **通知 channel** 多依赖显式 `enabled`/邮件 host。  
 4. ~~**Provider API** 仅读~~ **已补写**：见上 ProviderController CRUD。  
-5. **无自动化迁移（Flyway）** + 现存 **`sql/migrations` 需人工执行** + **大量 JdbcTemplate 手写 SQL** → 数据库与代码一致性依赖运维流程。  
+5. **无自动化迁移** + **`sql/migrations` 与 `sql/incremental` 需人工执行** + **大量 JdbcTemplate 手写 SQL** → 数据库与代码一致性依赖运维流程。  
 6. **默认中间件 localhost** → 部署未配全时运行失败，属**部署闭环**非「代码未写」。
 
 ---
@@ -125,3 +125,22 @@
 
 - 代码变更后：**同步更新本文件对应 Batch** 或追加「变更条目」段落。  
 - 与 [`findings.md`](findings.md) 配合：findings 保留 **分级摘要**，细节以本 log 为准。
+
+### 2026-04-04（全量审核轮次）
+
+- **跟踪条目**：[backlog-2026-04-04.md](backlog-2026-04-04.md)（阶段 A–F：库存对账、闭环/角色静态复核、分页与 `GlobalExceptionHandler` 契约、`DashboardController.adminOverview` 口径、SQL/配置 P2 登记、`mvn test`）。  
+- **文档对账**：本文件 Batch 4 与 `controller-inventory.md` 统一为 **31** 个 `@RestController`。  
+- **代码**：[`GlobalExceptionHandler`](../../src/main/java/com/lantu/connect/common/exception/GlobalExceptionHandler.java) 对部分 `BusinessException` 增加与 HTTP 语义一致的 status 映射；[`DashboardController`](../../src/main/java/com/lantu/connect/dashboard/controller/DashboardController.java) `adminOverview` 补充 Javadoc。  
+- **项目 SKILL**：[`.cursor/skills/lantuconnect-backend-audit/SKILL.md`](../../.cursor/skills/lantuconnect-backend-audit/SKILL.md)。
+
+### 2026-04-15（五类资源主功能审查）
+
+- **跟踪条目**：[backlog-five-resources-2026-04-15.md](backlog-five-resources-2026-04-15.md) — agent/skill/mcp/app/dataset 注册—生命周期—审核—消费—监控矩阵；API 展示与 `/reviews` 信息架构分级（DISP-* / API-*）。  
+- **代码（P1）**：[`ResourceCatalogItemVO`](../../src/main/java/com/lantu/connect/gateway/dto/ResourceCatalogItemVO.java) 增加 `createdBy`、`createdByName`、`ratingAvg`、`reviewCount`；[`UnifiedGatewayServiceImpl#catalog`](../../src/main/java/com/lantu/connect/gateway/service/impl/UnifiedGatewayServiceImpl.java) 批量解析作者名并聚合 `t_review`。  
+- **验证**：`mvn test` 通过。
+
+### 2026-04-16（五类资源展示续）
+
+- **跟踪**：同 [backlog-five-resources-2026-04-15.md](backlog-five-resources-2026-04-15.md)（已更新 DISP-2～DISP-4 状态）。  
+- **代码**：[`UnifiedGatewayServiceImpl#trending`](../../src/main/java/com/lantu/connect/gateway/service/impl/UnifiedGatewayServiceImpl.java) 与 Dashboard 一致按 `target_type+target_id` 关联评论/收藏；[`ResourceResolveVO`](../../src/main/java/com/lantu/connect/gateway/dto/ResourceResolveVO.java) 作者字段；[`ReviewController`](../../src/main/java/com/lantu/connect/review/controller/ReviewController.java) `GET /reviews/page`；[`DashboardServiceImpl`](../../src/main/java/com/lantu/connect/dashboard/service/impl/DashboardServiceImpl.java) 探索区 `author` 使用 `COALESCE(real_name, username)`。  
+- **验证**：`mvn test` 通过。

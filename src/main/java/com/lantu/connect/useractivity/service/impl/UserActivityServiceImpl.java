@@ -253,7 +253,6 @@ public class UserActivityServiceImpl implements UserActivityService {
                     .targetName(row.getDisplayName())
                     .action(row.getAction())
                     .status(row.getStatus())
-                    .tokenCost(row.getTokenCost())
                     .latencyMs(row.getLatencyMs())
                     .createTime(row.getCreateTime())
                     .build());

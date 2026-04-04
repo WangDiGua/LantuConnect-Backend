@@ -27,7 +27,6 @@ import java.util.List;
 @RequestMapping("/user-mgmt")
 @RequiredArgsConstructor
 @Validated
-@RequireRole({"platform_admin", "dept_admin"})
 public class UserMgmtController {
 
     private final UserMgmtService userMgmtService;

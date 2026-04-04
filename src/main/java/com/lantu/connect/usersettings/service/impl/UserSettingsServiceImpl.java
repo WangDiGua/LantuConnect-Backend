@@ -5,7 +5,6 @@ import com.lantu.connect.useractivity.entity.UsageRecord;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.exception.BusinessException;
-import com.lantu.connect.monitoring.mapper.CallLogMapper;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.usermgmt.ApiKeyScopes;
 import com.lantu.connect.usermgmt.dto.ApiKeyCreateRequest;
@@ -57,7 +56,6 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     private final ObjectMapper objectMapper;
     private final JdbcTemplate jdbcTemplate;
     private final UsageRecordMapper usageRecordMapper;
-    private final CallLogMapper callLogMapper;
     private final SessionTrackerService sessionTrackerService;
     private final SystemNotificationFacade systemNotificationFacade;
 
@@ -157,8 +155,6 @@ public class UserSettingsServiceImpl implements UserSettingsService {
         long skills = countResourceByTypeAndCreator("skill", userId);
         long usage = usageRecordMapper.selectCount(
                 new LambdaQueryWrapper<UsageRecord>().eq(UsageRecord::getUserId, userId));
-        String uid = String.valueOf(userId);
-        Long tokens = callLogMapper.sumTokensLast30Days(uid);
         Long bytes = jdbcTemplate.queryForObject(
                 "SELECT COALESCE(SUM(ext.file_size),0) FROM t_resource r JOIN t_resource_dataset_ext ext ON r.id = ext.resource_id "
                         + "WHERE r.deleted = 0 AND r.resource_type = 'dataset' AND r.created_by = ?",
@@ -170,7 +166,6 @@ public class UserSettingsServiceImpl implements UserSettingsService {
                 .totalAgents(agents)
                 .totalWorkflows(skills)
                 .totalApiCalls(usage)
-                .tokenUsage(tokens != null ? tokens : 0L)
                 .storageUsedMb(storageMb)
                 .activeSessions(activeSessions)
                 .period("30d")

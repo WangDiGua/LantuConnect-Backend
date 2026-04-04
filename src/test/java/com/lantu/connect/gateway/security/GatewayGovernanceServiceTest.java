@@ -48,6 +48,6 @@ class GatewayGovernanceServiceTest {
 
         service.applyPreInvoke(null, apiKey, "mcp", 9L, 1);
 
-        verify(quotaCheckService).checkAndConsume(eq(3L), anyInt());
+        verify(quotaCheckService).checkAndConsume(eq(3L), anyInt(), eq("mcp"));
     }
 }

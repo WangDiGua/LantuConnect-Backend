@@ -74,20 +74,16 @@ class ResourceInvokeGrantServicePolicyTest {
     }
 
     @Test
-    void ensureMayReviewGrantApplication_deptAdminOtherMenu_forbidden() {
+    void ensureMayReviewGrantApplication_reviewerCrossDepartment_ok() {
         doReturn(List.of(Map.of(
                 "created_by", 99L,
                 "access_policy", "grant_required")))
                 .when(jdbcTemplate).queryForList(anyString(), any(Object.class), any(Object.class));
         when(casbinAuthorizationService.hasAnyRole(10L, new String[]{"platform_admin", "admin"})).thenReturn(false);
-        when(casbinAuthorizationService.hasAnyRole(10L, new String[]{"dept_admin"})).thenReturn(true);
-        when(casbinAuthorizationService.userDepartmentMenuId(10L)).thenReturn(1L);
-        when(casbinAuthorizationService.userDepartmentMenuId(99L)).thenReturn(2L);
+        when(casbinAuthorizationService.hasAnyRole(10L, new String[]{"reviewer"})).thenReturn(true);
 
-        assertThatThrownBy(() -> resourceInvokeGrantService.ensureMayReviewGrantApplication(10L, "agent", 5L))
-                .isInstanceOf(BusinessException.class)
-                .extracting(ex -> ((BusinessException) ex).getCode())
-                .isEqualTo(ResultCode.FORBIDDEN.getCode());
+        assertThatCode(() -> resourceInvokeGrantService.ensureMayReviewGrantApplication(10L, "agent", 5L))
+                .doesNotThrowAnyException();
     }
 
     private static ApiKey userApiKey(String id, String ownerUserId) {

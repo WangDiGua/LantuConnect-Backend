@@ -18,6 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * 系统配置Quota服务实现
@@ -29,7 +31,21 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class QuotaServiceImpl implements QuotaService {
 
+    private static final Set<String> RESOURCE_CATEGORIES = Set.of(
+            "all", "agent", "skill", "mcp", "app", "dataset");
+
     private final QuotaMapper quotaMapper;
+
+    private static String normalizeResourceCategory(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return "all";
+        }
+        String v = raw.trim().toLowerCase(Locale.ROOT);
+        if (!RESOURCE_CATEGORIES.contains(v)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "resourceCategory 非法: " + raw);
+        }
+        return v;
+    }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -45,7 +61,8 @@ public class QuotaServiceImpl implements QuotaService {
             // 非数字则仅存名称语义
         }
         entity.setTargetId(targetId);
-        entity.setTargetName(request.getSubjectId() != null ? request.getSubjectId() : "");
+        entity.setTargetName(request.getSubjectName());
+        entity.setResourceCategory(normalizeResourceCategory(request.getResourceCategory()));
         entity.setDailyLimit(request.getDailyLimit() != null ? request.getDailyLimit().intValue() : 0);
         entity.setMonthlyLimit(request.getMonthlyLimit() != null ? request.getMonthlyLimit().intValue() : 0);
         entity.setDailyUsed(0);
@@ -77,6 +94,12 @@ public class QuotaServiceImpl implements QuotaService {
         if (request.getMonthlyUsed() != null) {
             existing.setMonthlyUsed(request.getMonthlyUsed().intValue());
         }
+        if (StringUtils.hasText(request.getTargetName())) {
+            existing.setTargetName(request.getTargetName().trim());
+        }
+        if (request.getResourceCategory() != null) {
+            existing.setResourceCategory(normalizeResourceCategory(request.getResourceCategory()));
+        }
         existing.setUpdateTime(LocalDateTime.now());
         quotaMapper.updateById(existing);
     }
@@ -100,11 +123,14 @@ public class QuotaServiceImpl implements QuotaService {
     }
 
     @Override
-    public PageResult<Quota> page(int page, int pageSize, String subjectType, String keyword) {
+    public PageResult<Quota> page(int page, int pageSize, String subjectType, String keyword, String resourceCategory) {
         Page<Quota> p = new Page<>(page, pageSize);
         LambdaQueryWrapper<Quota> q = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(subjectType)) {
             q.eq(Quota::getTargetType, subjectType);
+        }
+        if (StringUtils.hasText(resourceCategory)) {
+            q.eq(Quota::getResourceCategory, normalizeResourceCategory(resourceCategory));
         }
         String kw = ListQueryKeyword.normalize(keyword);
         if (kw != null) {

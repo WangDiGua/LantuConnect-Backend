@@ -87,16 +87,6 @@
             <version>2.29</version>
         </dependency>
 
-        <!-- Flyway：默认关闭（FLYWAY_ENABLED），详见 application.yml -->
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-mysql</artifactId>
-        </dependency>
-
         <!-- JWT -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>

@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
 /**
- * 资源授权申请工单：申请人提交 → **资源 owner 优先审批**；本部 dept_admin、platform_admin 可代管/全量（权限见 {@link com.lantu.connect.gateway.service.impl.GrantApplicationServiceImpl}）。
+ * 资源授权申请工单：申请人提交 → **资源 owner 优先审批**；reviewer、platform_admin/admin 可代管/全量（权限见 {@link com.lantu.connect.gateway.service.impl.GrantApplicationServiceImpl}）。
  */
 @RestController
 @RequestMapping("/grant-applications")

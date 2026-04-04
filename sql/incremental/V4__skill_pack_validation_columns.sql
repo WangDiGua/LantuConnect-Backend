@@ -1,4 +1,4 @@
--- 与 sql/migrations/20260401_skill_pack_validation.sql 对齐；未开启 Flyway 时需手动执行该 sql 文件。
+-- 与 sql/migrations/20260401_skill_pack_validation.sql 对齐；在 MySQL 中按需手工执行。
 -- MySQL 8.0：无 ADD COLUMN IF NOT EXISTS，使用 information_schema + 动态 SQL 保证幂等。
 
 SET NAMES utf8mb4;

@@ -34,6 +34,8 @@ public final class ResourceResolveSpecSanitizer {
                 .resourceCode(source.getResourceCode())
                 .displayName(source.getDisplayName())
                 .status(source.getStatus())
+                .createdBy(source.getCreatedBy())
+                .createdByName(source.getCreatedByName())
                 .invokeType(source.getInvokeType())
                 .endpoint(source.getEndpoint())
                 .spec(spec == null ? null : sanitizeSpec(spec))

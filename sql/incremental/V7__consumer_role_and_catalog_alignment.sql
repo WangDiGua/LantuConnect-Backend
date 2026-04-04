@@ -3,7 +3,7 @@ INSERT INTO t_platform_role (role_code, role_name, description, permissions, is_
 VALUES (
         'consumer',
         '消费者',
-        '目录与市场只读（五类资源浏览所需 Casbin 权限；不含注册/发布/审核）',
+        '使用已上架五类资源（目录/Grant/个人 Key 等）；可申请开发者入驻及个人账号能力；mcp 与 skill 共用 skill:read；不含资源注册/发布与平台级审核',
         JSON_ARRAY('agent:read', 'skill:read', 'app:view', 'dataset:read'),
         1,
         0

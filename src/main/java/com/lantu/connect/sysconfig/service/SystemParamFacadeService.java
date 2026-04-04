@@ -1,6 +1,7 @@
 package com.lantu.connect.sysconfig.service;
 
 import com.lantu.connect.common.result.PageResult;
+import com.lantu.connect.sysconfig.dto.AclPathRulePayload;
 import com.lantu.connect.sysconfig.dto.AuditLogQueryRequest;
 import com.lantu.connect.sysconfig.dto.SecuritySettingUpsertRequest;
 import com.lantu.connect.sysconfig.dto.SystemParamUpsertRequest;
@@ -29,9 +30,15 @@ public interface SystemParamFacadeService {
 
     PageResult<AuditLog> pageAuditLogs(AuditLogQueryRequest request);
 
-    Map<String, Object> applyNetwork(Long operatorUserId);
+    Map<String, Object> applyNetwork(Long operatorUserId, List<String> rules);
 
-    Map<String, Object> publishAcl(Long operatorUserId);
+    /**
+     * 持久化路径级 ACL 规则；集成关闭时为落库 + 通知，真实网关联动由 infra 订阅该参数或其它管道实现。
+     */
+    Map<String, Object> publishAcl(Long operatorUserId, List<AclPathRulePayload> rules);
+
+    /** 管理端网络白名单 CIDR 列表（来自 t_system_param） */
+    List<String> getNetworkAllowlist();
 
     /**
      * ACL 规则列表（无独立存储时返回空列表；键 {@code rules} 与前端约定一致）。

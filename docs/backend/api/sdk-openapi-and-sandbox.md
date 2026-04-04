@@ -1,5 +1,7 @@
 # SDK OpenAPI 与沙箱后端落地
 
+**目录/解析横切契约**（`include`、`access_policy`、推荐前端调用链）：见 [public-catalog-contract.md](../../api/public-catalog-contract.md)。
+
 ## 本次目标
 - 输出稳定 SDK v1 网关接口（独立路径，便于后续版本治理）。
 - 提供后端沙箱会话与隔离调用能力，支持开发者调试与限额控制。

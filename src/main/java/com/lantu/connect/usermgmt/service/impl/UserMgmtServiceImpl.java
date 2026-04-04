@@ -65,12 +65,6 @@ public class UserMgmtServiceImpl implements UserMgmtService {
             page.addOrder(asc ? OrderItem.asc(com.baomidou.mybatisplus.core.toolkit.StringUtils.camelToUnderline(request.getSortBy())) : OrderItem.desc(com.baomidou.mybatisplus.core.toolkit.StringUtils.camelToUnderline(request.getSortBy())));
         }
         LambdaQueryWrapper<User> w = new LambdaQueryWrapper<>();
-        if (operatorUserId != null && shouldScopeUsersByDeptMenu(operatorUserId)) {
-            User op = userMapper.selectById(operatorUserId);
-            if (op != null && op.getMenuId() != null) {
-                w.eq(User::getMenuId, op.getMenuId());
-            }
-        }
         if (StringUtils.hasText(request.getStatus()) && !"all".equalsIgnoreCase(request.getStatus().trim())) {
             w.eq(User::getStatus, request.getStatus().trim());
         }
@@ -88,16 +82,6 @@ public class UserMgmtServiceImpl implements UserMgmtService {
         }
         Page<User> result = userMapper.selectPage(page, w);
         return PageResults.from(result);
-    }
-
-    private boolean shouldScopeUsersByDeptMenu(Long operatorUserId) {
-        List<PlatformRole> roles = platformRoleMapper.selectRolesByUserId(operatorUserId);
-        boolean dept = roles.stream().anyMatch(r -> "dept_admin".equals(r.getRoleCode()));
-        boolean platform = roles.stream().anyMatch(r -> {
-            String c = r.getRoleCode();
-            return "platform_admin".equals(c) || "admin".equals(c);
-        });
-        return dept && !platform;
     }
 
     @Override

@@ -61,7 +61,7 @@
 |-----------|----------|---------------|--------|------|
 | category-management | CategoryManagement | `categoryService` | CRUD | 工具栏树检索（客户端） |
 | tag-management | TagManagementPage | `tagService` | CRUD | — |
-| model-config / rate-limit-policy | ModelConfigPage / RateLimitPage | `systemConfigService` | CRUD | — |
+| ~~model-config~~（已移除） / rate-limit-policy | RateLimitPage | `systemConfigService` | CRUD（限流） | — |
 | security-settings / 系统参数 | SystemConfigExtraPages | `getSecurity` / `getParams` | CRUD | — |
 | quota-management | **QuotaManagementPage** | `quotaService`（配额 **update**、限流 **delete**） | clientFilter | 工具栏 keyword + 范围/目标类型；限流无 update API |
 | access-control | AccessControlPage | **`getAclRules`** + `publishAcl` | serverPaged + 写 | 曾用本地假数据初始化，已改为拉取 `/system-config/acl` |

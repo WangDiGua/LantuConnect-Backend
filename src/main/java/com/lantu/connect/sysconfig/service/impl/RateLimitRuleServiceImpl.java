@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
 
 /**
  * 系统配置RateLimitRule服务实现
@@ -32,19 +33,50 @@ public class RateLimitRuleServiceImpl implements RateLimitRuleService {
     private final RateLimitRuleMapper rateLimitRuleMapper;
     private final PathRateLimitRuleCache pathRateLimitRuleCache;
 
+    private static String normScope(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        String v = raw.trim().toLowerCase(Locale.ROOT);
+        return "all".equals(v) ? "all" : v;
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public String create(RateLimitRuleCreateRequest request) {
         RateLimitRule entity = new RateLimitRule();
         entity.setName(request.getName());
-        entity.setTarget("path");
-        entity.setTargetValue(request.getPathPattern() != null ? request.getPathPattern() : "/**");
-        entity.setWindowMs(60_000L);
-        entity.setMaxRequests(request.getLimitPerMinute() != null ? request.getLimitPerMinute() : 100);
-        entity.setMaxTokens(request.getLimitPerDay() != null ? request.getLimitPerDay() : 0);
-        entity.setBurstLimit(10);
-        entity.setAction("reject");
-        entity.setPriority(0);
+
+        boolean pathLegacy = StringUtils.hasText(request.getPathPattern())
+                && !StringUtils.hasText(request.getTarget());
+        boolean pathExplicit = "path".equalsIgnoreCase(String.valueOf(request.getTarget()));
+
+        if (pathLegacy || pathExplicit) {
+            entity.setTarget("path");
+            entity.setTargetValue(request.getPathPattern() != null ? request.getPathPattern()
+                    : request.getTargetValue() != null ? request.getTargetValue() : "/**");
+            entity.setWindowMs(60_000L);
+            entity.setMaxRequests(request.getLimitPerMinute() != null ? request.getLimitPerMinute() : 100);
+            entity.setMaxTokens(request.getLimitPerDay() != null ? request.getLimitPerDay() : 0);
+            entity.setBurstLimit(10);
+            entity.setAction("reject");
+            entity.setPriority(0);
+            entity.setResourceScope(null);
+        } else {
+            String target = StringUtils.hasText(request.getTarget()) ? request.getTarget().trim().toLowerCase(Locale.ROOT) : "global";
+            entity.setTarget(target);
+            entity.setTargetValue(request.getTargetValue());
+            entity.setWindowMs(request.getWindowMs() != null && request.getWindowMs() > 0 ? request.getWindowMs() : 60_000L);
+            entity.setMaxRequests(request.getMaxRequests() != null && request.getMaxRequests() > 0 ? request.getMaxRequests() : 1000);
+            entity.setMaxTokens(request.getMaxTokens());
+            entity.setBurstLimit(request.getBurstLimit() != null && request.getBurstLimit() > 0 ? request.getBurstLimit() : 50);
+            String action = StringUtils.hasText(request.getAction()) ? request.getAction().trim().toLowerCase(Locale.ROOT) : "reject";
+            entity.setAction(action);
+            entity.setPriority(request.getPriority() != null ? request.getPriority() : 0);
+            String rs = normScope(request.getResourceScope());
+            entity.setResourceScope(rs);
+        }
+
         entity.setEnabled(request.getEnabled() == null || request.getEnabled() != 0);
         LocalDateTime now = LocalDateTime.now();
         entity.setCreateTime(now);
@@ -64,14 +96,43 @@ public class RateLimitRuleServiceImpl implements RateLimitRuleService {
         if (request.getName() != null) {
             existing.setName(request.getName());
         }
+        if (request.getTarget() != null) {
+            existing.setTarget(request.getTarget().trim().toLowerCase(Locale.ROOT));
+        }
         if (request.getPathPattern() != null) {
             existing.setTargetValue(request.getPathPattern());
+            existing.setTarget("path");
+        }
+        if (request.getTargetValue() != null) {
+            existing.setTargetValue(request.getTargetValue());
+        }
+        if (request.getWindowMs() != null && request.getWindowMs() > 0) {
+            existing.setWindowMs(request.getWindowMs());
         }
         if (request.getLimitPerMinute() != null) {
             existing.setMaxRequests(request.getLimitPerMinute());
         }
+        if (request.getMaxRequests() != null) {
+            existing.setMaxRequests(request.getMaxRequests());
+        }
         if (request.getLimitPerDay() != null) {
             existing.setMaxTokens(request.getLimitPerDay());
+        }
+        if (request.getMaxTokens() != null) {
+            existing.setMaxTokens(request.getMaxTokens());
+        }
+        if (request.getBurstLimit() != null) {
+            existing.setBurstLimit(request.getBurstLimit());
+        }
+        if (request.getAction() != null) {
+            existing.setAction(request.getAction().trim().toLowerCase(Locale.ROOT));
+        }
+        if (request.getPriority() != null) {
+            existing.setPriority(request.getPriority());
+        }
+        if (request.getResourceScope() != null) {
+            String rs = normScope(request.getResourceScope());
+            existing.setResourceScope(rs);
         }
         if (request.getEnabled() != null) {
             existing.setEnabled(request.getEnabled() != 0);

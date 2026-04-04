@@ -2,7 +2,7 @@ package com.lantu.connect.onboarding.controller;
 
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.R;
-import com.lantu.connect.common.security.RequirePermission;
+import com.lantu.connect.common.security.RequireRole;
 import com.lantu.connect.onboarding.dto.DeveloperApplicationCreateRequest;
 import com.lantu.connect.onboarding.dto.DeveloperApplicationQueryRequest;
 import com.lantu.connect.onboarding.dto.DeveloperApplicationReviewRequest;
@@ -20,6 +20,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+/**
+ * 开发者入驻申请：任意已登录用户（含 {@code user}）可 {@code POST} 提交与查询本人申请；
+ * 列表与审批由平台超管或全平台审核员（reviewer）执行。
+ */
 @RestController
 @RequestMapping("/developer/applications")
 @RequiredArgsConstructor
@@ -39,13 +43,13 @@ public class DeveloperApplicationController {
     }
 
     @GetMapping
-    @RequirePermission("user:manage")
+    @RequireRole({"platform_admin", "admin", "reviewer"})
     public R<PageResult<DeveloperApplication>> list(DeveloperApplicationQueryRequest request) {
         return R.ok(developerApplicationService.list(request));
     }
 
     @PostMapping("/{id}/approve")
-    @RequirePermission("user:manage")
+    @RequireRole({"platform_admin", "admin", "reviewer"})
     public R<Void> approve(@PathVariable Long id,
                            @RequestHeader("X-User-Id") Long reviewerId,
                            @RequestBody(required = false) DeveloperApplicationReviewRequest request) {
@@ -55,7 +59,7 @@ public class DeveloperApplicationController {
     }
 
     @PostMapping("/{id}/reject")
-    @RequirePermission("user:manage")
+    @RequireRole({"platform_admin", "admin", "reviewer"})
     public R<Void> reject(@PathVariable Long id,
                           @RequestHeader("X-User-Id") Long reviewerId,
                           @Valid @RequestBody DeveloperApplicationReviewRequest request) {

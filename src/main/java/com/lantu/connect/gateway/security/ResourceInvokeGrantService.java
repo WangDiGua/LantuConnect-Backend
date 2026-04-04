@@ -156,7 +156,7 @@ public class ResourceInvokeGrantService {
     }
 
     /**
-     * 授权申请工单审批：资源 owner、同部门 dept_admin、platform_admin/admin（与 Grant 管理一致）。
+     * 授权申请工单审批：资源 owner、全平台审核员(reviewer)、platform_admin/admin（与 Grant 管理一致）。
      */
     public void ensureMayReviewGrantApplication(Long operatorUserId, String resourceType, Long resourceId) {
         GrantContext ctx = loadGrantContext(resourceType, resourceId);
@@ -167,7 +167,7 @@ public class ResourceInvokeGrantService {
     }
 
     /**
-     * 审核流发布（testing→published）：与 {@link #ensureCanManageGrant} 同款（owner、同部门 dept_admin、platform_admin/admin）。
+     * 审核流发布（testing→published）：与 {@link #ensureCanManageGrant} 同款（owner、reviewer、platform_admin/admin）。
      */
     public void ensureMayPublishAuditedResource(Long operatorUserId, String resourceType, Long resourceId) {
         if (operatorUserId == null) {
@@ -227,16 +227,8 @@ public class ResourceInvokeGrantService {
         if (casbinAuthorizationService.hasAnyRole(operatorUserId, new String[]{"platform_admin", "admin"})) {
             return;
         }
-        if (casbinAuthorizationService.hasAnyRole(operatorUserId, new String[]{"dept_admin"})) {
-            if (ownerUserId == null) {
-                throw new BusinessException(ResultCode.FORBIDDEN, "资源无拥有者信息，部门管理员无法代管授权");
-            }
-            Long opMenu = casbinAuthorizationService.userDepartmentMenuId(operatorUserId);
-            Long ownerMenu = casbinAuthorizationService.userDepartmentMenuId(ownerUserId);
-            if (opMenu != null && opMenu.equals(ownerMenu)) {
-                return;
-            }
-            throw new BusinessException(ResultCode.FORBIDDEN, "部门管理员仅可管理本部门开发者资源的授权");
+        if (casbinAuthorizationService.hasAnyRole(operatorUserId, new String[]{"reviewer"})) {
+            return;
         }
         throw new BusinessException(ResultCode.FORBIDDEN, "仅资源拥有者或管理员可管理授权");
     }

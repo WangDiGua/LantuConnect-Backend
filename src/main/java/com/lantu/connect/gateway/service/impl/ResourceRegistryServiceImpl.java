@@ -21,7 +21,6 @@ import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
 import com.lantu.connect.gateway.service.support.SkillPackSkillRootPath;
 import com.lantu.connect.gateway.service.support.SkillPackValidationStatus;
-import com.lantu.connect.common.util.DeptScopeHelper;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.notification.service.NotificationEventCodes;
 import com.lantu.connect.notification.service.NotificationService;
@@ -65,7 +64,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     private final ObjectMapper objectMapper;
     private final PlatformRoleMapper platformRoleMapper;
     private final ProtocolInvokerRegistry protocolInvokerRegistry;
-    private final DeptScopeHelper deptScopeHelper;
     private final UserDisplayNameResolver userDisplayNameResolver;
     private final NotificationService notificationService;
     private final SystemNotificationFacade systemNotificationFacade;
@@ -157,6 +155,10 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         jdbcTemplate.update("UPDATE t_resource_version SET status = 'inactive', is_current = 0 WHERE resource_id = ?", resourceId);
     }
 
+    /**
+     * 开发者提审：写入全局审核队列 {@code t_audit_item}（无部门字段、不按组织派单）。
+     * 所有绑定 {@code reviewer} 的账号拉取的是同一份全平台待审列表；通知会推送给每一位审核员。
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ResourceManageVO submitForAudit(Long operatorUserId, Long resourceId) {
@@ -203,7 +205,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 row.sourceType(),
                 String.valueOf(operatorUserId));
 
-        notifyDeptAdmins(operatorUserId, NotificationEventCodes.RESOURCE_SUBMITTED,
+        notifyReviewers(NotificationEventCodes.RESOURCE_SUBMITTED,
                 "新资源待审核",
                 """
                         事件: 资源提审
@@ -353,13 +355,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             where.append(" AND created_by = ? ");
             countArgs.add(operatorUserId);
             listArgs.add(operatorUserId);
-        } else if (deptScopeHelper.isDeptAdminOnly(operatorUserId)) {
-            Long menuId = deptScopeHelper.getCurrentUserMenuId();
-            if (menuId != null) {
-                where.append(" AND created_by IN (SELECT user_id FROM t_user WHERE menu_id = ? AND deleted = 0) ");
-                countArgs.add(menuId);
-                listArgs.add(menuId);
-            }
         }
         if (StringUtils.hasText(normalizedType)) {
             where.append(" AND resource_type = ? ");
@@ -1152,7 +1147,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
         List<PlatformRole> roles = platformRoleMapper.selectRolesByUserId(userId);
         return roles.stream().map(PlatformRole::getRoleCode).anyMatch(code ->
-                "platform_admin".equals(code) || "dept_admin".equals(code));
+                "platform_admin".equals(code) || "admin".equals(code) || "reviewer".equals(code));
     }
 
     private void upsertDefaultVersion(Long resourceId, Map<String, Object> snapshot, boolean makeCurrent) {
@@ -1823,25 +1818,15 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
     }
 
-    private void notifyDeptAdmins(Long submitterUserId, String type, String title, String body, Long resourceId) {
-        Long menuId = null;
-        if (submitterUserId != null) {
-            var user = jdbcTemplate.queryForList("SELECT menu_id FROM t_user WHERE user_id = ? AND deleted = 0 LIMIT 1", submitterUserId);
-            if (!user.isEmpty() && user.get(0).get("menu_id") != null) {
-                menuId = Long.valueOf(String.valueOf(user.get(0).get("menu_id")));
-            }
-        }
-        String sql = menuId != null
-                ? "SELECT ur.user_id FROM t_user_role_rel ur JOIN t_platform_role r ON ur.role_id = r.id JOIN t_user u ON ur.user_id = u.user_id WHERE r.role_code = 'dept_admin' AND u.menu_id = ? AND u.deleted = 0"
-                : "SELECT ur.user_id FROM t_user_role_rel ur JOIN t_platform_role r ON ur.role_id = r.id WHERE r.role_code = 'dept_admin'";
-        java.util.List<java.util.Map<String, Object>> admins = menuId != null
-                ? jdbcTemplate.queryForList(sql, menuId)
-                : jdbcTemplate.queryForList(sql);
-        java.util.List<Long> adminIds = admins.stream()
+    /** 向所有审核员推送通知（不按部门过滤；待审项不独占派给某人，全体 reviewer 共用同一全平台队列）。 */
+    private void notifyReviewers(String type, String title, String body, Long resourceId) {
+        String sql = "SELECT ur.user_id FROM t_user_role_rel ur JOIN t_platform_role r ON ur.role_id = r.id WHERE r.role_code = 'reviewer'";
+        java.util.List<java.util.Map<String, Object>> reviewers = jdbcTemplate.queryForList(sql);
+        java.util.List<Long> reviewerIds = reviewers.stream()
                 .map(r -> Long.valueOf(String.valueOf(r.get("user_id"))))
                 .toList();
-        if (!adminIds.isEmpty()) {
-            notificationService.broadcast(adminIds, type, title, body, "resource", resourceId);
+        if (!reviewerIds.isEmpty()) {
+            notificationService.broadcast(reviewerIds, type, title, body, "resource", resourceId);
         }
     }
 

@@ -20,13 +20,6 @@ public class DeptScopeHelper {
         return casbinAuthorizationService.userDepartmentMenuId(userId);
     }
 
-    public boolean isDeptAdminOnly(Long userId) {
-        if (userId == null) {
-            return false;
-        }
-        return casbinAuthorizationService.isDeptAdminOnly(userId);
-    }
-
     public Long getCurrentUserId() {
         var attrs = RequestContextHolder.getRequestAttributes();
         if (attrs instanceof ServletRequestAttributes sra) {

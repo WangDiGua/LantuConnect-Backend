@@ -23,6 +23,9 @@ public class RateLimitRule {
     private String name;
     private String target;
     private String targetValue;
+
+    /** null / all：任意资源类型；否则仅对对应 resource_type 的调用生效（网关侧） */
+    private String resourceScope;
     private Long windowMs;
     private Integer maxRequests;
     private Integer maxTokens;

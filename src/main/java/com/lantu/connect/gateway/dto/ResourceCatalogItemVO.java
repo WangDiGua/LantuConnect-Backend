@@ -1,5 +1,6 @@
 package com.lantu.connect.gateway.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 import lombok.Data;
 
@@ -9,6 +10,7 @@ import java.util.Map;
 
 @Data
 @Builder
+@Schema(description = "目录单项；列表接口分页返回")
 public class ResourceCatalogItemVO {
 
     private String resourceType;
@@ -25,21 +27,41 @@ public class ResourceCatalogItemVO {
 
     private String sourceType;
 
-    /** 开发者配置的消费策略；网关 Grant 短路见后续阶段。 */
+    /** 开发者配置的消费策略（{@code t_resource.access_policy}）；网关 Grant 短路见 {@link com.lantu.connect.gateway.security.ResourceInvokeGrantService#ensureApiKeyGranted}。 */
+    @Schema(
+            description = "消费策略：`grant_required` 非 owner 须 Grant；`open_org` 同部门(menuId) Key 免 Grant；`open_platform` 租户内有效 Key 免 Grant。"
+                    + " 均需有效 X-Api-Key 与 scope。",
+            allowableValues = {"grant_required", "open_org", "open_platform"},
+            example = "grant_required")
     private String accessPolicy;
 
     private LocalDateTime updateTime;
 
+    /** {@code t_resource.created_by} */
+    private Long createdBy;
+
+    /** 创建者展示名（由 {@link com.lantu.connect.common.util.UserDisplayNameResolver} 批量解析） */
+    private String createdByName;
+
+    /** {@code t_review} 平均分，无评论时为 null */
+    private Double ratingAvg;
+
+    /** {@code t_review} 条数（{@code deleted=0}），无评论时为 null */
+    private Long reviewCount;
+
     /** 目录标签名（t_resource_tag_rel + t_tag），与市场筛选 tags 一致 */
+    @Schema(description = "资源标签名列表（t_resource_tag_rel）；请求 `include` 含 tags 时与扩展块语义一致")
     private List<String> tags;
 
     /**
      * include=observability 时返回。
      */
+    @Schema(description = "仅当请求包含 include=observability 时存在")
     private Map<String, Object> observability;
 
     /**
      * include=quality 时返回。
      */
+    @Schema(description = "仅当请求包含 include=quality 时存在")
     private Map<String, Object> quality;
 }

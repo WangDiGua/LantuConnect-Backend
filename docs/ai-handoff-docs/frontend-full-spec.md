@@ -90,7 +90,7 @@
 | monitoring | `health-config` | `#/admin/health-config` | `MonitoringModule` | reachable | 子项级权限 |
 | monitoring | `circuit-breaker` | `#/admin/circuit-breaker` | `MonitoringModule` | reachable | 子项级权限 |
 | system-config | `tag-management` | `#/admin/tag-management` | `SystemConfigModule` | reachable | 菜单级权限 |
-| system-config | `model-config` | `#/admin/model-config` | `SystemConfigModule` | reachable | 菜单级权限 |
+| system-config | ~~`model-config`~~（已移除） | — | `SystemConfigModule` | — | 产品不再提供大模型配置 |
 | system-config | `security-settings` | `#/admin/security-settings` | `SystemConfigModule` | reachable | 菜单级权限 |
 | system-config | `quota-management` | `#/admin/quota-management` | `SystemConfigModule` | reachable | 菜单级权限 |
 | system-config | `rate-limit-policy` | `#/admin/rate-limit-policy` | `SystemConfigModule` | reachable | 菜单级权限 |
@@ -189,7 +189,6 @@
 | `RoleListPage` | 搜索、分页、创建、编辑、删除、权限勾选 | 是 | 角色管理 |
 | `ApiKeyListPage` | 搜索、分页、创建、复制、撤销 | 是/否混合 | 复制为本地行为 |
 | `OrgStructurePage` | 重试加载、节点展开 | 是/否 | 组织树 |
-| `ModelConfigPage` | 搜索、创建、编辑、启用切换、删除、分页 | 是 | - |
 | `RateLimitPage` | 创建、编辑、删除、保存、取消、筛选 | 是 | - |
 | `AuditLogPage` | 搜索、行为筛选、分页、导出 | 是 | - |
 | `TagManagementPage` | 分类切换、新增、批量导入、删除、展开 | 是 | - |
@@ -463,11 +462,6 @@
 
 | Service#method | Method | Path | 在用证据 | 触发场景 |
 |---|---|---|---|---|
-| `systemConfigService.listModelConfigs` | GET | `/system-config/model-configs` | 在用(代码+页面) | 模型配置列表 |
-| `systemConfigService.getModelConfigById` | GET | `/system-config/model-configs/{id}` | 在用(仅service) | 单条查询 |
-| `systemConfigService.createModelConfig` | POST | `/system-config/model-configs` | 在用(代码+页面) | 创建 |
-| `systemConfigService.updateModelConfig` | PUT | `/system-config/model-configs/{id}` | 在用(代码+页面) | 更新 |
-| `systemConfigService.deleteModelConfig` | DELETE | `/system-config/model-configs/{id}` | 在用(代码+页面) | 删除 |
 | `systemConfigService.listRateLimits` | GET | `/system-config/rate-limits` | 在用(代码+页面) | 限流规则列表 |
 | `systemConfigService.getRateLimitById` | GET | `/system-config/rate-limits/{id}` | 在用(仅service) | 单条查询 |
 | `systemConfigService.createRateLimit` | POST | `/system-config/rate-limits` | 在用(代码+页面) | 创建 |

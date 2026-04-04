@@ -18,4 +18,6 @@ public class QuotaUpdateRequest {
     private Long monthlyLimit;
     private Long dailyUsed;
     private Long monthlyUsed;
+    private String targetName;
+    private String resourceCategory;
 }

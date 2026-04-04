@@ -48,10 +48,10 @@
 | 环节 | 行为（与角色并行） |
 |------|---------------------|
 | **登录用户读目录类型** | `GatewayUserPermissionService`：非 `platform_admin` 时需具备如 `skill:read`、`agent:read` 等（按资源类型组合）；**与「是否开发者」解耦，由 Casbin 权限决定**。 |
-| **带 API Key 的 catalog / resolve / invoke** | `UnifiedGatewayServiceImpl`：`apiKeyScopeService` + **`ResourceInvokeGrantService.ensureApiKeyGranted`**（platform key / owner key / 显式 Grant）。 |
-| **「免 Grant 开放访问」** | **无** 资源级 `accessPolicy` 之类字段短路；MCP 等 **未** 像 skill 的 `is_public` 那样在网关侧表达「免 Grant」。 |
+| **带 API Key 的 catalog / resolve / invoke** | `UnifiedGatewayServiceImpl`：`apiKeyScopeService` + **`ResourceInvokeGrantService.ensureApiKeyGranted`**（platform key / owner key / 同资源 caller 免 Grant / 显式 Grant）。 |
+| **资源级「免 Grant」短路** | **`t_resource.access_policy`**（`ResourceAccessPolicy`）：`open_platform` 时对已通过上层校验的非平台 Key **免 Grant**；`open_org` 时仅 **user 归属 Key** 且 Key 用户与资源 owner **同部门（menuId）** 时免 Grant；`grant_required` 仍走 Grant。见 [`ResourceInvokeGrantService#isGrantWaivedByAccessPolicy`](src/main/java/com/lantu/connect/gateway/security/ResourceInvokeGrantService.java)。注册侧在 `ResourceUpsertRequest.accessPolicy` / [`ResourceRegistryServiceImpl`](src/main/java/com/lantu/connect/gateway/service/impl/ResourceRegistryServiceImpl.java)。 |
 
-结论：**消费侧默认「每条资源要 Grant（或 owner/platform key）」**；与「开发者声明可公开调用」的目标 **尚有差距**。
+结论：**消费侧已具备资源级策略**；与 §2.2–2.3 所述「目标叙事」中的 **公开/组织内免 Grant** 已在网关核心路径落地（仍须 **有效 API Key + scope** 等前置校验）。下文 **§四「公开/免 Grant 消费」一行** 与 **阶段 A/B** 描述已与实现对齐。
 
 ### 2.5 超管日常占用的能力（不完全列举）
 
@@ -88,7 +88,7 @@
 | **资源发布 publish** | owner / 同部门 dept_admin / platform_admin、admin（服务层校验） | **与 Grant 代管范围一致的自发布**；超管兜底 |
 | **Grant 直接写入** | owner + dept_admin + platform_admin | **主路径：owner**；dept_admin **限定本部资源**；超管兜底 |
 | **Grant 申请待办/审批** | 仅 `platform_admin`，且无部门过滤 | **owner 审批** 或 **部门审批（限本部）**；超管兜底/升级 |
-| **公开/免 Grant 消费** | 无统一资源策略，基本必 Grant | **资源级策略** + `ensureApiKeyGranted` 前短路（仍保留 Key + scope 等） |
+| **公开/免 Grant 消费** | **`access_policy`**：`open_platform` / `open_org` / `grant_required`，在 `ensureApiKeyGranted` 内短路（仍须 Key + scope；owner/platform key 仍免） | 与左栏一致；产品侧持续澄清 **open_org 与 menuId**、与文档/OpenAPI 对齐 |
 | 网关读权限 | Casbin 按资源类型 | 可与「开发者 / 消费者」角色继续对齐 |
 | 开发者看自身统计 | 需专门接口与埋点（下载与 invoke 不同源） | **按 owner 维度的仪表**（调用、下载等分列） |
 

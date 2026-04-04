@@ -107,16 +107,9 @@ public class OwnerDeveloperStatsServiceImpl implements OwnerDeveloperStatsServic
         if (operatorUserId == targetOwnerUserId) {
             return;
         }
-        if (casbinAuthorizationService.hasAnyRole(operatorUserId, new String[]{"platform_admin", "admin"})) {
+        if (casbinAuthorizationService.hasAnyRole(operatorUserId, new String[]{"platform_admin", "admin", "reviewer"})) {
             return;
         }
-        if (casbinAuthorizationService.isDeptAdminOnly(operatorUserId)) {
-            Long opMenu = casbinAuthorizationService.userDepartmentMenuId(operatorUserId);
-            Long owMenu = casbinAuthorizationService.userDepartmentMenuId(targetOwnerUserId);
-            if (opMenu != null && opMenu.equals(owMenu)) {
-                return;
-            }
-        }
-        throw new BusinessException(ResultCode.FORBIDDEN, "仅资源拥有者、同部门部门管理员或平台管理员可查看该开发者的统计");
+        throw new BusinessException(ResultCode.FORBIDDEN, "仅资源拥有者、审核员或平台管理员可查看该开发者的统计");
     }
 }

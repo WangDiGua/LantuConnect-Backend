@@ -1,12 +1,10 @@
 package com.lantu.connect.gateway.controller;
 
-import com.lantu.connect.auth.mapper.UserRoleRelMapper;
 import com.lantu.connect.auth.support.AccessTokenBlacklist;
 import com.lantu.connect.auth.support.SessionRevocationRegistry;
 import com.lantu.connect.common.config.SecurityProperties;
 import com.lantu.connect.common.exception.GlobalExceptionHandler;
 import com.lantu.connect.common.filter.JwtAuthenticationFilter;
-import com.lantu.connect.common.filter.UnassignedUserAccessFilter;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.security.CasbinAuthorizationService;
 import com.lantu.connect.common.security.RequirePermissionAspect;
@@ -43,7 +41,6 @@ class SkillExternalCatalogControllerWebMvcTest {
         JwtUtil jwtUtil = mock(JwtUtil.class);
         AccessTokenBlacklist blacklist = mock(AccessTokenBlacklist.class);
         SessionRevocationRegistry sessionRevocationRegistry = mock(SessionRevocationRegistry.class);
-        UserRoleRelMapper userRoleRelMapper = mock(UserRoleRelMapper.class);
         ApiKeyScopeService apiKeyScopeService = mock(ApiKeyScopeService.class);
 
         SecurityProperties properties = new SecurityProperties();
@@ -52,15 +49,11 @@ class SkillExternalCatalogControllerWebMvcTest {
         when(sessionRevocationRegistry.isRevoked(any())).thenReturn(false);
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(
                 jwtUtil, blacklist, sessionRevocationRegistry, properties, apiKeyScopeService);
-        UnassignedUserAccessFilter unassignedFilter = new UnassignedUserAccessFilter(userRoleRelMapper, properties);
-
         Claims claims = mock(Claims.class);
         when(claims.getSubject()).thenReturn("1");
         when(claims.get("type", String.class)).thenReturn("access");
         when(blacklist.contains(any())).thenReturn(false);
         when(jwtUtil.parseToken("token-admin")).thenReturn(claims);
-        when(userRoleRelMapper.selectRoleIdsByUserId(1L)).thenReturn(List.of(10L));
-
         SkillExternalCatalogService catalogService = mock(SkillExternalCatalogService.class);
         when(catalogService.listCatalogPage(isNull(), eq(1), eq(20))).thenReturn(PageResult.of(List.of(
                 SkillExternalCatalogItemVO.builder()
@@ -79,7 +72,7 @@ class SkillExternalCatalogControllerWebMvcTest {
         mockMvc = MockMvcBuilders
                 .standaloneSetup(proxied)
                 .setControllerAdvice(new GlobalExceptionHandler())
-                .addFilters(jwtFilter, unassignedFilter)
+                .addFilters(jwtFilter)
                 .build();
     }
 

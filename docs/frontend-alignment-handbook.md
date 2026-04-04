@@ -14,6 +14,8 @@
 - 即使与现状一致也必须标注 `保留`，避免误删。
 - 后端接口以当前代码为真值：`src/main/java/com/lantu/connect/**/controller/*.java`。
 - 资源注册闭环的前端落地步骤见：`docs/frontend-resource-registration-runbook.md`。
+- User 分区路由与接口全量对账（与 `LantuConnect-Frontend` 联评）：[`docs/audit/frontend-user-role-alignment-2026-04.md`](audit/frontend-user-role-alignment-2026-04.md)。
+- Developer（开发者平台角色）分区：[`docs/audit/frontend-developer-role-alignment-2026-04.md`](audit/frontend-developer-role-alignment-2026-04.md)。
 
 ---
 
@@ -179,7 +181,7 @@
 | 用户管理、角色、组织、API Key | `/user-mgmt/*` | 保留 | 同现状 |
 | 监控与告警 | `/monitoring/*` | 保留 | 同现状 |
 | 健康检查与熔断 | `/health/*` | 保留 | 同现状 |
-| 系统配置 | `/system-config/*`、`/system-config/model-configs`、`/system-config/rate-limits` | 保留 | 同现状 |
+| 系统配置 | `/system-config/*`、`/system-config/rate-limits`（`/system-config/model-configs*` **已移除**） | 保留 | 同现状 |
 | 配额与运营限流 | `/quotas`、`/rate-limits` | 保留 | 同现状 |
 | 看板 | `/dashboard/*` | 保留 | 同现状 |
 | 评论评价 | `/reviews/*` | 保留 | 同现状 |
@@ -229,7 +231,7 @@
 | `circuit-breaker` | 保留 | `/health/circuit-breakers*` |
 | `category-management` | 下线 | 旧 `/v1/categories/**` 已删除 |
 | `tag-management` | 保留 | `/tags*` |
-| `model-config` | 保留 | `/system-config/model-configs*` |
+| `model-config` | **已移除** | 产品与后端均不提供大模型配置页/API；数据库表 `t_model_config` 已删（Flyway V18） |
 | `security-settings` | 保留 | `/system-config/security` |
 | `quota-management` | 保留 | `/quotas*`,`/rate-limits*` |
 | `rate-limit-policy` | 保留 | `/system-config/rate-limits*` |
@@ -372,9 +374,9 @@ Controller 方法无类级 `@RequireRole`；**待办可见范围与通过/驳回
 |---|---|---|---|---|
 | POST | `/developer/applications` | body:`DeveloperApplicationCreateRequest` | `X-User-Id` | 保留 |
 | GET | `/developer/applications/me` | 无 | `X-User-Id` | 保留 |
-| GET | `/developer/applications` | query:`DeveloperApplicationQueryRequest` | `@RequirePermission(user:manage)` | 保留 |
-| POST | `/developer/applications/{id}/approve` | body:`DeveloperApplicationReviewRequest?` | `@RequirePermission(user:manage)` + `X-User-Id` | 保留 |
-| POST | `/developer/applications/{id}/reject` | body:`DeveloperApplicationReviewRequest` | `@RequirePermission(user:manage)` + `X-User-Id` | 保留 |
+| GET | `/developer/applications` | query:`DeveloperApplicationQueryRequest` | `@RequireRole({"platform_admin","admin","reviewer"})`；前端菜单权限点为 `developer-application:review` | 保留 |
+| POST | `/developer/applications/{id}/approve` | body:`DeveloperApplicationReviewRequest?` | 同上 + `X-User-Id` | 保留 |
+| POST | `/developer/applications/{id}/reject` | body:`DeveloperApplicationReviewRequest` | 同上 + `X-User-Id` | 保留 |
 
 ## 4.6 用户设置
 
@@ -449,11 +451,6 @@ Controller 方法无类级 `@RequireRole`；**待办可见范围与通过/驳回
 | GET | `/system-config/audit-logs` | `@RequireRole(platform_admin)` + query:`AuditLogQueryRequest`（含 `keyword?`、`onlyFailure?`、`timeFrom?`/`timeTo?` 等；`total` 为筛选后总数） | 保留 |
 | POST | `/system-config/network/apply` | `@RequireRole(platform_admin)` | 保留 |
 | POST | `/system-config/acl/publish` | `@RequireRole(platform_admin)` | 保留 |
-| POST | `/system-config/model-configs` | `@RequireRole(platform_admin)` + body:`ModelConfigCreateRequest` | 保留 |
-| PUT | `/system-config/model-configs/{id}` | `@RequireRole(platform_admin)` + body:`ModelConfigUpdateRequest` | 保留 |
-| DELETE | `/system-config/model-configs/{id}` | `@RequireRole(platform_admin)` + path:`id` | 保留 |
-| GET | `/system-config/model-configs/{id}` | `@RequireRole(platform_admin)` + path:`id` | 保留 |
-| GET | `/system-config/model-configs` | `@RequireRole(platform_admin)` + query:`ModelConfigQueryRequest` | 保留 |
 | POST | `/system-config/rate-limits` | `@RequireRole(platform_admin)` + body:`RateLimitRuleCreateRequest` | 保留 |
 | PUT | `/system-config/rate-limits/{id}` | `@RequireRole(platform_admin)` + body:`RateLimitRuleUpdateRequest` | 保留 |
 | DELETE | `/system-config/rate-limits/{id}` | `@RequireRole(platform_admin)` + path:`id` | 保留 |
@@ -711,6 +708,8 @@ Controller 方法无类级 `@RequireRole`；**待办可见范围与通过/驳回
 
 ### `GET /developer/applications`
 
+**鉴权**：`@RequireRole({"platform_admin","admin","reviewer"})`（与前端侧栏 `developer-application:review` 及 `UserRoleContext` 中 reviewer/platform_admin 权限集合一致；JWT 中角色码 `admin` 与产品名「超管」并存时以库内 `t_platform_role` 为准）。
+
 查询参数（`DeveloperApplicationQueryRequest`）：
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
@@ -824,7 +823,6 @@ revokeGrant --> invoke
 | Health | `/health/circuit-breakers*` | `monitoring/dto/CircuitBreakerUpdateRequest`,`CircuitBreakerManualRequest`,`monitoring/entity/CircuitBreaker` |
 | SystemConfig | `/system-config/params`,`/security` | `sysconfig/dto/SystemParamUpsertRequest`,`SecuritySettingUpsertRequest` |
 | SystemConfig | `/system-config/audit-logs` | `sysconfig/dto/AuditLogQueryRequest`,`sysconfig/entity/AuditLog` |
-| ModelConfig | `/system-config/model-configs*` | `sysconfig/dto/ModelConfigCreateRequest`,`ModelConfigUpdateRequest`,`ModelConfigQueryRequest` |
 | RateLimitRule | `/system-config/rate-limits*` | `sysconfig/dto/RateLimitRuleCreateRequest`,`RateLimitRuleUpdateRequest` |
 | Quota | `/quotas*` | `sysconfig/dto/QuotaCreateRequest`,`QuotaUpdateRequest`,`sysconfig/entity/Quota` |
 | QuotaRateLimit | `/rate-limits*` | `sysconfig/dto/QuotaRateLimitCreateRequest`,`QuotaRateLimitToggleRequest` |

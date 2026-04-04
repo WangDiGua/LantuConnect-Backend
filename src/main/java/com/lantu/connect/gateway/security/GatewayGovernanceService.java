@@ -30,11 +30,11 @@ public class GatewayGovernanceService {
     public InvokeGovernanceLease applyPreInvoke(Long userId, ApiKey apiKey, String resourceType, Long resourceId, int tokens) {
         Long quotaUserId = resolveQuotaUserId(userId, apiKey);
         if (quotaUserId != null) {
-            quotaCheckService.checkAndConsume(quotaUserId, Math.max(1, tokens));
+            quotaCheckService.checkAndConsume(quotaUserId, Math.max(1, tokens), resourceType);
         }
 
         List<PlatformRole> roles = userId == null ? Collections.emptyList() : platformRoleMapper.selectRolesByUserId(userId);
-        enforceRuleRateLimit(userId, roles);
+        enforceRuleRateLimit(userId, roles, resourceType);
         enforceResourceRateLimit(resourceType, resourceId);
         String concurrentKey = acquireConcurrentPermit(resourceType, resourceId);
         return InvokeGovernanceLease.builder()
@@ -56,10 +56,14 @@ public class GatewayGovernanceService {
         }
     }
 
-    private void enforceRuleRateLimit(Long userId, List<PlatformRole> roles) {
+    private void enforceRuleRateLimit(Long userId, List<PlatformRole> roles, String invokeResourceType) {
         List<Map<String, Object>> rules = jdbcTemplate.queryForList(
-                "SELECT id, target, target_value, window_ms, max_requests, action FROM t_rate_limit_rule WHERE enabled = 1 ORDER BY priority DESC");
+                "SELECT id, target, target_value, window_ms, max_requests, action, resource_scope "
+                        + "FROM t_rate_limit_rule WHERE enabled = 1 ORDER BY priority DESC");
         for (Map<String, Object> rule : rules) {
+            if (!ruleAppliesToResourceScope(rule, invokeResourceType)) {
+                continue;
+            }
             String target = str(rule.get("target"));
             String targetValue = str(rule.get("target_value"));
             if (!matchRuleTarget(target, targetValue, userId, roles)) {
@@ -125,6 +129,14 @@ public class GatewayGovernanceService {
         if (count != null && count > limit) {
             throw new BusinessException(ResultCode.RATE_LIMITED);
         }
+    }
+
+    private static boolean ruleAppliesToResourceScope(Map<String, Object> rule, String invokeResourceType) {
+        String scope = str(rule.get("resource_scope"));
+        if (!StringUtils.hasText(scope) || "all".equalsIgnoreCase(scope)) {
+            return true;
+        }
+        return StringUtils.hasText(invokeResourceType) && scope.equalsIgnoreCase(invokeResourceType.trim());
     }
 
     private static boolean matchRuleTarget(String target, String targetValue, Long userId, List<PlatformRole> roles) {

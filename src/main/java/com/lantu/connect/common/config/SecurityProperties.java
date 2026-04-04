@@ -39,8 +39,7 @@ public class SecurityProperties {
     private boolean permitPrometheusWithoutAuth = false;
 
     /**
-     * 是否把 Swagger / OpenAPI 纳入匿名白名单并与 {@link com.lantu.connect.common.filter.UnassignedUserAccessFilter}
-     * 的未赋权账号可访路径对齐（生产建议 false 且关闭 springdoc；见 application.yml {@code lantu.security.expose-api-docs}）。
+     * 是否把 Swagger / OpenAPI 纳入匿名白名单（生产建议 false 且关闭 springdoc；见 application.yml {@code lantu.security.expose-api-docs}）。
      */
     private boolean exposeApiDocs = false;
 

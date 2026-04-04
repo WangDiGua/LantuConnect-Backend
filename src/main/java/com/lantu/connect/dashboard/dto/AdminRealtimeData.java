@@ -28,4 +28,14 @@ public class AdminRealtimeData {
 
     private List<Map<String, Object>> topResourcesByCall;
     private List<Map<String, Object>> systemHealth;
+
+    /**
+     * 已发布资源存量（t_resource，deleted=0），键为 agent/skill/mcp/app/dataset。
+     */
+    private Map<String, Long> publishedResourceCounts;
+
+    /**
+     * 近 7 日按 resource_type 汇总的网关调用次数（含 unknown：历史无 resource_type 的记录）。
+     */
+    private List<Map<String, Object>> callsByResourceType7d;
 }

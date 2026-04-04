@@ -23,6 +23,9 @@ public class Quota {
     private String targetType;
     private Long targetId;
     private String targetName;
+
+    /** all | agent | skill | mcp | app | dataset */
+    private String resourceCategory;
     private Integer dailyLimit;
     private Integer monthlyLimit;
     private Integer dailyUsed;

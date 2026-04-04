@@ -3,7 +3,9 @@ package com.lantu.connect.review.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lantu.connect.common.exception.BusinessException;
+import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.security.CasbinAuthorizationService;
 import com.lantu.connect.common.sensitive.SensitiveWordService;
@@ -59,6 +61,27 @@ public class ReviewServiceImpl implements ReviewService {
             r.setHelpfulCount(helpfulByReview.getOrDefault(r.getId(), 0));
         }
         return reviews;
+    }
+
+    @Override
+    public PageResult<Review> pageList(String targetType, Long targetId, int page, int pageSize) {
+        int p = Math.max(1, page);
+        int ps = Math.min(100, Math.max(1, pageSize));
+        Page<Review> mp = new Page<>(p, ps);
+        LambdaQueryWrapper<Review> q = activeReviewScope(new LambdaQueryWrapper<Review>()
+                .eq(Review::getTargetType, targetType)
+                .eq(Review::getTargetId, targetId))
+                .orderByDesc(Review::getCreateTime);
+        Page<Review> result = reviewMapper.selectPage(mp, q);
+        List<Review> records = result.getRecords();
+        if (!records.isEmpty()) {
+            List<Long> ids = records.stream().map(Review::getId).collect(Collectors.toList());
+            Map<Long, Integer> helpfulByReview = countHelpfulByReviewIds(ids);
+            for (Review r : records) {
+                r.setHelpfulCount(helpfulByReview.getOrDefault(r.getId(), 0));
+            }
+        }
+        return PageResult.of(records, result.getTotal(), p, ps);
     }
 
     private Map<Long, Integer> countHelpfulByReviewIds(List<Long> reviewIds) {

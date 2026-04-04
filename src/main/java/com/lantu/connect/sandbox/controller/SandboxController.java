@@ -29,7 +29,7 @@ public class SandboxController {
 
     @Operation(summary = "创建沙箱会话")
     @PostMapping("/sessions")
-    @RequireRole({"platform_admin", "dept_admin", "developer"})
+    @RequireRole({"platform_admin", "admin", "reviewer", "developer"})
     public R<SandboxSessionVO> createSession(@Parameter(description = "当前用户ID")
                                              @RequestHeader("X-User-Id") Long userId,
                                              @Parameter(description = "应用API Key")
@@ -40,7 +40,7 @@ public class SandboxController {
 
     @Operation(summary = "查询我的沙箱会话")
     @GetMapping("/sessions/mine")
-    @RequireRole({"platform_admin", "dept_admin", "developer"})
+    @RequireRole({"platform_admin", "admin", "reviewer", "developer"})
     public R<List<SandboxSessionVO>> mySessions(@Parameter(description = "当前用户ID")
                                                 @RequestHeader("X-User-Id") Long userId) {
         return R.ok(sandboxService.mySessions(userId));

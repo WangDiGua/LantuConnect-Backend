@@ -114,7 +114,7 @@
 | `health-config` | 探针配置增改删 |
 | `circuit-breaker` | 熔断打开/恢复操作 |
 | `tag-management` | 标签增改删 + 批量导入 |
-| `model-config` | 模型配置增改删查 |
+| ~~`model-config`~~ | **已移除**（大模型配置全栈下线） |
 | `security-settings` | 安全策略保存与回显 |
 | `quota-management` | 配额增改删查 |
 | `rate-limit-policy` | 限流规则增改删查 |
