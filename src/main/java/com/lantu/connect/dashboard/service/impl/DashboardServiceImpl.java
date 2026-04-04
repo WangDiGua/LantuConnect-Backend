@@ -349,9 +349,12 @@ public class DashboardServiceImpl implements DashboardService {
         List<ExploreHubData.ExploreResourceItem> recentPublished = jdbcTemplate.query(
                 "SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.update_time, "
                         + "u.real_name AS author, "
+                        + "COALESCE(cl_all.cnt, 0) AS call_count, "
                         + "COALESCE(f.fav_cnt, 0) AS favorite_count, COALESCE(rv.review_count, 0) AS review_count, COALESCE(rv.avg_rating, 0) AS rating "
                         + "FROM t_resource r "
                         + "LEFT JOIN t_user u ON r.created_by = u.user_id "
+                        + "LEFT JOIN (SELECT agent_id, COUNT(*) AS cnt FROM t_call_log GROUP BY agent_id) cl_all "
+                        + "ON r.id = cl_all.agent_id "
                         + "LEFT JOIN (SELECT target_type, target_id, COUNT(*) AS fav_cnt FROM t_favorite GROUP BY target_type, target_id) f "
                         + "ON r.id = f.target_id AND r.resource_type = f.target_type "
                         + "LEFT JOIN (SELECT target_type, target_id, AVG(rating) AS avg_rating, COUNT(*) AS review_count FROM t_review "
@@ -365,6 +368,7 @@ public class DashboardServiceImpl implements DashboardService {
                         .displayName(rs.getString("display_name"))
                         .description(rs.getString("description"))
                         .status(rs.getString("status"))
+                        .callCount(rs.getLong("call_count"))
                         .favoriteCount(rs.getLong("favorite_count"))
                         .reviewCount(rs.getLong("review_count"))
                         .rating(rs.getDouble("rating"))
