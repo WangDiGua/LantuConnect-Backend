@@ -745,10 +745,11 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private ResourceResolveVO resolveAgent(Map<String, Object> base, String version) {
         Long id = longValue(base.get("id"));
         Map<String, Object> ext = queryOne(
-                "SELECT spec_json FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1",
+                "SELECT spec_json, service_detail_md FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1",
                 id);
         Map<String, Object> spec = parseJsonMap(ext == null ? null : ext.get("spec_json"));
         String invokeType = normalizeProtocol(spec == null ? null : spec.get("protocol"), "rest");
+        String serviceMd = ext == null ? "" : valueOf(ext.get("service_detail_md"));
         return ResourceResolveVO.builder()
                 .resourceType(TYPE_AGENT)
                 .resourceId(String.valueOf(id))
@@ -760,13 +761,14 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .invokeType(invokeType)
                 .endpoint(specUrl(spec))
                 .spec(spec)
+                .serviceDetailMd(StringUtils.hasText(serviceMd) ? serviceMd : null)
                 .build();
     }
 
     private ResourceResolveVO resolveSkill(Map<String, Object> base, String version) {
         Long id = longValue(base.get("id"));
         Map<String, Object> ext = queryOne("""
-                        SELECT skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, spec_json, parameters_schema, is_public, pack_validation_status, skill_root_path
+                        SELECT skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, spec_json, parameters_schema, is_public, pack_validation_status, skill_root_path, service_detail_md
                         FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
                         """,
                 id);
@@ -807,6 +809,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                     ServletContextPathUtil.join(servletContextPath, "/resource-center/resources/" + id + "/skill-artifact"));
             endpointOut = null;
         }
+        String skillDetailMd = valueOf(ext.get("service_detail_md"));
         return ResourceResolveVO.builder()
                 .resourceType(TYPE_SKILL)
                 .resourceId(String.valueOf(id))
@@ -818,6 +821,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .invokeType("artifact")
                 .endpoint(endpointOut)
                 .spec(spec)
+                .serviceDetailMd(StringUtils.hasText(skillDetailMd) ? skillDetailMd : null)
                 .build();
     }
 
@@ -871,7 +875,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private ResourceResolveVO resolveApp(Map<String, Object> base, String version, ApiKey apiKey, Long userId, String action) {
         Long id = longValue(base.get("id"));
         Map<String, Object> ext = queryOne(
-                "SELECT app_url, embed_type, icon, screenshots FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1",
+                "SELECT app_url, embed_type, icon, screenshots, service_detail_md FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1",
                 id);
         Map<String, Object> spec = new HashMap<>();
         spec.put("embedType", valueOf(ext == null ? null : ext.get("embed_type")));
@@ -881,6 +885,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         if (ext != null && ext.get("screenshots") != null) {
             spec.put("screenshots", parseJsonList(ext.get("screenshots")));
         }
+        String appDetailMd = ext == null ? "" : valueOf(ext.get("service_detail_md"));
         return ResourceResolveVO.builder()
                 .resourceType(TYPE_APP)
                 .resourceId(String.valueOf(id))
@@ -892,6 +897,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .invokeType("redirect")
                 .endpoint(valueOf(ext == null ? null : ext.get("app_url")))
                 .spec(spec)
+                .serviceDetailMd(StringUtils.hasText(appDetailMd) ? appDetailMd : null)
                 .build();
     }
 
@@ -938,7 +944,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private ResourceResolveVO resolveDataset(Map<String, Object> base, String version) {
         Long id = longValue(base.get("id"));
         Map<String, Object> ext = queryOne(
-                "SELECT data_type, format, record_count, file_size, tags FROM t_resource_dataset_ext WHERE resource_id = ? LIMIT 1",
+                "SELECT data_type, format, record_count, file_size, tags, service_detail_md FROM t_resource_dataset_ext WHERE resource_id = ? LIMIT 1",
                 id);
         Map<String, Object> spec = new HashMap<>();
         spec.put("dataType", valueOf(ext == null ? null : ext.get("data_type")));
@@ -946,6 +952,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         spec.put("recordCount", longValue(ext == null ? null : ext.get("record_count")));
         spec.put("fileSize", longValue(ext == null ? null : ext.get("file_size")));
         spec.put("tags", parseJsonList(ext == null ? null : ext.get("tags")));
+        String dsDetailMd = ext == null ? "" : valueOf(ext.get("service_detail_md"));
         return ResourceResolveVO.builder()
                 .resourceType(TYPE_DATASET)
                 .resourceId(String.valueOf(id))
@@ -957,6 +964,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .invokeType("metadata")
                 .endpoint(null)
                 .spec(spec)
+                .serviceDetailMd(StringUtils.hasText(dsDetailMd) ? dsDetailMd : null)
                 .build();
     }
 

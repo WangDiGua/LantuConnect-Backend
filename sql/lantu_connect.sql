@@ -714,6 +714,7 @@ CREATE TABLE `t_resource_agent_ext`  (
   `max_steps` int NULL DEFAULT NULL,
   `temperature` decimal(3, 2) NULL DEFAULT NULL,
   `system_prompt` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
+  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '介绍 Markdown（选填）',
   `featured` tinyint(1) NULL DEFAULT 0,
   `rating_avg` decimal(3, 2) NULL DEFAULT 0.00,
   `rating_count` int NULL DEFAULT 0,
@@ -724,12 +725,12 @@ CREATE TABLE `t_resource_agent_ext`  (
 -- ----------------------------
 -- Records of t_resource_agent_ext
 -- ----------------------------
-INSERT INTO `t_resource_agent_ext` VALUES (1, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.search.com/v1\", \"timeout\": 30}', 1, 0, 20, NULL, NULL, '你是一个联网搜索助手，请根据用户问题搜索最新信息并归纳回答。', 0, 0.00, 0);
-INSERT INTO `t_resource_agent_ext` VALUES (2, 'http_api', 'SUBAGENT', '{\"url\": \"http://ai.lzu.edu.cn/tutor\", \"timeout\": 60}', 1, 0, 10, NULL, NULL, '你是一个教学助手，请根据课程名称和教学目标生成详细教案。', 0, 0.00, 0);
-INSERT INTO `t_resource_agent_ext` VALUES (3, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.polish.com/v1\", \"timeout\": 90}', 1, 0, 15, NULL, NULL, '你是一个学术写作助手，请对输入的论文段落进行润色。', 0, 0.00, 0);
-INSERT INTO `t_resource_agent_ext` VALUES (4, 'builtin', 'SUBAGENT', '{\"url\": \"http://ai.lzu.edu.cn/qa\", \"timeout\": 15}', 1, 0, 30, NULL, NULL, '你是兰州大学的校园助手，请回答同学们的校园生活问题。', 0, 0.00, 0);
-INSERT INTO `t_resource_agent_ext` VALUES (5, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.image.com/v1\", \"timeout\": 120}', 0, 0, 5, NULL, NULL, '你是一个图像生成助手，请根据用户的描述生成对应的图片。', 0, 0.00, 0);
-INSERT INTO `t_resource_agent_ext` VALUES (6, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.code.com/v1\", \"timeout\": 60}', 1, 0, 20, NULL, NULL, '你是一个编程助手，请帮助用户编写和调试代码。', 0, 0.00, 0);
+INSERT INTO `t_resource_agent_ext` VALUES (1, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.search.com/v1\", \"timeout\": 30}', 1, 0, 20, NULL, NULL, '你是一个联网搜索助手，请根据用户问题搜索最新信息并归纳回答。', NULL, 0, 0.00, 0);
+INSERT INTO `t_resource_agent_ext` VALUES (2, 'http_api', 'SUBAGENT', '{\"url\": \"http://ai.lzu.edu.cn/tutor\", \"timeout\": 60}', 1, 0, 10, NULL, NULL, '你是一个教学助手，请根据课程名称和教学目标生成详细教案。', NULL, 0, 0.00, 0);
+INSERT INTO `t_resource_agent_ext` VALUES (3, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.polish.com/v1\", \"timeout\": 90}', 1, 0, 15, NULL, NULL, '你是一个学术写作助手，请对输入的论文段落进行润色。', NULL, 0, 0.00, 0);
+INSERT INTO `t_resource_agent_ext` VALUES (4, 'builtin', 'SUBAGENT', '{\"url\": \"http://ai.lzu.edu.cn/qa\", \"timeout\": 15}', 1, 0, 30, NULL, NULL, '你是兰州大学的校园助手，请回答同学们的校园生活问题。', NULL, 0, 0.00, 0);
+INSERT INTO `t_resource_agent_ext` VALUES (5, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.image.com/v1\", \"timeout\": 120}', 0, 0, 5, NULL, NULL, '你是一个图像生成助手，请根据用户的描述生成对应的图片。', NULL, 0, 0.00, 0);
+INSERT INTO `t_resource_agent_ext` VALUES (6, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.code.com/v1\", \"timeout\": 60}', 1, 0, 20, NULL, NULL, '你是一个编程助手，请帮助用户编写和调试代码。', NULL, 0, 0.00, 0);
 
 -- ----------------------------
 -- Table structure for t_resource_app_ext
@@ -742,6 +743,7 @@ CREATE TABLE `t_resource_app_ext`  (
   `icon` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
   `screenshots` json NULL,
   `is_public` tinyint(1) NULL DEFAULT 0,
+  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '应用介绍 Markdown（选填）',
   PRIMARY KEY (`resource_id`) USING BTREE,
   CONSTRAINT `fk_resource_app_ext_resource` FOREIGN KEY (`resource_id`) REFERENCES `t_resource` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
 ) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源-App扩展表' ROW_FORMAT = DYNAMIC;
@@ -749,9 +751,9 @@ CREATE TABLE `t_resource_app_ext`  (
 -- ----------------------------
 -- Records of t_resource_app_ext
 -- ----------------------------
-INSERT INTO `t_resource_app_ext` VALUES (23, 'https://card.lzu.edu.cn', 'iframe', NULL, '[]', 1);
-INSERT INTO `t_resource_app_ext` VALUES (24, 'https://lib.lzu.edu.cn/seat', 'iframe', NULL, '[]', 1);
-INSERT INTO `t_resource_app_ext` VALUES (25, 'https://jwc.lzu.edu.cn/course', 'micro_frontend', NULL, '[]', 1);
+INSERT INTO `t_resource_app_ext` VALUES (23, 'https://card.lzu.edu.cn', 'iframe', NULL, '[]', 1, NULL);
+INSERT INTO `t_resource_app_ext` VALUES (24, 'https://lib.lzu.edu.cn/seat', 'iframe', NULL, '[]', 1, NULL);
+INSERT INTO `t_resource_app_ext` VALUES (25, 'https://jwc.lzu.edu.cn/course', 'micro_frontend', NULL, '[]', 1, NULL);
 
 -- ----------------------------
 -- Table structure for t_resource_circuit_breaker
@@ -798,6 +800,7 @@ CREATE TABLE `t_resource_dataset_ext`  (
   `file_size` bigint NULL DEFAULT 0,
   `tags` json NULL,
   `is_public` tinyint(1) NULL DEFAULT 0,
+  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '数据集介绍 Markdown（选填）',
   PRIMARY KEY (`resource_id`) USING BTREE,
   CONSTRAINT `fk_resource_dataset_ext_resource` FOREIGN KEY (`resource_id`) REFERENCES `t_resource` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
 ) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源-Dataset扩展表' ROW_FORMAT = DYNAMIC;
@@ -805,9 +808,9 @@ CREATE TABLE `t_resource_dataset_ext`  (
 -- ----------------------------
 -- Records of t_resource_dataset_ext
 -- ----------------------------
-INSERT INTO `t_resource_dataset_ext` VALUES (26, 'document', 'pdf', 12500, 5368709120, '[\"论文\", \"计算机\", \"学术\"]', 0);
-INSERT INTO `t_resource_dataset_ext` VALUES (27, 'structured', 'csv', 856000, 134217728, '[\"成绩\", \"统计\", \"教务\"]', 0);
-INSERT INTO `t_resource_dataset_ext` VALUES (28, 'document', 'json', 45000, 268435456, '[\"新闻\", \"NLP\", \"语料\"]', 1);
+INSERT INTO `t_resource_dataset_ext` VALUES (26, 'document', 'pdf', 12500, 5368709120, '[\"论文\", \"计算机\", \"学术\"]', 0, NULL);
+INSERT INTO `t_resource_dataset_ext` VALUES (27, 'structured', 'csv', 856000, 134217728, '[\"成绩\", \"统计\", \"教务\"]', 0, NULL);
+INSERT INTO `t_resource_dataset_ext` VALUES (28, 'document', 'json', 45000, 268435456, '[\"新闻\", \"NLP\", \"语料\"]', 1, NULL);
 
 -- ----------------------------
 -- Table structure for t_resource_health_config
@@ -970,6 +973,7 @@ CREATE TABLE `t_resource_skill_ext`  (
   `pack_validated_at` datetime NULL DEFAULT NULL,
   `pack_validation_message` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
   `skill_root_path` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT 'zip内技能根子目录，语义校验作用域',
+  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '技能介绍 Markdown（选填）',
   PRIMARY KEY (`resource_id`) USING BTREE,
   INDEX `idx_skill_ext_parent`(`parent_resource_id` ASC) USING BTREE,
   INDEX `idx_skill_pack_validation`(`pack_validation_status` ASC) USING BTREE,
@@ -979,7 +983,7 @@ CREATE TABLE `t_resource_skill_ext`  (
 -- ----------------------------
 -- Records of t_resource_skill_ext
 -- ----------------------------
-INSERT INTO `t_resource_skill_ext` VALUES (31, 'anthropic_v1', 'https://example.com/skills/demo-skill-pack.zip', NULL, '{\"name\": \"demo-skill-pack\", \"version\": \"1.0.0\"}', 'SKILL.md', 'TOOL', NULL, NULL, NULL, NULL, 1, 10, 'valid', NULL, NULL, NULL);
+INSERT INTO `t_resource_skill_ext` VALUES (31, 'anthropic_v1', 'https://example.com/skills/demo-skill-pack.zip', NULL, '{\"name\": \"demo-skill-pack\", \"version\": \"1.0.0\"}', 'SKILL.md', 'TOOL', NULL, NULL, NULL, NULL, 1, 10, 'valid', NULL, NULL, NULL, NULL);
 
 -- ----------------------------
 -- Table structure for t_resource_tag_rel

@@ -74,7 +74,10 @@ public class ResourceUpsertRequest {
     private String protocol;
     private String authType;
     private Map<String, Object> authConfig;
-    /** MCP 市场「服务详情」Tab，Markdown，选填 */
+    /**
+     * 各资源类型市场详情「介绍」Tab：Markdown，选填（agent/skill/mcp/app/dataset 扩展表 {@code service_detail_md}）。
+     * 更新请求：非 null 按值写入（空串清空）；null 表示不修改（兼容未传字段的客户端）。
+     */
     private String serviceDetailMd;
 
     /**

@@ -60,6 +60,14 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private static final Set<String> FORBIDDEN_SKILL_PACK_TYPES = Set.of("mcp", "http_api");
 
+    /** 含 service_detail_md 列的扩展表（用于统一 upsert / 读取逻辑） */
+    private static final Set<String> SERVICE_DETAIL_EXT_TABLES = Set.of(
+            "t_resource_mcp_ext",
+            "t_resource_skill_ext",
+            "t_resource_agent_ext",
+            "t_resource_app_ext",
+            "t_resource_dataset_ext");
+
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final PlatformRoleMapper platformRoleMapper;
@@ -795,9 +803,10 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     }
 
     private void upsertAgentExt(Long resourceId, ResourceUpsertRequest request) {
+        String serviceMd = resolveExtServiceDetailMd("t_resource_agent_ext", resourceId, request.getServiceDetailMd());
         int updated = jdbcTemplate.update("""
                         UPDATE t_resource_agent_ext
-                        SET agent_type = ?, mode = ?, spec_json = CAST(? AS JSON), is_public = ?, hidden = ?, max_concurrency = ?, max_steps = ?, temperature = ?, system_prompt = ?
+                        SET agent_type = ?, mode = ?, spec_json = CAST(? AS JSON), is_public = ?, hidden = ?, max_concurrency = ?, max_steps = ?, temperature = ?, system_prompt = ?, service_detail_md = ?
                         WHERE resource_id = ?
                         """,
                 request.getAgentType(),
@@ -809,11 +818,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 request.getMaxSteps(),
                 request.getTemperature(),
                 request.getSystemPrompt(),
+                serviceMd,
                 resourceId);
         if (updated == 0) {
             jdbcTemplate.update("""
-                            INSERT INTO t_resource_agent_ext(resource_id, agent_type, mode, spec_json, is_public, hidden, max_concurrency, max_steps, temperature, system_prompt, featured, rating_avg, rating_count)
-                            VALUES(?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, ?, ?, 0, 0.00, 0)
+                            INSERT INTO t_resource_agent_ext(resource_id, agent_type, mode, spec_json, is_public, hidden, max_concurrency, max_steps, temperature, system_prompt, service_detail_md, featured, rating_avg, rating_count)
+                            VALUES(?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, ?, ?, ?, 0, 0.00, 0)
                             """,
                     resourceId,
                     request.getAgentType(),
@@ -824,7 +834,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     request.getMaxConcurrency() == null ? 10 : request.getMaxConcurrency(),
                     request.getMaxSteps(),
                     request.getTemperature(),
-                    request.getSystemPrompt());
+                    request.getSystemPrompt(),
+                    serviceMd);
         }
     }
 
@@ -868,11 +879,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
 
         String manifestJson = writeJson(defaultMap(request.getManifest()));
+        String serviceMd = resolveExtServiceDetailMd("t_resource_skill_ext", resourceId, request.getServiceDetailMd());
         int updated = jdbcTemplate.update("""
                         UPDATE t_resource_skill_ext
                         SET skill_type = ?, artifact_uri = ?, artifact_sha256 = ?, manifest_json = CAST(? AS JSON), entry_doc = ?,
                             mode = ?, parent_resource_id = ?, display_template = ?, spec_json = CAST(? AS JSON), parameters_schema = CAST(? AS JSON), is_public = ?, max_concurrency = ?,
-                            pack_validation_status = ?, pack_validated_at = ?, pack_validation_message = ?, skill_root_path = ?
+                            pack_validation_status = ?, pack_validated_at = ?, pack_validation_message = ?, skill_root_path = ?, service_detail_md = ?
                         WHERE resource_id = ?
                         """,
                 request.getSkillType().trim().toLowerCase(Locale.ROOT),
@@ -891,11 +903,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 packValidatedAt,
                 packValidationMessage,
                 skillRootPathVal,
+                serviceMd,
                 resourceId);
         if (updated == 0) {
             jdbcTemplate.update("""
-                            INSERT INTO t_resource_skill_ext(resource_id, skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, mode, parent_resource_id, display_template, spec_json, parameters_schema, is_public, max_concurrency, pack_validation_status, pack_validated_at, pack_validation_message, skill_root_path)
-                            VALUES(?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), ?, ?, ?, ?, ?, ?)
+                            INSERT INTO t_resource_skill_ext(resource_id, skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, mode, parent_resource_id, display_template, spec_json, parameters_schema, is_public, max_concurrency, pack_validation_status, pack_validated_at, pack_validation_message, skill_root_path, service_detail_md)
+                            VALUES(?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), ?, ?, ?, ?, ?, ?, ?)
                             """,
                     resourceId,
                     request.getSkillType().trim().toLowerCase(Locale.ROOT),
@@ -913,7 +926,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     SkillPackValidationStatus.NONE,
                     null,
                     null,
-                    SkillPackSkillRootPath.normalizeOrNull(request.getSkillRootPath()));
+                    SkillPackSkillRootPath.normalizeOrNull(request.getSkillRootPath()),
+                    serviceMd);
         }
     }
 
@@ -922,7 +936,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         if (!protocolInvokerRegistry.isSupported(protocol)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "MCP 协议不可调用: " + protocol);
         }
-        String serviceMd = resolveMcpServiceDetailMd(resourceId, request.getServiceDetailMd());
+        String serviceMd = resolveExtServiceDetailMd("t_resource_mcp_ext", resourceId, request.getServiceDetailMd());
         int updated = jdbcTemplate.update("""
                         UPDATE t_resource_mcp_ext
                         SET endpoint = ?, protocol = ?, auth_type = ?, auth_config = CAST(? AS JSON), service_detail_md = ?
@@ -950,8 +964,13 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     /**
      * incoming 非 null：按提交值更新（空串视为清空）；incoming 为 null：保留原行（兼容未传字段的客户端）。
+     *
+     * @param extTable 须为 {@link #SERVICE_DETAIL_EXT_TABLES} 之一
      */
-    private String resolveMcpServiceDetailMd(Long resourceId, String incoming) {
+    private String resolveExtServiceDetailMd(String extTable, Long resourceId, String incoming) {
+        if (!SERVICE_DETAIL_EXT_TABLES.contains(extTable)) {
+            throw new IllegalArgumentException("invalid ext table: " + extTable);
+        }
         if (incoming != null) {
             String t = incoming.trim();
             if (t.isEmpty()) {
@@ -963,7 +982,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             return t;
         }
         var prev = jdbcTemplate.queryForList(
-                "SELECT service_detail_md FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1", resourceId);
+                "SELECT service_detail_md FROM " + extTable + " WHERE resource_id = ? LIMIT 1", resourceId);
         if (prev.isEmpty()) {
             return null;
         }
@@ -972,9 +991,10 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     }
 
     private void upsertAppExt(Long resourceId, ResourceUpsertRequest request) {
+        String serviceMd = resolveExtServiceDetailMd("t_resource_app_ext", resourceId, request.getServiceDetailMd());
         int updated = jdbcTemplate.update("""
                         UPDATE t_resource_app_ext
-                        SET app_url = ?, embed_type = ?, icon = ?, screenshots = CAST(? AS JSON), is_public = ?
+                        SET app_url = ?, embed_type = ?, icon = ?, screenshots = CAST(? AS JSON), is_public = ?, service_detail_md = ?
                         WHERE resource_id = ?
                         """,
                 request.getAppUrl(),
@@ -982,25 +1002,28 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 request.getIcon(),
                 writeJson(defaultList(request.getScreenshots())),
                 toBoolNumber(request.getIsPublic()),
+                serviceMd,
                 resourceId);
         if (updated == 0) {
             jdbcTemplate.update("""
-                            INSERT INTO t_resource_app_ext(resource_id, app_url, embed_type, icon, screenshots, is_public)
-                            VALUES(?, ?, ?, ?, CAST(? AS JSON), ?)
+                            INSERT INTO t_resource_app_ext(resource_id, app_url, embed_type, icon, screenshots, is_public, service_detail_md)
+                            VALUES(?, ?, ?, ?, CAST(? AS JSON), ?, ?)
                             """,
                     resourceId,
                     request.getAppUrl(),
                     request.getEmbedType(),
                     request.getIcon(),
                     writeJson(defaultList(request.getScreenshots())),
-                    toBoolNumber(request.getIsPublic()));
+                    toBoolNumber(request.getIsPublic()),
+                    serviceMd);
         }
     }
 
     private void upsertDatasetExt(Long resourceId, ResourceUpsertRequest request) {
+        String serviceMd = resolveExtServiceDetailMd("t_resource_dataset_ext", resourceId, request.getServiceDetailMd());
         int updated = jdbcTemplate.update("""
                         UPDATE t_resource_dataset_ext
-                        SET data_type = ?, format = ?, record_count = ?, file_size = ?, tags = CAST(? AS JSON), is_public = ?
+                        SET data_type = ?, format = ?, record_count = ?, file_size = ?, tags = CAST(? AS JSON), is_public = ?, service_detail_md = ?
                         WHERE resource_id = ?
                         """,
                 request.getDataType(),
@@ -1009,11 +1032,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 request.getFileSize() == null ? 0L : request.getFileSize(),
                 writeJson(defaultList(request.getTags())),
                 toBoolNumber(request.getIsPublic()),
+                serviceMd,
                 resourceId);
         if (updated == 0) {
             jdbcTemplate.update("""
-                            INSERT INTO t_resource_dataset_ext(resource_id, data_type, format, record_count, file_size, tags, is_public)
-                            VALUES(?, ?, ?, ?, ?, CAST(? AS JSON), ?)
+                            INSERT INTO t_resource_dataset_ext(resource_id, data_type, format, record_count, file_size, tags, is_public, service_detail_md)
+                            VALUES(?, ?, ?, ?, ?, CAST(? AS JSON), ?, ?)
                             """,
                     resourceId,
                     request.getDataType(),
@@ -1021,7 +1045,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     request.getRecordCount() == null ? 0L : request.getRecordCount(),
                     request.getFileSize() == null ? 0L : request.getFileSize(),
                     writeJson(defaultList(request.getTags())),
-                    toBoolNumber(request.getIsPublic()));
+                    toBoolNumber(request.getIsPublic()),
+                    serviceMd);
         }
     }
 
@@ -1277,6 +1302,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 snapshot.put("invokeType", "rest");
                 snapshot.put("endpoint", request.getSpec() == null ? null : request.getSpec().get("url"));
                 snapshot.put("spec", defaultMap(request.getSpec()));
+                if (StringUtils.hasText(request.getServiceDetailMd())) {
+                    snapshot.put("serviceDetailMd", request.getServiceDetailMd().trim());
+                }
             }
             case "skill" -> {
                 snapshot.put("packFormat", request.getSkillType().trim().toLowerCase(Locale.ROOT));
@@ -1302,6 +1330,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     spec.put("extra", request.getSpec());
                 }
                 snapshot.put("spec", spec);
+                if (StringUtils.hasText(request.getServiceDetailMd())) {
+                    snapshot.put("serviceDetailMd", request.getServiceDetailMd().trim());
+                }
             }
             case "mcp" -> {
                 snapshot.put("invokeType", defaultString(request.getProtocol(), "mcp").toLowerCase(Locale.ROOT));
@@ -1321,6 +1352,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 }
                 appSpec.put("screenshots", defaultList(request.getScreenshots()));
                 snapshot.put("spec", appSpec);
+                if (StringUtils.hasText(request.getServiceDetailMd())) {
+                    snapshot.put("serviceDetailMd", request.getServiceDetailMd().trim());
+                }
             }
             case "dataset" -> {
                 snapshot.put("invokeType", "metadata");
@@ -1332,6 +1366,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 spec.put("fileSize", request.getFileSize());
                 spec.put("tags", defaultList(request.getTags()));
                 snapshot.put("spec", spec);
+                if (StringUtils.hasText(request.getServiceDetailMd())) {
+                    snapshot.put("serviceDetailMd", request.getServiceDetailMd().trim());
+                }
             }
             default -> {
             }
@@ -1356,16 +1393,20 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         snapshot.put("accessPolicy", ResourceAccessPolicy.fromStored(base.get("access_policy")).wireValue());
         switch (type) {
             case "agent" -> {
-                Map<String, Object> ext = jdbcTemplate.queryForList("SELECT spec_json FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1", resourceId)
+                Map<String, Object> ext = jdbcTemplate.queryForList(
+                                "SELECT spec_json, service_detail_md FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1", resourceId)
                         .stream().findFirst().orElse(Map.of());
                 Map<String, Object> spec = parseJsonMap(ext.get("spec_json"));
                 snapshot.put("invokeType", "rest");
                 snapshot.put("endpoint", spec.get("url"));
                 snapshot.put("spec", spec);
+                if (StringUtils.hasText(stringValue(ext.get("service_detail_md")))) {
+                    snapshot.put("serviceDetailMd", stringValue(ext.get("service_detail_md")).trim());
+                }
             }
             case "skill" -> {
                 Map<String, Object> ext = jdbcTemplate.queryForList("""
-                                SELECT skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, spec_json, pack_validation_status, skill_root_path
+                                SELECT skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, spec_json, pack_validation_status, skill_root_path, service_detail_md
                                 FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
                                 """, resourceId)
                         .stream().findFirst().orElse(Map.of());
@@ -1395,6 +1436,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     spec.put("extra", extra);
                 }
                 snapshot.put("spec", spec);
+                if (StringUtils.hasText(stringValue(ext.get("service_detail_md")))) {
+                    snapshot.put("serviceDetailMd", stringValue(ext.get("service_detail_md")).trim());
+                }
             }
             case "mcp" -> {
                 Map<String, Object> ext = jdbcTemplate.queryForList(
@@ -1415,7 +1459,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             }
             case "app" -> {
                 Map<String, Object> ext = jdbcTemplate.queryForList(
-                                "SELECT app_url, embed_type, icon, screenshots FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1", resourceId)
+                                "SELECT app_url, embed_type, icon, screenshots, service_detail_md FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1", resourceId)
                         .stream().findFirst().orElse(Map.of());
                 snapshot.put("invokeType", "redirect");
                 snapshot.put("endpoint", stringValue(ext.get("app_url")));
@@ -1426,9 +1470,13 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 }
                 appSpec.put("screenshots", toStringListFromJsonColumn(ext.get("screenshots")));
                 snapshot.put("spec", appSpec);
+                if (StringUtils.hasText(stringValue(ext.get("service_detail_md")))) {
+                    snapshot.put("serviceDetailMd", stringValue(ext.get("service_detail_md")).trim());
+                }
             }
             case "dataset" -> {
-                Map<String, Object> ext = jdbcTemplate.queryForList("SELECT data_type, format, record_count, file_size, tags FROM t_resource_dataset_ext WHERE resource_id = ? LIMIT 1", resourceId)
+                Map<String, Object> ext = jdbcTemplate.queryForList(
+                                "SELECT data_type, format, record_count, file_size, tags, service_detail_md FROM t_resource_dataset_ext WHERE resource_id = ? LIMIT 1", resourceId)
                         .stream().findFirst().orElse(Map.of());
                 Map<String, Object> spec = new LinkedHashMap<>();
                 spec.put("dataType", stringValue(ext.get("data_type")));
@@ -1439,6 +1487,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 snapshot.put("invokeType", "metadata");
                 snapshot.put("endpoint", null);
                 snapshot.put("spec", spec);
+                if (StringUtils.hasText(stringValue(ext.get("service_detail_md")))) {
+                    snapshot.put("serviceDetailMd", stringValue(ext.get("service_detail_md")).trim());
+                }
             }
             default -> {
             }
@@ -1521,7 +1572,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private void enrichAgentFields(ResourceManageVO vo, Long resourceId) {
         var rows = jdbcTemplate.queryForList("""
-                        SELECT agent_type, mode, spec_json, is_public, hidden, max_concurrency, max_steps, temperature, system_prompt
+                        SELECT agent_type, mode, spec_json, is_public, hidden, max_concurrency, max_steps, temperature, system_prompt, service_detail_md
                         FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1
                         """,
                 resourceId);
@@ -1538,12 +1589,13 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         vo.setMaxSteps(intObject(r.get("max_steps")));
         vo.setTemperature(doubleObject(r.get("temperature")));
         vo.setSystemPrompt(stringValue(r.get("system_prompt")));
+        vo.setServiceDetailMd(stringValue(r.get("service_detail_md")));
     }
 
     private void enrichSkillFields(ResourceManageVO vo, Long resourceId) {
         var rows = jdbcTemplate.queryForList("""
                         SELECT skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, mode, parent_resource_id, display_template, spec_json, parameters_schema, is_public, max_concurrency,
-                               pack_validation_status, pack_validated_at, pack_validation_message, skill_root_path
+                               pack_validation_status, pack_validated_at, pack_validation_message, skill_root_path, service_detail_md
                         FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
                         """,
                 resourceId);
@@ -1567,6 +1619,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         vo.setParametersSchema(parseJsonMap(r.get("parameters_schema")));
         vo.setIsPublic(boolObject(r.get("is_public")));
         vo.setMaxConcurrency(intObject(r.get("max_concurrency")));
+        vo.setServiceDetailMd(stringValue(r.get("service_detail_md")));
     }
 
     private void enrichMcpFields(ResourceManageVO vo, Long resourceId) {
@@ -1586,7 +1639,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private void enrichAppFields(ResourceManageVO vo, Long resourceId) {
         var rows = jdbcTemplate.queryForList(
-                "SELECT app_url, embed_type, icon, screenshots, is_public FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1",
+                "SELECT app_url, embed_type, icon, screenshots, is_public, service_detail_md FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1",
                 resourceId);
         if (rows.isEmpty()) {
             return;
@@ -1597,11 +1650,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         vo.setIcon(stringValue(r.get("icon")));
         vo.setScreenshots(toStringListFromJsonColumn(r.get("screenshots")));
         vo.setIsPublic(boolObject(r.get("is_public")));
+        vo.setServiceDetailMd(stringValue(r.get("service_detail_md")));
     }
 
     private void enrichDatasetFields(ResourceManageVO vo, Long resourceId) {
         var rows = jdbcTemplate.queryForList(
-                "SELECT data_type, format, record_count, file_size, tags, is_public FROM t_resource_dataset_ext WHERE resource_id = ? LIMIT 1",
+                "SELECT data_type, format, record_count, file_size, tags, is_public, service_detail_md FROM t_resource_dataset_ext WHERE resource_id = ? LIMIT 1",
                 resourceId);
         if (rows.isEmpty()) {
             return;
@@ -1613,6 +1667,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         vo.setFileSize(longObject(r.get("file_size")));
         vo.setTags(toStringListFromJsonColumn(r.get("tags")));
         vo.setIsPublic(boolObject(r.get("is_public")));
+        vo.setServiceDetailMd(stringValue(r.get("service_detail_md")));
     }
 
     private List<String> toStringListFromJsonColumn(Object raw) {
