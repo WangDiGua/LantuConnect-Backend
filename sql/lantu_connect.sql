@@ -1065,6 +1065,7 @@ CREATE TABLE `t_review`  (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `target_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `target_id` bigint NOT NULL,
+  `parent_id` bigint NULL DEFAULT NULL COMMENT '父评论 id，顶级为 NULL',
   `user_id` bigint NOT NULL,
   `user_name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `avatar` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
@@ -1075,17 +1076,19 @@ CREATE TABLE `t_review`  (
   `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_review_target`(`target_type` ASC, `target_id` ASC) USING BTREE,
+  INDEX `idx_review_parent`(`parent_id` ASC) USING BTREE,
   INDEX `idx_review_user`(`user_id` ASC) USING BTREE,
+  CONSTRAINT `fk_review_parent` FOREIGN KEY (`parent_id`) REFERENCES `t_review` (`id`) ON DELETE SET NULL ON UPDATE RESTRICT,
   CONSTRAINT `fk_review_user` FOREIGN KEY (`user_id`) REFERENCES `t_user` (`user_id`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE = InnoDB AUTO_INCREMENT = 5 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '评论评分表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_review
 -- ----------------------------
-INSERT INTO `t_review` VALUES (1, 'agent', 1, 4, '赵同学', NULL, 5, '联网搜索非常好用，回答准确且实时性强！', 3, 0, '2026-03-22 10:58:54');
-INSERT INTO `t_review` VALUES (2, 'agent', 2, 4, '赵同学', NULL, 4, '备课助手生成的教案质量不错，但偶尔格式需要微调。', 1, 0, '2026-03-22 10:58:54');
-INSERT INTO `t_review` VALUES (3, 'agent', 6, 3, '王开发', NULL, 5, '代码助手很强大，支持多种语言，调试建议也很专业。', 5, 0, '2026-03-22 10:58:54');
-INSERT INTO `t_review` VALUES (4, 'agent', 6, 2, 'dept_admin', '', 4, '1111', 0, 0, '2026-03-24 23:22:15');
+INSERT INTO `t_review` VALUES (1, 'agent', 1, NULL, 4, '赵同学', NULL, 5, '联网搜索非常好用，回答准确且实时性强！', 3, 0, '2026-03-22 10:58:54');
+INSERT INTO `t_review` VALUES (2, 'agent', 2, NULL, 4, '赵同学', NULL, 4, '备课助手生成的教案质量不错，但偶尔格式需要微调。', 1, 0, '2026-03-22 10:58:54');
+INSERT INTO `t_review` VALUES (3, 'agent', 6, NULL, 3, '王开发', NULL, 5, '代码助手很强大，支持多种语言，调试建议也很专业。', 5, 0, '2026-03-22 10:58:54');
+INSERT INTO `t_review` VALUES (4, 'agent', 6, NULL, 2, 'dept_admin', '', 4, '1111', 0, 0, '2026-03-24 23:22:15');
 
 -- ----------------------------
 -- Table structure for t_review_helpful_rel

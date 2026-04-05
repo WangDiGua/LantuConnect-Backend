@@ -19,9 +19,14 @@ public class ReviewCreateRequest {
     @NotNull
     private Long targetId;
 
-    @NotNull
+    /**
+     * 顶级评价必填 1～5；回复（{@code parentId != null}）可为空或由服务端置为 0，不参与均分统计。
+     */
     private Integer rating;
 
     @NotBlank
     private String comment;
+
+    /** 若非空则为对某条评论的回复，须与父评论同属 targetType/targetId */
+    private Long parentId;
 }

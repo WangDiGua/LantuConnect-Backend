@@ -24,6 +24,8 @@ public class Review {
 
     private String targetType;
     private Long targetId;
+    /** 父评论 id，顶级为 null */
+    private Long parentId;
     private Long userId;
     private String userName;
     private String avatar;

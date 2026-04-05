@@ -121,7 +121,8 @@ public class ReviewServiceImpl implements ReviewService {
     @Override
     public ReviewSummaryVO summary(String targetType, Long targetId) {
         List<Review> all = list(targetType, targetId);
-        long total = all.size();
+        List<Review> roots = all.stream().filter(ReviewServiceImpl::isRootReview).toList();
+        long total = roots.size();
         if (total == 0) {
             return ReviewSummaryVO.builder()
                     .avgRating(0d)
@@ -131,7 +132,7 @@ public class ReviewServiceImpl implements ReviewService {
         }
         Map<Integer, Long> dist = new HashMap<>();
         double sum = 0;
-        for (Review r : all) {
+        for (Review r : roots) {
             int star = r.getRating() != null ? r.getRating() : 0;
             sum += star;
             dist.merge(star, 1L, Long::sum);
@@ -153,10 +154,35 @@ public class ReviewServiceImpl implements ReviewService {
             String filteredComment = sensitiveWordService.filter(comment);
             request.setComment(filteredComment);
         }
+        Long parentId = request.getParentId();
+        boolean isReply = parentId != null && parentId > 0;
+        int rating;
+        if (isReply) {
+            Review parent = reviewMapper.selectById(parentId);
+            if (parent == null || isDeleted(parent)) {
+                throw new BusinessException(ResultCode.NOT_FOUND, "父评论不存在或已删除");
+            }
+            if (!parent.getTargetType().equals(request.getTargetType())
+                    || !parent.getTargetId().equals(request.getTargetId())) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "回复与父评论不属于同一资源");
+            }
+            if (parent.getParentId() != null && parent.getParentId() > 0) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "暂不支持多层回复，请只回复顶层评价");
+            }
+            rating = 0;
+        } else {
+            Integer r = request.getRating();
+            if (r == null || r < 1 || r > 5) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "请选择 1～5 星评分");
+            }
+            rating = r;
+        }
+
         Review review = new Review();
         review.setTargetType(request.getTargetType());
         review.setTargetId(request.getTargetId());
-        review.setRating(request.getRating());
+        review.setParentId(isReply ? parentId : null);
+        review.setRating(rating);
         review.setComment(request.getComment());
         review.setUserId(userId);
         review.setUserName(userName);
@@ -228,6 +254,12 @@ public class ReviewServiceImpl implements ReviewService {
 
     private static boolean isDeleted(Review review) {
         return review.getDeleted() != null && review.getDeleted() == 1;
+    }
+
+    /** 顶级评价：无父或 parent_id 为 0（兼容） */
+    private static boolean isRootReview(Review r) {
+        Long pid = r.getParentId();
+        return pid == null || pid == 0;
     }
 
 }
