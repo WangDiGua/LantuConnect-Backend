@@ -74,6 +74,8 @@ public class ResourceUpsertRequest {
     private String protocol;
     private String authType;
     private Map<String, Object> authConfig;
+    /** MCP 市场「服务详情」Tab，Markdown，选填 */
+    private String serviceDetailMd;
 
     /**
      * 仅 app 使用。

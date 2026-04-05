@@ -67,6 +67,7 @@ public class ResourceManageVO {
     private String protocol;
     private String authType;
     private Map<String, Object> authConfig;
+    private String serviceDetailMd;
 
     // --- app (t_resource_app_ext) ---
     private String appUrl;

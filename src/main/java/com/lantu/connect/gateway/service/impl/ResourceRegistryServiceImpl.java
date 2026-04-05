@@ -922,27 +922,53 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         if (!protocolInvokerRegistry.isSupported(protocol)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "MCP 协议不可调用: " + protocol);
         }
+        String serviceMd = resolveMcpServiceDetailMd(resourceId, request.getServiceDetailMd());
         int updated = jdbcTemplate.update("""
                         UPDATE t_resource_mcp_ext
-                        SET endpoint = ?, protocol = ?, auth_type = ?, auth_config = CAST(? AS JSON)
+                        SET endpoint = ?, protocol = ?, auth_type = ?, auth_config = CAST(? AS JSON), service_detail_md = ?
                         WHERE resource_id = ?
                         """,
                 request.getEndpoint(),
                 protocol,
                 defaultString(request.getAuthType(), "none"),
                 writeJson(defaultMap(request.getAuthConfig())),
+                serviceMd,
                 resourceId);
         if (updated == 0) {
             jdbcTemplate.update("""
-                            INSERT INTO t_resource_mcp_ext(resource_id, endpoint, protocol, auth_type, auth_config)
-                            VALUES(?, ?, ?, ?, CAST(? AS JSON))
+                            INSERT INTO t_resource_mcp_ext(resource_id, endpoint, protocol, auth_type, auth_config, service_detail_md)
+                            VALUES(?, ?, ?, ?, CAST(? AS JSON), ?)
                             """,
                     resourceId,
                     request.getEndpoint(),
                     protocol,
                     defaultString(request.getAuthType(), "none"),
-                    writeJson(defaultMap(request.getAuthConfig())));
+                    writeJson(defaultMap(request.getAuthConfig())),
+                    serviceMd);
         }
+    }
+
+    /**
+     * incoming 非 null：按提交值更新（空串视为清空）；incoming 为 null：保留原行（兼容未传字段的客户端）。
+     */
+    private String resolveMcpServiceDetailMd(Long resourceId, String incoming) {
+        if (incoming != null) {
+            String t = incoming.trim();
+            if (t.isEmpty()) {
+                return null;
+            }
+            if (t.length() > 200_000) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "服务详情 Markdown 过长（上限约 200KB）");
+            }
+            return t;
+        }
+        var prev = jdbcTemplate.queryForList(
+                "SELECT service_detail_md FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1", resourceId);
+        if (prev.isEmpty()) {
+            return null;
+        }
+        Object v = prev.get(0).get("service_detail_md");
+        return v == null ? null : String.valueOf(v);
     }
 
     private void upsertAppExt(Long resourceId, ResourceUpsertRequest request) {
@@ -1281,6 +1307,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 snapshot.put("invokeType", defaultString(request.getProtocol(), "mcp").toLowerCase(Locale.ROOT));
                 snapshot.put("endpoint", request.getEndpoint());
                 snapshot.put("spec", defaultMap(request.getAuthConfig()));
+                if (StringUtils.hasText(request.getServiceDetailMd())) {
+                    snapshot.put("serviceDetailMd", request.getServiceDetailMd().trim());
+                }
             }
             case "app" -> {
                 snapshot.put("invokeType", "redirect");
@@ -1369,7 +1398,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             }
             case "mcp" -> {
                 Map<String, Object> ext = jdbcTemplate.queryForList(
-                                "SELECT endpoint, protocol, auth_type, auth_config FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1", resourceId)
+                                "SELECT endpoint, protocol, auth_type, auth_config, service_detail_md FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1", resourceId)
                         .stream().findFirst().orElse(Map.of());
                 snapshot.put("invokeType", stringValue(ext.get("protocol")));
                 snapshot.put("endpoint", stringValue(ext.get("endpoint")));
@@ -1380,6 +1409,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     spec.put(McpOutboundHeaderBuilder.REGISTRY_AUTH_TYPE_KEY, at.trim().toLowerCase(Locale.ROOT));
                 }
                 snapshot.put("spec", spec);
+                if (StringUtils.hasText(stringValue(ext.get("service_detail_md")))) {
+                    snapshot.put("serviceDetailMd", stringValue(ext.get("service_detail_md")).trim());
+                }
             }
             case "app" -> {
                 Map<String, Object> ext = jdbcTemplate.queryForList(
@@ -1539,7 +1571,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private void enrichMcpFields(ResourceManageVO vo, Long resourceId) {
         var rows = jdbcTemplate.queryForList(
-                "SELECT endpoint, protocol, auth_type, auth_config FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1",
+                "SELECT endpoint, protocol, auth_type, auth_config, service_detail_md FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1",
                 resourceId);
         if (rows.isEmpty()) {
             return;
@@ -1549,6 +1581,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         vo.setProtocol(stringValue(r.get("protocol")));
         vo.setAuthType(stringValue(r.get("auth_type")));
         vo.setAuthConfig(parseJsonMap(r.get("auth_config")));
+        vo.setServiceDetailMd(stringValue(r.get("service_detail_md")));
     }
 
     private void enrichAppFields(ResourceManageVO vo, Long resourceId) {

@@ -39,6 +39,7 @@ public final class ResourceResolveSpecSanitizer {
                 .invokeType(source.getInvokeType())
                 .endpoint(source.getEndpoint())
                 .spec(spec == null ? null : sanitizeSpec(spec))
+                .serviceDetailMd(source.getServiceDetailMd())
                 .launchToken(source.getLaunchToken())
                 .launchUrl(source.getLaunchUrl())
                 .tags(source.getTags())

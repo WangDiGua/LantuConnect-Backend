@@ -902,6 +902,7 @@ CREATE TABLE `t_resource_mcp_ext`  (
   `protocol` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT 'http',
   `auth_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT 'none',
   `auth_config` json NULL,
+  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '服务详情 Markdown（选填）',
   PRIMARY KEY (`resource_id`) USING BTREE,
   CONSTRAINT `fk_resource_mcp_ext_resource` FOREIGN KEY (`resource_id`) REFERENCES `t_resource` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
 ) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源-MCP扩展表' ROW_FORMAT = DYNAMIC;
@@ -909,16 +910,16 @@ CREATE TABLE `t_resource_mcp_ext`  (
 -- ----------------------------
 -- Records of t_resource_mcp_ext
 -- ----------------------------
-INSERT INTO `t_resource_mcp_ext` VALUES (8, 'http://ai.lzu.edu.cn/mcp', 'mcp', 'none', '{\"url\": \"http://ai.lzu.edu.cn/mcp\", \"timeout\": 30}');
-INSERT INTO `t_resource_mcp_ext` VALUES (9, 'http://ai.lzu.edu.cn/mcp/kb', 'mcp', 'none', '{\"url\": \"http://ai.lzu.edu.cn/mcp/kb\", \"timeout\": 10}');
-INSERT INTO `t_resource_mcp_ext` VALUES (10, 'http://ai.lzu.edu.cn/mcp/word', 'mcp', 'none', '{\"url\": \"http://ai.lzu.edu.cn/mcp/word\", \"timeout\": 30}');
-INSERT INTO `t_resource_mcp_ext` VALUES (11, 'http://ai.lzu.edu.cn/mcp/ppt', 'mcp', 'none', '{\"url\": \"http://ai.lzu.edu.cn/mcp/ppt\", \"timeout\": 60}');
-INSERT INTO `t_resource_mcp_ext` VALUES (12, 'http://ai.lzu.edu.cn/mcp/schedule', 'mcp', 'none', '{\"url\": \"http://ai.lzu.edu.cn/mcp/schedule\", \"timeout\": 5}');
-INSERT INTO `t_resource_mcp_ext` VALUES (13, 'https://api.analysis.com/v1', 'mcp', 'none', '{\"url\": \"https://api.analysis.com/v1\", \"timeout\": 30}');
-INSERT INTO `t_resource_mcp_ext` VALUES (14, 'https://api.translate.com/v1', 'http', 'none', '{\"url\": \"https://api.translate.com/v1\", \"timeout\": 10}');
-INSERT INTO `t_resource_mcp_ext` VALUES (15, 'https://api.ocr.com/v1', 'http', 'none', '{\"url\": \"https://api.ocr.com/v1\", \"timeout\": 15}');
-INSERT INTO `t_resource_mcp_ext` VALUES (29, 'http://localhost:9000/mcp', 'mcp', 'none', '{\"method\": \"tools/call\"}');
-INSERT INTO `t_resource_mcp_ext` VALUES (30, 'http://localhost:9000/mcp', 'mcp', 'none', '{\"method\": \"tools/call\"}');
+INSERT INTO `t_resource_mcp_ext` VALUES (8, 'http://ai.lzu.edu.cn/mcp', 'mcp', 'none', '{\"url\": \"http://ai.lzu.edu.cn/mcp\", \"timeout\": 30}', NULL);
+INSERT INTO `t_resource_mcp_ext` VALUES (9, 'http://ai.lzu.edu.cn/mcp/kb', 'mcp', 'none', '{\"url\": \"http://ai.lzu.edu.cn/mcp/kb\", \"timeout\": 10}', NULL);
+INSERT INTO `t_resource_mcp_ext` VALUES (10, 'http://ai.lzu.edu.cn/mcp/word', 'mcp', 'none', '{\"url\": \"http://ai.lzu.edu.cn/mcp/word\", \"timeout\": 30}', NULL);
+INSERT INTO `t_resource_mcp_ext` VALUES (11, 'http://ai.lzu.edu.cn/mcp/ppt', 'mcp', 'none', '{\"url\": \"http://ai.lzu.edu.cn/mcp/ppt\", \"timeout\": 60}', NULL);
+INSERT INTO `t_resource_mcp_ext` VALUES (12, 'http://ai.lzu.edu.cn/mcp/schedule', 'mcp', 'none', '{\"url\": \"http://ai.lzu.edu.cn/mcp/schedule\", \"timeout\": 5}', NULL);
+INSERT INTO `t_resource_mcp_ext` VALUES (13, 'https://api.analysis.com/v1', 'mcp', 'none', '{\"url\": \"https://api.analysis.com/v1\", \"timeout\": 30}', NULL);
+INSERT INTO `t_resource_mcp_ext` VALUES (14, 'https://api.translate.com/v1', 'http', 'none', '{\"url\": \"https://api.translate.com/v1\", \"timeout\": 10}', NULL);
+INSERT INTO `t_resource_mcp_ext` VALUES (15, 'https://api.ocr.com/v1', 'http', 'none', '{\"url\": \"https://api.ocr.com/v1\", \"timeout\": 15}', NULL);
+INSERT INTO `t_resource_mcp_ext` VALUES (29, 'http://localhost:9000/mcp', 'mcp', 'none', '{\"method\": \"tools/call\"}', NULL);
+INSERT INTO `t_resource_mcp_ext` VALUES (30, 'http://localhost:9000/mcp', 'mcp', 'none', '{\"method\": \"tools/call\"}', NULL);
 
 -- ----------------------------
 -- Table structure for t_resource_relation

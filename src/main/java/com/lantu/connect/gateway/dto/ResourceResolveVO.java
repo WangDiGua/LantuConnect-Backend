@@ -35,6 +35,9 @@ public class ResourceResolveVO {
 
     private Map<String, Object> spec;
 
+    /** MCP：注册时选填的服务详情 Markdown（目录 GET 展示用） */
+    private String serviceDetailMd;
+
     /**
      * 应用类资源的短时启动令牌（仅 app 类型返回）。
      */

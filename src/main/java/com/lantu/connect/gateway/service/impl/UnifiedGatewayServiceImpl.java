@@ -836,7 +836,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
     private ResourceResolveVO resolveMcp(Map<String, Object> base, String version) {
         Long id = longValue(base.get("id"));
-        Map<String, Object> ext = queryOne("SELECT endpoint, protocol, auth_type, auth_config FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1", id);
+        Map<String, Object> ext = queryOne(
+                "SELECT endpoint, protocol, auth_type, auth_config, service_detail_md FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1", id);
         Map<String, Object> spec;
         String endpoint;
         String protocol;
@@ -851,6 +852,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         }
         protocol = normalizeProtocol(ext.get("protocol"), "mcp");
         endpoint = valueOf(ext.get("endpoint"));
+        String serviceMd = valueOf(ext.get("service_detail_md"));
         return ResourceResolveVO.builder()
                 .resourceType(TYPE_MCP)
                 .resourceId(String.valueOf(id))
@@ -862,6 +864,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .invokeType(protocol)
                 .endpoint(endpoint)
                 .spec(spec)
+                .serviceDetailMd(StringUtils.hasText(serviceMd) ? serviceMd : null)
                 .build();
     }
 
@@ -1395,6 +1398,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             if (!snapshotSpec.isEmpty()) {
                 resolved.setSpec(snapshotSpec);
             }
+        }
+        if (snapshot.containsKey("serviceDetailMd")) {
+            String md = valueOf(snapshot.get("serviceDetailMd"));
+            resolved.setServiceDetailMd(StringUtils.hasText(md) ? md.trim() : null);
         }
         return resolved;
     }
