@@ -368,11 +368,11 @@ public class DashboardServiceImpl implements DashboardService {
     @Override
     public ExploreHubData exploreHub(Long userId) {
         Map<String, Object> platformStats = new LinkedHashMap<>();
-        long totalAgents = countResourceByType("agent");
-        long totalSkills = countResourceByType("skill");
-        long totalMcps = countResourceByType("mcp");
-        long totalApps = countResourceByType("app");
-        long totalDatasets = countResourceByType("dataset");
+        long totalAgents = countPublishedResourceByType("agent");
+        long totalSkills = countPublishedResourceByType("skill");
+        long totalMcps = countPublishedResourceByType("mcp");
+        long totalApps = countPublishedResourceByType("app");
+        long totalDatasets = countPublishedResourceByType("dataset");
         platformStats.put("totalAgents", totalAgents);
         platformStats.put("totalSkills", totalSkills);
         platformStats.put("totalMcps", totalMcps);
@@ -389,11 +389,13 @@ public class DashboardServiceImpl implements DashboardService {
                 "calls"));
         platformStats.put("newResourcesTrend7d", buildDailyTrend(
                 "SELECT DATE(create_time) AS day, COUNT(*) AS cnt "
-                        + "FROM t_resource WHERE deleted = 0 AND create_time >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) "
+                        + "FROM t_resource WHERE deleted = 0 AND status = 'published' "
+                        + "AND create_time >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) "
                         + "GROUP BY DATE(create_time)",
                 "count"));
         platformStats.put("byType", jdbcTemplate.queryForList(
-                "SELECT resource_type AS type, COUNT(*) AS cnt FROM t_resource WHERE deleted = 0 GROUP BY resource_type"));
+                "SELECT resource_type AS type, COUNT(*) AS cnt FROM t_resource WHERE deleted = 0 AND status = 'published' "
+                        + "GROUP BY resource_type"));
 
         List<ExploreHubData.ExploreResourceItem> trending = jdbcTemplate.query(
                 "SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, "
@@ -761,11 +763,11 @@ public class DashboardServiceImpl implements DashboardService {
         List<Map<String, Object>> systemHealth = buildSystemHealthForAdminOverview();
 
         Map<String, Long> publishedResourceCounts = new LinkedHashMap<>();
-        publishedResourceCounts.put("agent", countResourceByType("agent"));
-        publishedResourceCounts.put("skill", countResourceByType("skill"));
-        publishedResourceCounts.put("mcp", countResourceByType("mcp"));
-        publishedResourceCounts.put("app", countResourceByType("app"));
-        publishedResourceCounts.put("dataset", countResourceByType("dataset"));
+        publishedResourceCounts.put("agent", countPublishedResourceByType("agent"));
+        publishedResourceCounts.put("skill", countPublishedResourceByType("skill"));
+        publishedResourceCounts.put("mcp", countPublishedResourceByType("mcp"));
+        publishedResourceCounts.put("app", countPublishedResourceByType("app"));
+        publishedResourceCounts.put("dataset", countPublishedResourceByType("dataset"));
 
         List<Map<String, Object>> callsByResourceType7d = jdbcTemplate.queryForList(
                 "SELECT COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown') AS type, COUNT(*) AS calls "
@@ -864,9 +866,22 @@ public class DashboardServiceImpl implements DashboardService {
                 .build();
     }
 
+    /**
+     * 全量（未删除）按类型计数；用于管理端总览等需含草稿/待审的场景。
+     */
     private long countResourceByType(String type) {
         Long cnt = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM t_resource WHERE deleted = 0 AND resource_type = ?",
+                Long.class, type);
+        return cnt == null ? 0L : cnt;
+    }
+
+    /**
+     * 已上架（published）且未删除；与市场对用户可见目录一致。
+     */
+    private long countPublishedResourceByType(String type) {
+        Long cnt = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM t_resource WHERE deleted = 0 AND resource_type = ? AND status = 'published'",
                 Long.class, type);
         return cnt == null ? 0L : cnt;
     }
