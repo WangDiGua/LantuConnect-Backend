@@ -9,6 +9,7 @@ import com.lantu.connect.gateway.dto.ResourceVersionCreateRequest;
 import com.lantu.connect.gateway.dto.ResourceVersionVO;
 
 import java.util.List;
+import java.util.Map;
 
 public interface ResourceRegistryService {
 
@@ -35,6 +36,11 @@ public interface ResourceRegistryService {
      * {@link com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine#ensureEditable} 与 update 一致。
      */
     ResourceManageVO applyVersionSnapshotToWorkingCopy(Long operatorUserId, Long resourceId, String version);
+
+    /**
+     * 审核通过「已发布资源变更」时由审核服务调用：将冻结快照写入主表/扩展表并刷新当前默认版本快照。
+     */
+    void applyPublishedUpdateFromAudit(Long reviewerUserId, Long resourceId, Map<String, Object> payloadSnapshot);
 
     List<ResourceVersionVO> listVersions(Long operatorUserId, Long resourceId);
 

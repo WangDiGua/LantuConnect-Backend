@@ -11,8 +11,12 @@ import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.security.CasbinAuthorizationService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
+import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
 import com.lantu.connect.gateway.security.ResourceInvokeGrantService;
 import com.lantu.connect.notification.service.NotificationEventCodes;
@@ -24,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,6 +52,8 @@ public class AuditServiceImpl implements AuditService {
     private static final String STATUS_TESTING = "testing";
     private static final String STATUS_PUBLISHED = "published";
     private static final String STATUS_REJECTED = "rejected";
+    private static final String STATUS_MERGED_LIVE = "merged_live";
+    private static final String AUDIT_KIND_PUBLISHED_UPDATE = "published_update";
     /** 平台强制下架后，关联审核队列表记状态（若有已 published 行） */
     private static final String STATUS_PLATFORM_FORCE_DEPRECATED = "platform_force_deprecated";
     private static final String TARGET_AGENT = "agent";
@@ -61,6 +68,8 @@ public class AuditServiceImpl implements AuditService {
     private final UserDisplayNameResolver userDisplayNameResolver;
     private final ResourceInvokeGrantService resourceInvokeGrantService;
     private final CasbinAuthorizationService casbinAuthorizationService;
+    private final ResourceRegistryService resourceRegistryService;
+    private final ObjectMapper objectMapper;
 
     @Override
     public PageResult<AuditItem> pagePendingAgents(Long operatorUserId, int page, int pageSize) {
@@ -142,6 +151,23 @@ public class AuditServiceImpl implements AuditService {
 
     private void approve(Long id, String expectedTargetType, Long reviewerId) {
         AuditItem item = requirePending(id, expectedTargetType);
+        if (AUDIT_KIND_PUBLISHED_UPDATE.equalsIgnoreCase(String.valueOf(item.getAuditKind()).trim())) {
+            Map<String, Object> snap = parseSnapshotPayload(item.getPayloadJson());
+            resourceRegistryService.applyPublishedUpdateFromAudit(reviewerId, item.getTargetId(), snap);
+            int n = auditItemMapper.update(null, new LambdaUpdateWrapper<AuditItem>()
+                    .eq(AuditItem::getId, item.getId())
+                    .eq(AuditItem::getStatus, STATUS_PENDING)
+                    .set(AuditItem::getStatus, STATUS_MERGED_LIVE)
+                    .set(AuditItem::getReviewerId, reviewerId)
+                    .set(AuditItem::getReviewTime, LocalDateTime.now()));
+            if (n != 1) {
+                throw new BusinessException(ResultCode.CONFLICT, MSG_AUDIT_CONCURRENT);
+            }
+            notifySubmitter(item, NotificationEventCodes.AUDIT_APPROVED,
+                    "已发布资源变更已合并",
+                    "您的资源「" + item.getDisplayName() + "」的配置变更已通过审核并合并至线上默认解析版本。");
+            return;
+        }
         int n = auditItemMapper.update(null, new LambdaUpdateWrapper<AuditItem>()
                 .eq(AuditItem::getId, item.getId())
                 .eq(AuditItem::getStatus, STATUS_PENDING)
@@ -209,11 +235,48 @@ public class AuditServiceImpl implements AuditService {
         if (n != 1) {
             throw new BusinessException(ResultCode.CONFLICT, MSG_AUDIT_CONCURRENT);
         }
+        if (AUDIT_KIND_PUBLISHED_UPDATE.equalsIgnoreCase(String.valueOf(item.getAuditKind()).trim())) {
+            restorePublishedUpdateDraft(item);
+            notifySubmitter(item, NotificationEventCodes.AUDIT_REJECTED,
+                    "已发布资源变更被驳回",
+                    "您的资源「" + item.getDisplayName() + "」配置变更未通过审核（线上未变），原因：" + reason
+                            + "。草稿已恢复到资源中心，请修改后重新提交。");
+            return;
+        }
         syncResourceStatusIf(item, STATUS_REJECTED, ResourceLifecycleStateMachine.STATUS_PENDING_REVIEW);
 
         notifySubmitter(item, NotificationEventCodes.AUDIT_REJECTED,
                 "资源审核被驳回",
                 "您的资源「" + item.getDisplayName() + "」审核未通过，原因：" + reason);
+    }
+
+    private Map<String, Object> parseSnapshotPayload(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return Map.of();
+        }
+        try {
+            Map<String, Object> m = objectMapper.readValue(raw, new TypeReference<LinkedHashMap<String, Object>>() {});
+            return m == null ? Map.of() : m;
+        } catch (Exception e) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "审核载荷 JSON 解析失败");
+        }
+    }
+
+    private void restorePublishedUpdateDraft(AuditItem item) {
+        if (item.getTargetId() == null || !StringUtils.hasText(item.getPayloadJson())) {
+            return;
+        }
+        try {
+            String json = objectMapper.writeValueAsString(parseSnapshotPayload(item.getPayloadJson()));
+            jdbcTemplate.update("""
+                            INSERT INTO t_resource_draft(resource_id, draft_json, audit_tier)
+                            VALUES(?, CAST(? AS JSON), ?)
+                            ON DUPLICATE KEY UPDATE draft_json = VALUES(draft_json), audit_tier = VALUES(audit_tier), update_time = CURRENT_TIMESTAMP
+                            """,
+                    item.getTargetId(), json, "medium");
+        } catch (JsonProcessingException e) {
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "恢复草稿失败");
+        }
     }
 
     private AuditItem requirePending(Long id, String expectedTargetType) {

@@ -68,6 +68,13 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             "t_resource_app_ext",
             "t_resource_dataset_ext");
 
+    private static final String AUDIT_KIND_INITIAL = "initial";
+    private static final String AUDIT_KIND_PUBLISHED_UPDATE = "published_update";
+
+    private static final String AUDIT_TIER_LOW = "low";
+    private static final String AUDIT_TIER_MEDIUM = "medium";
+    private static final String AUDIT_TIER_HIGH = "high";
+
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final PlatformRoleMapper platformRoleMapper;
@@ -122,32 +129,28 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     public ResourceManageVO update(Long operatorUserId, Long resourceId, ResourceUpsertRequest request) {
         ensureAuthenticated(operatorUserId);
         ResourceRow row = requireManageableResource(operatorUserId, resourceId);
-        ResourceLifecycleStateMachine.ensureEditable(row.status());
         String type = normalizeType(request.getResourceType());
         if (!row.resourceType().equals(type)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "resourceType 不允许变更");
         }
         validateByType(type, request);
         ensureUniqueCode(type, request.getResourceCode(), resourceId);
-        ResourceAccessPolicy accessPolicy = resolveAccessPolicyForUpdate(resourceId, request);
 
-        jdbcTemplate.update("""
-                        UPDATE t_resource
-                        SET resource_code = ?, display_name = ?, description = ?, source_type = ?, provider_id = ?, category_id = ?, access_policy = ?, update_time = NOW()
-                        WHERE id = ? AND deleted = 0
-                        """,
-                request.getResourceCode().trim(),
-                request.getDisplayName().trim(),
-                request.getDescription(),
-                request.getSourceType(),
-                request.getProviderId(),
-                request.getCategoryId(),
-                accessPolicy.wireValue(),
-                resourceId);
-        upsertExtension(type, resourceId, request);
-        syncResourceRelations(resourceId, type, request.getRelatedResourceIds());
-        syncResourceTagRels(resourceId, type, request);
-        upsertCurrentVersionSnapshot(resourceId, snapshotForVersion(type, resourceId, request, false));
+        String st = ResourceLifecycleStateMachine.normalizeStatus(row.status());
+        if (ResourceLifecycleStateMachine.STATUS_PUBLISHED.equals(st)) {
+            if (hasPendingPublishedUpdateAudit(resourceId)) {
+                throw new BusinessException(ResultCode.DUPLICATE_SUBMIT, "该资源已有待审核的已发布变更，请等待审结或撤回");
+            }
+            ResourceAccessPolicy accessPolicy = resolveAccessPolicyForUpdate(resourceId, request);
+            Map<String, Object> snap = buildSnapshot(type, request, accessPolicy);
+            ResourceManageVO live = findResource(resourceId);
+            String tier = computeDraftAuditTier(live, request, type);
+            upsertWorkingDraft(resourceId, snap, tier);
+            return getById(operatorUserId, resourceId);
+        }
+
+        ResourceLifecycleStateMachine.ensureEditable(row.status());
+        persistUpsertToMainAndExtensions(resourceId, row.resourceType(), type, request);
         return findResource(resourceId);
     }
 
@@ -172,7 +175,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     public ResourceManageVO submitForAudit(Long operatorUserId, Long resourceId) {
         ensureAuthenticated(operatorUserId);
         ResourceRow row = requireManageableResource(operatorUserId, resourceId);
-        ResourceLifecycleStateMachine.ensureTransitionAllowed(row.status(), ResourceLifecycleStateMachine.STATUS_PENDING_REVIEW);
+        String st = ResourceLifecycleStateMachine.normalizeStatus(row.status());
 
         Integer pending = jdbcTemplate.queryForObject("""
                         SELECT COUNT(1)
@@ -185,6 +188,78 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         if (pending != null && pending > 0) {
             throw new BusinessException(ResultCode.DUPLICATE_SUBMIT, "该资源已有待审核记录");
         }
+
+        if (ResourceLifecycleStateMachine.STATUS_PUBLISHED.equals(st)) {
+            Map<String, Object> draftMap = loadWorkingDraftMap(resourceId);
+            if (draftMap == null || draftMap.isEmpty()) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "请先在登记页保存草稿后再提交已发布资源变更");
+            }
+            ResourceManageVO live = findResource(resourceId);
+            ResourceUpsertRequest merged = mergeSnapshotOntoCurrent(live, draftMap);
+            String type = normalizeType(row.resourceType());
+            validateByType(type, merged);
+            ensureUniqueCode(type, merged.getResourceCode(), resourceId);
+            if ("skill".equals(type)) {
+                if (!StringUtils.hasText(merged.getArtifactUri())) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR, "artifactUri 不能为空，请先上传技能包");
+                }
+            }
+            ResourceAccessPolicy ap = resolveAccessPolicyForUpdate(resourceId, merged);
+            Map<String, Object> freezeSnap = buildSnapshot(type, merged, ap);
+            String tier = readWorkingDraftTier(resourceId);
+
+            if (AUDIT_TIER_LOW.equals(tier) && mayAutoApplyLowTierPublishedUpdate(operatorUserId)) {
+                applyPublishedUpdateFromAudit(operatorUserId, resourceId, freezeSnap);
+                notifyReviewers(
+                        NotificationEventCodes.RESOURCE_SUBMITTED,
+                        "已发布资源变更已自动生效（低风险）",
+                        """
+                                事件: 已发布资源变更（自动合并）
+                                时间: %s
+                                资源: %s/%s
+                                说明: 低风险修改已由具备权限的管理员直接合并上线，线上解析版本已更新。
+                                """.formatted(LocalDateTime.now(), row.resourceType(), resourceId),
+                        resourceId);
+                return getById(operatorUserId, resourceId);
+            }
+
+            jdbcTemplate.update("""
+                            INSERT INTO t_audit_item(target_type, target_id, display_name, agent_name, description, \
+                            agent_type, source_type, audit_kind, payload_json, submitter, submit_time, status, create_time) \
+                            VALUES(?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), ?, NOW(), 'pending_review', NOW())
+                            """,
+                    row.resourceType(),
+                    resourceId,
+                    merged.getDisplayName() != null ? merged.getDisplayName() : row.displayName(),
+                    merged.getResourceCode() != null ? merged.getResourceCode() : row.resourceCode(),
+                    merged.getDescription() != null ? merged.getDescription() : row.description(),
+                    row.resourceType(),
+                    row.sourceType(),
+                    AUDIT_KIND_PUBLISHED_UPDATE,
+                    writeJson(freezeSnap),
+                    String.valueOf(operatorUserId));
+            deleteWorkingDraft(resourceId);
+
+            notifyReviewers(NotificationEventCodes.RESOURCE_SUBMITTED,
+                    "已发布资源变更待审核",
+                    """
+                            事件: 已发布资源变更提审
+                            结果: 待审核（线上仍为当前版本）
+                            时间: %s
+                            提交人: %s
+                            资源: %s/%s
+                            说明: 「%s」提交了配置变更，审核通过后合并至线上默认解析版本。
+                            """.formatted(
+                            LocalDateTime.now(),
+                            operatorUserId,
+                            row.resourceType(),
+                            resourceId,
+                            merged.getDisplayName() != null ? merged.getDisplayName() : row.displayName()),
+                    resourceId);
+            return getById(operatorUserId, resourceId);
+        }
+
+        ResourceLifecycleStateMachine.ensureTransitionAllowed(row.status(), ResourceLifecycleStateMachine.STATUS_PENDING_REVIEW);
 
         if ("skill".equals(row.resourceType())) {
             List<Map<String, Object>> se = jdbcTemplate.queryForList(
@@ -201,8 +276,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         jdbcTemplate.update("UPDATE t_resource SET status = ?, update_time = NOW() WHERE id = ? AND deleted = 0",
                 ResourceLifecycleStateMachine.STATUS_PENDING_REVIEW, resourceId);
         jdbcTemplate.update("""
-                        INSERT INTO t_audit_item(target_type, target_id, display_name, agent_name, description, agent_type, source_type, submitter, submit_time, status, create_time)
-                        VALUES(?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'pending_review', NOW())
+                        INSERT INTO t_audit_item(target_type, target_id, display_name, agent_name, description, agent_type, source_type, audit_kind, submitter, submit_time, status, create_time)
+                        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'pending_review', NOW())
                         """,
                 row.resourceType(),
                 resourceId,
@@ -211,6 +286,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 row.description(),
                 row.resourceType(),
                 row.sourceType(),
+                AUDIT_KIND_INITIAL,
                 String.valueOf(operatorUserId));
 
         notifyReviewers(NotificationEventCodes.RESOURCE_SUBMITTED,
@@ -257,10 +333,35 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     public ResourceManageVO withdraw(Long operatorUserId, Long resourceId) {
         ensureAuthenticated(operatorUserId);
         ResourceRow row = requireManageableResource(operatorUserId, resourceId);
+        String st = ResourceLifecycleStateMachine.normalizeStatus(row.status());
+
+        if (ResourceLifecycleStateMachine.STATUS_PUBLISHED.equals(st)) {
+            List<Map<String, Object>> pend = jdbcTemplate.queryForList("""
+                            SELECT id, payload_json FROM t_audit_item
+                            WHERE target_id = ? AND status = 'pending_review' AND audit_kind = ?
+                            ORDER BY id DESC LIMIT 1
+                            """,
+                    resourceId, AUDIT_KIND_PUBLISHED_UPDATE);
+            if (pend.isEmpty()) {
+                throw new BusinessException(ResultCode.ILLEGAL_STATE_TRANSITION, "当前没有待审核的已发布变更可撤回");
+            }
+            Map<String, Object> payload = parseJsonMap(pend.get(0).get("payload_json"));
+            if (!payload.isEmpty()) {
+                upsertWorkingDraft(resourceId, payload, AUDIT_TIER_MEDIUM);
+            }
+            jdbcTemplate.update("UPDATE t_audit_item SET status = 'withdrawn' WHERE id = ? AND status = 'pending_review'",
+                    longValue(pend.get(0).get("id")));
+            return getById(operatorUserId, resourceId);
+        }
+
         ResourceLifecycleStateMachine.ensureTransitionAllowed(row.status(), ResourceLifecycleStateMachine.STATUS_DRAFT);
         jdbcTemplate.update("UPDATE t_resource SET status = ?, update_time = NOW() WHERE id = ? AND deleted = 0",
                 ResourceLifecycleStateMachine.STATUS_DRAFT, resourceId);
-        jdbcTemplate.update("UPDATE t_audit_item SET status = 'withdrawn' WHERE target_id = ? AND status = 'pending_review'",
+        jdbcTemplate.update("""
+                        UPDATE t_audit_item SET status = 'withdrawn' \
+                        WHERE target_id = ? AND status = 'pending_review' \
+                        AND (audit_kind IS NULL OR TRIM(audit_kind) = '' OR LOWER(audit_kind) = 'initial')
+                        """,
                 resourceId);
         systemNotificationFacade.notifyResourceStateChange(
                 operatorUserId,
@@ -291,6 +392,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         enrichExtensionFields(vo, resourceId);
         enrichCurrentVersionLabel(vo, resourceId);
         enrichCatalogTagNames(vo, resourceId);
+        enrichWorkingDraftFields(vo, resourceId);
+        applyDraftOverlayToPublishedDetail(vo, resourceId);
         enrichLifecycleContext(vo, operatorUserId);
         enrichObservabilityFields(vo);
         return vo;
@@ -415,6 +518,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         List<ResourceManageVO> list = rows.stream().map(this::toManageVo).toList();
         enrichCreatedByNames(list);
         enrichCatalogTagNamesBatch(list);
+        enrichWorkingDraftFlagsBatch(list);
         list.forEach(vo -> enrichLifecycleContext(vo, operatorUserId));
         list.forEach(this::enrichObservabilityFields);
         return PageResult.of(list, total == null ? 0L : total, p, ps);
@@ -479,7 +583,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     public ResourceManageVO applyVersionSnapshotToWorkingCopy(Long operatorUserId, Long resourceId, String version) {
         ensureAuthenticated(operatorUserId);
         ResourceRow row = requireManageableResource(operatorUserId, resourceId);
-        ResourceLifecycleStateMachine.ensureEditable(row.status());
         String v = normalizeVersion(version);
         List<Map<String, Object>> verRows = jdbcTemplate.queryForList("""
                         SELECT snapshot_json FROM t_resource_version
@@ -502,26 +605,347 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
         validateByType(type, req);
         ensureUniqueCode(type, req.getResourceCode(), resourceId);
-        ResourceAccessPolicy accessPolicy = resolveAccessPolicyForUpdate(resourceId, req);
+        String st = ResourceLifecycleStateMachine.normalizeStatus(row.status());
+        if (ResourceLifecycleStateMachine.STATUS_PUBLISHED.equals(st)) {
+            if (hasPendingPublishedUpdateAudit(resourceId)) {
+                throw new BusinessException(ResultCode.DUPLICATE_SUBMIT, "该资源已有待审核的已发布变更，请等待审结或撤回");
+            }
+            ResourceAccessPolicy accessPolicy = resolveAccessPolicyForUpdate(resourceId, req);
+            Map<String, Object> draftSnap = buildSnapshot(type, req, accessPolicy);
+            String tier = computeDraftAuditTier(current, req, type);
+            upsertWorkingDraft(resourceId, draftSnap, tier);
+            return getById(operatorUserId, resourceId);
+        }
+        ResourceLifecycleStateMachine.ensureEditable(row.status());
+        persistUpsertToMainAndExtensions(resourceId, row.resourceType(), type, req);
+        return getById(operatorUserId, resourceId);
+    }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void applyPublishedUpdateFromAudit(Long reviewerUserId, Long resourceId, Map<String, Object> payloadSnapshot) {
+        ensureAuthenticated(reviewerUserId);
+        requireManageableResource(reviewerUserId, resourceId);
+        ResourceRow row = requireRow(resourceId);
+        String st = ResourceLifecycleStateMachine.normalizeStatus(row.status());
+        if (!ResourceLifecycleStateMachine.STATUS_PUBLISHED.equals(st)) {
+            throw new BusinessException(ResultCode.CONFLICT, "资源非已发布状态，无法应用已发布变更");
+        }
+        if (payloadSnapshot == null || payloadSnapshot.isEmpty()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "变更快照为空");
+        }
+        ResourceManageVO live = findResource(resourceId);
+        ResourceUpsertRequest req = mergeSnapshotOntoCurrent(live, payloadSnapshot);
+        String type = normalizeType(row.resourceType());
+        if (!type.equals(normalizeType(req.getResourceType()))) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "快照 resourceType 与资源不一致");
+        }
+        validateByType(type, req);
+        ensureUniqueCode(type, req.getResourceCode(), resourceId);
+        persistUpsertToMainAndExtensions(resourceId, row.resourceType(), type, req);
+        deleteWorkingDraft(resourceId);
+    }
+
+    private ResourceRow requireRow(Long resourceId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT id, resource_type, resource_code, display_name, description, status, source_type, created_by
+                FROM t_resource WHERE id = ? AND deleted = 0 LIMIT 1
+                """, resourceId);
+        if (rows.isEmpty()) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "资源不存在");
+        }
+        Map<String, Object> row = rows.get(0);
+        return new ResourceRow(
+                longValue(row.get("id")),
+                stringValue(row.get("resource_type")),
+                stringValue(row.get("resource_code")),
+                stringValue(row.get("display_name")),
+                stringValue(row.get("description")),
+                stringValue(row.get("status")),
+                stringValue(row.get("source_type"))
+        );
+    }
+
+    private void persistUpsertToMainAndExtensions(Long resourceId, String rowResourceType, String normalizedType,
+                                                  ResourceUpsertRequest request) {
+        ResourceAccessPolicy accessPolicy = resolveAccessPolicyForUpdate(resourceId, request);
         jdbcTemplate.update("""
                         UPDATE t_resource
                         SET resource_code = ?, display_name = ?, description = ?, source_type = ?, provider_id = ?, category_id = ?, access_policy = ?, update_time = NOW()
                         WHERE id = ? AND deleted = 0
                         """,
-                req.getResourceCode().trim(),
-                req.getDisplayName().trim(),
-                req.getDescription(),
-                req.getSourceType(),
-                req.getProviderId(),
-                req.getCategoryId(),
+                request.getResourceCode().trim(),
+                request.getDisplayName().trim(),
+                request.getDescription(),
+                request.getSourceType(),
+                request.getProviderId(),
+                request.getCategoryId(),
                 accessPolicy.wireValue(),
                 resourceId);
-        upsertExtension(type, resourceId, req);
-        syncResourceRelations(resourceId, type, req.getRelatedResourceIds());
-        syncResourceTagRels(resourceId, type, req);
-        upsertCurrentVersionSnapshot(resourceId, snapshotForVersion(type, resourceId, req, false));
-        return getById(operatorUserId, resourceId);
+        upsertExtension(normalizedType, resourceId, request);
+        syncResourceRelations(resourceId, normalizedType, request.getRelatedResourceIds());
+        syncResourceTagRels(resourceId, normalizedType, request);
+        upsertCurrentVersionSnapshot(resourceId, snapshotForVersion(normalizedType, resourceId, request, false));
+    }
+
+    private void upsertWorkingDraft(Long resourceId, Map<String, Object> draftJson, String auditTier) {
+        String tier = StringUtils.hasText(auditTier) ? auditTier.trim().toLowerCase(Locale.ROOT) : AUDIT_TIER_MEDIUM;
+        if (!AUDIT_TIER_LOW.equals(tier) && !AUDIT_TIER_MEDIUM.equals(tier) && !AUDIT_TIER_HIGH.equals(tier)) {
+            tier = AUDIT_TIER_MEDIUM;
+        }
+        jdbcTemplate.update("""
+                        INSERT INTO t_resource_draft(resource_id, draft_json, audit_tier)
+                        VALUES(?, CAST(? AS JSON), ?)
+                        ON DUPLICATE KEY UPDATE draft_json = VALUES(draft_json), audit_tier = VALUES(audit_tier), update_time = CURRENT_TIMESTAMP
+                        """,
+                resourceId, writeJson(draftJson), tier);
+    }
+
+    private void deleteWorkingDraft(Long resourceId) {
+        jdbcTemplate.update("DELETE FROM t_resource_draft WHERE resource_id = ?", resourceId);
+    }
+
+    private Map<String, Object> loadWorkingDraftMap(Long resourceId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT draft_json FROM t_resource_draft WHERE resource_id = ? LIMIT 1", resourceId);
+        if (rows.isEmpty()) {
+            return Map.of();
+        }
+        return parseJsonMap(rows.get(0).get("draft_json"));
+    }
+
+    private boolean hasPendingPublishedUpdateAudit(Long resourceId) {
+        Integer n = jdbcTemplate.queryForObject("""
+                        SELECT COUNT(1) FROM t_audit_item
+                        WHERE target_id = ? AND status = 'pending_review' AND audit_kind = ?
+                        """,
+                Integer.class,
+                resourceId, AUDIT_KIND_PUBLISHED_UPDATE);
+        return n != null && n > 0;
+    }
+
+    private String readWorkingDraftTier(Long resourceId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT audit_tier FROM t_resource_draft WHERE resource_id = ? LIMIT 1", resourceId);
+        if (rows.isEmpty()) {
+            return AUDIT_TIER_MEDIUM;
+        }
+        return stringValue(rows.get(0).get("audit_tier"));
+    }
+
+    private void enrichWorkingDraftFields(ResourceManageVO vo, Long resourceId) {
+        if (vo == null || resourceId == null) {
+            return;
+        }
+        vo.setPendingPublishedUpdate(hasPendingPublishedUpdateAudit(resourceId));
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT audit_tier, update_time FROM t_resource_draft WHERE resource_id = ? LIMIT 1
+                """, resourceId);
+        if (rows.isEmpty()) {
+            vo.setHasWorkingDraft(false);
+            vo.setWorkingDraftUpdatedAt(null);
+            vo.setWorkingDraftAuditTier(null);
+            return;
+        }
+        Map<String, Object> r = rows.get(0);
+        vo.setHasWorkingDraft(true);
+        vo.setWorkingDraftAuditTier(stringValue(r.get("audit_tier")));
+        vo.setWorkingDraftUpdatedAt(toDateTime(r.get("update_time")));
+    }
+
+    private void enrichWorkingDraftFlagsBatch(List<ResourceManageVO> list) {
+        if (list == null || list.isEmpty()) {
+            return;
+        }
+        List<Long> ids = list.stream().map(ResourceManageVO::getId).filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return;
+        }
+        String in = ids.stream().map(id -> "?").collect(java.util.stream.Collectors.joining(","));
+        List<Object> argsDraft = new ArrayList<>(ids);
+        List<Map<String, Object>> draftRows = jdbcTemplate.queryForList(
+                "SELECT resource_id FROM t_resource_draft WHERE resource_id IN (" + in + ")", argsDraft.toArray());
+        LinkedHashSet<Long> withDraft = new LinkedHashSet<>();
+        for (Map<String, Object> r : draftRows) {
+            Long rid = longValue(r.get("resource_id"));
+            if (rid != null) {
+                withDraft.add(rid);
+            }
+        }
+        List<Object> argsPend = new ArrayList<>();
+        argsPend.add(AUDIT_KIND_PUBLISHED_UPDATE);
+        argsPend.addAll(ids);
+        List<Map<String, Object>> pendRows = jdbcTemplate.queryForList(
+                "SELECT target_id FROM t_audit_item WHERE status = 'pending_review' AND audit_kind = ? AND target_id IN ("
+                        + in + ")", argsPend.toArray());
+        LinkedHashSet<Long> pendingPu = new LinkedHashSet<>();
+        for (Map<String, Object> r : pendRows) {
+            Long tid = longValue(r.get("target_id"));
+            if (tid != null) {
+                pendingPu.add(tid);
+            }
+        }
+        for (ResourceManageVO vo : list) {
+            if (vo.getId() == null) {
+                continue;
+            }
+            vo.setHasWorkingDraft(withDraft.contains(vo.getId()));
+            vo.setPendingPublishedUpdate(pendingPu.contains(vo.getId()));
+        }
+    }
+
+    private boolean mayAutoApplyLowTierPublishedUpdate(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        List<PlatformRole> roles = platformRoleMapper.selectRolesByUserId(userId);
+        return roles.stream().map(PlatformRole::getRoleCode).anyMatch(code ->
+                "platform_admin".equals(code) || "admin".equals(code) || "dept_admin".equals(code));
+    }
+
+    private String computeDraftAuditTier(ResourceManageVO live, ResourceUpsertRequest req, String normalizedType) {
+        ResourceUpsertRequest base = voToUpsertRequest(live);
+        String t = normalizeType(normalizedType);
+        if (!trimEq(req.getResourceCode(), base.getResourceCode())) {
+            return AUDIT_TIER_HIGH;
+        }
+        switch (t) {
+            case "mcp" -> {
+                if (!trimEq(req.getEndpoint(), base.getEndpoint())) {
+                    return AUDIT_TIER_HIGH;
+                }
+                if (!shallowMapEquals(req.getAuthConfig(), base.getAuthConfig())) {
+                    return AUDIT_TIER_HIGH;
+                }
+            }
+            case "agent" -> {
+                String u1 = req.getSpec() == null ? null : stringValue(req.getSpec().get("url"));
+                String u2 = base.getSpec() == null ? null : stringValue(base.getSpec().get("url"));
+                if (!trimEq(u1, u2)) {
+                    return AUDIT_TIER_HIGH;
+                }
+            }
+            case "skill" -> {
+                if (!trimEq(req.getArtifactUri(), base.getArtifactUri())) {
+                    return AUDIT_TIER_HIGH;
+                }
+            }
+            case "app" -> {
+                if (!trimEq(req.getAppUrl(), base.getAppUrl())) {
+                    return AUDIT_TIER_HIGH;
+                }
+            }
+            default -> {
+            }
+        }
+        boolean onlyCosmetic =
+                trimEq(req.getDisplayName(), base.getDisplayName())
+                        && Objects.equals(
+                        req.getDescription() == null ? "" : req.getDescription(),
+                        base.getDescription() == null ? "" : base.getDescription())
+                        && trimEq(
+                        req.getServiceDetailMd() == null ? "" : req.getServiceDetailMd(),
+                        base.getServiceDetailMd() == null ? "" : base.getServiceDetailMd());
+        if (onlyCosmetic && t.equals("mcp")) {
+            return AUDIT_TIER_LOW;
+        }
+        if (onlyCosmetic && t.equals("agent")) {
+            return AUDIT_TIER_LOW;
+        }
+        if (onlyCosmetic && t.equals("app")) {
+            return AUDIT_TIER_LOW;
+        }
+        if (onlyCosmetic && t.equals("dataset")) {
+            return AUDIT_TIER_LOW;
+        }
+        if (onlyCosmetic && t.equals("skill")) {
+            return AUDIT_TIER_LOW;
+        }
+        return AUDIT_TIER_MEDIUM;
+    }
+
+    private static boolean trimEq(String a, String b) {
+        String x = a == null ? "" : a.trim();
+        String y = b == null ? "" : b.trim();
+        return x.equals(y);
+    }
+
+    private static boolean shallowMapEquals(Map<String, Object> a, Map<String, Object> b) {
+        if (a == null && b == null) {
+            return true;
+        }
+        if (a == null || b == null) {
+            return false;
+        }
+        return Objects.equals(new LinkedHashMap<>(a), new LinkedHashMap<>(b));
+    }
+
+    /**
+     * 将合并后的请求体写回 VO（用于已发布资源读详情时展示草稿编辑态）。
+     */
+    private void copyUpsertOntoVo(ResourceManageVO vo, ResourceUpsertRequest r) {
+        if (vo == null || r == null) {
+            return;
+        }
+        vo.setResourceCode(r.getResourceCode());
+        vo.setDisplayName(r.getDisplayName());
+        vo.setDescription(r.getDescription());
+        vo.setSourceType(r.getSourceType());
+        vo.setProviderId(r.getProviderId());
+        vo.setCategoryId(r.getCategoryId());
+        vo.setAccessPolicy(r.getAccessPolicy());
+        vo.setRelatedResourceIds(r.getRelatedResourceIds() == null ? null : new ArrayList<>(r.getRelatedResourceIds()));
+        vo.setAgentType(r.getAgentType());
+        vo.setMode(r.getMode());
+        vo.setSpec(r.getSpec() == null || r.getSpec().isEmpty() ? null : shallowCopyMap(r.getSpec()));
+        vo.setIsPublic(r.getIsPublic());
+        vo.setHidden(r.getHidden());
+        vo.setMaxConcurrency(r.getMaxConcurrency());
+        vo.setMaxSteps(r.getMaxSteps());
+        vo.setTemperature(r.getTemperature());
+        vo.setSystemPrompt(r.getSystemPrompt());
+        vo.setServiceDetailMd(r.getServiceDetailMd());
+        vo.setSkillType(r.getSkillType());
+        vo.setArtifactUri(r.getArtifactUri());
+        vo.setArtifactSha256(r.getArtifactSha256());
+        vo.setManifest(r.getManifest() == null || r.getManifest().isEmpty() ? null : shallowCopyMap(r.getManifest()));
+        vo.setEntryDoc(r.getEntryDoc());
+        vo.setSkillRootPath(r.getSkillRootPath());
+        vo.setParentResourceId(r.getParentResourceId());
+        vo.setDisplayTemplate(r.getDisplayTemplate());
+        vo.setParametersSchema(r.getParametersSchema() == null || r.getParametersSchema().isEmpty()
+                ? null
+                : shallowCopyMap(r.getParametersSchema()));
+        vo.setEndpoint(r.getEndpoint());
+        vo.setProtocol(r.getProtocol());
+        vo.setAuthType(r.getAuthType());
+        vo.setAuthConfig(r.getAuthConfig() == null || r.getAuthConfig().isEmpty()
+                ? null
+                : shallowCopyMap(r.getAuthConfig()));
+        vo.setAppUrl(r.getAppUrl());
+        vo.setEmbedType(r.getEmbedType());
+        vo.setIcon(r.getIcon());
+        vo.setScreenshots(r.getScreenshots() == null ? null : new ArrayList<>(r.getScreenshots()));
+        vo.setDataType(r.getDataType());
+        vo.setFormat(r.getFormat());
+        vo.setRecordCount(r.getRecordCount());
+        vo.setFileSize(r.getFileSize());
+        vo.setTags(r.getTags() == null ? null : new ArrayList<>(r.getTags()));
+    }
+
+    private void applyDraftOverlayToPublishedDetail(ResourceManageVO vo, Long resourceId) {
+        if (vo == null || resourceId == null) {
+            return;
+        }
+        if (!ResourceLifecycleStateMachine.STATUS_PUBLISHED.equals(ResourceLifecycleStateMachine.normalizeStatus(vo.getStatus()))) {
+            return;
+        }
+        Map<String, Object> draft = loadWorkingDraftMap(resourceId);
+        if (draft.isEmpty()) {
+            return;
+        }
+        ResourceUpsertRequest merged = mergeSnapshotOntoCurrent(vo, draft);
+        copyUpsertOntoVo(vo, merged);
     }
 
     @Override
@@ -866,6 +1290,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         enrichExtensionFields(vo, id);
         enrichCurrentVersionLabel(vo, id);
         enrichCatalogTagNames(vo, id);
+        enrichWorkingDraftFields(vo, id);
         enrichLifecycleContext(vo, null);
         enrichObservabilityFields(vo);
         return vo;
@@ -891,12 +1316,14 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             vo.setLastSubmitTime(toDateTime(a.get("submit_time")));
             vo.setLastReviewTime(toDateTime(a.get("review_time")));
         }
-        vo.setAllowedActions(suggestActions(vo.getStatus(), vo.getCreatedBy(), viewerUserId));
-        vo.setStatusHint(statusHint(vo.getStatus(), vo.getLastRejectReason()));
+        vo.setAllowedActions(suggestActions(vo, viewerUserId));
+        vo.setStatusHint(statusHintForVo(vo));
     }
 
-    private static List<String> suggestActions(String status, Long ownerId, Long viewerUserId) {
+    private List<String> suggestActions(ResourceManageVO vo, Long viewerUserId) {
+        Long ownerId = vo.getCreatedBy();
         boolean owner = ownerId != null && viewerUserId != null && ownerId.equals(viewerUserId);
+        String status = vo.getStatus();
         String s = status == null ? "" : status.trim().toLowerCase(Locale.ROOT);
         List<String> actions = new ArrayList<>();
         switch (s) {
@@ -915,6 +1342,13 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 actions.add("createVersion");
                 actions.add("switchVersion");
                 actions.add("deprecate");
+                if (owner) {
+                    actions.add("update");
+                    actions.add("submit");
+                    if (Boolean.TRUE.equals(vo.getPendingPublishedUpdate())) {
+                        actions.add("withdraw");
+                    }
+                }
             }
             case "rejected" -> {
                 actions.add("update");
@@ -933,7 +1367,21 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         return actions;
     }
 
-    private static String statusHint(String status, String rejectReason) {
+    private String statusHintForVo(ResourceManageVO vo) {
+        if (vo == null) {
+            return "状态待确认";
+        }
+        String s = vo.getStatus() == null ? "" : vo.getStatus().trim().toLowerCase(Locale.ROOT);
+        if ("published".equals(s) && Boolean.TRUE.equals(vo.getPendingPublishedUpdate())) {
+            return "已提交已发布变更审核：完成前线上仍为当前默认解析版本；可撤回后继续编辑草稿";
+        }
+        if ("published".equals(s) && Boolean.TRUE.equals(vo.getHasWorkingDraft())) {
+            return "当前正在编辑草稿：保存后不会立即影响线上解析，请提交审核通过后方合并至默认版本";
+        }
+        return statusHintStatic(s, vo.getLastRejectReason());
+    }
+
+    private static String statusHintStatic(String status, String rejectReason) {
         String s = status == null ? "" : status.trim().toLowerCase(Locale.ROOT);
         return switch (s) {
             case "draft" -> "草稿态，可编辑后重新提审";

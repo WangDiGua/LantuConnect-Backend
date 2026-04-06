@@ -106,4 +106,13 @@ public class ResourceManageVO {
     private String degradationHint;
     private Integer qualityScore;
     private Map<String, Object> qualityFactors;
+
+    // --- published working draft (t_resource_draft) ---
+    /** 已发布资源是否存在本地未提审草稿 */
+    private Boolean hasWorkingDraft;
+    private LocalDateTime workingDraftUpdatedAt;
+    /** low / medium / high */
+    private String workingDraftAuditTier;
+    /** 是否存在待审核的「已发布资源变更」队列项 */
+    private Boolean pendingPublishedUpdate;
 }

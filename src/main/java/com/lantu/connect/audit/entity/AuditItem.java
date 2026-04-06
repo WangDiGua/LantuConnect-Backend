@@ -36,6 +36,14 @@ public class AuditItem {
 
     private String sourceType;
 
+    /** initial | published_update */
+    @TableField("audit_kind")
+    private String auditKind;
+
+    /** published_update 冻结的配置快照 JSON */
+    @TableField("payload_json")
+    private String payloadJson;
+
     private String submitter;
     @TableField(exist = false)
     private String submitterName;
