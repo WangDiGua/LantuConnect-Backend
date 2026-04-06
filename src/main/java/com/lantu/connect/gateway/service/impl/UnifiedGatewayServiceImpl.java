@@ -455,6 +455,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         ResourceResolveVO resolved = getByTypeAndId(type, String.valueOf(id), request.getVersion(), null, apiKey, userId, "invoke");
         ensurePublishedForInvoke(resolved);
         ensureNotCircuitOpen(type, resolved.getResourceCode());
+        ensureResourceHealthNotDown(id);
         if (!StringUtils.hasText(resolved.getEndpoint())) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "资源未配置可调用 endpoint");
         }
@@ -589,6 +590,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         ResourceResolveVO resolved = getByTypeAndId(type, String.valueOf(id), request.getVersion(), null, apiKey, userId, "invoke");
         ensurePublishedForInvoke(resolved);
         ensureNotCircuitOpen(type, resolved.getResourceCode());
+        ensureResourceHealthNotDown(id);
         if (!StringUtils.hasText(resolved.getEndpoint())) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "资源未配置可调用 endpoint");
         }
@@ -980,6 +982,28 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private Map<String, Object> queryOne(String sql, Object... args) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, args);
         return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    /**
+     * 与健康检查配置联动：{@code down} / {@code disabled} 时拒绝 invoke，避免用户持续命中已知不可用资源。
+     */
+    private void ensureResourceHealthNotDown(Long resourceId) {
+        if (resourceId == null) {
+            return;
+        }
+        Map<String, Object> row = queryOne(
+                "SELECT health_status FROM t_resource_health_config WHERE resource_id = ? LIMIT 1",
+                resourceId);
+        if (row == null) {
+            return;
+        }
+        String hs = valueOf(row.get("health_status")).trim().toLowerCase(Locale.ROOT);
+        if ("down".equals(hs)) {
+            throw new BusinessException(ResultCode.RESOURCE_HEALTH_DOWN);
+        }
+        if ("disabled".equals(hs)) {
+            throw new BusinessException(ResultCode.RESOURCE_HEALTH_DOWN, "资源健康检查已关闭或未启用，暂不可调用");
+        }
     }
 
     private void ensureNotCircuitOpen(String resourceType, String resourceCode) {

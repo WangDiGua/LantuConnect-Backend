@@ -3,6 +3,7 @@ package com.lantu.connect.task;
 import com.lantu.connect.task.support.TaskDistributedLock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -36,7 +37,8 @@ public class HealthCheckTask {
         try {
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                     "SELECT id, resource_code, check_url, timeout_sec, healthy_threshold, interval_sec FROM t_resource_health_config "
-                            + "WHERE check_url IS NOT NULL AND TRIM(check_url) <> ''");
+                            + "WHERE check_url IS NOT NULL AND TRIM(check_url) <> '' "
+                            + "AND (check_type IS NULL OR LOWER(TRIM(check_type)) IN ('', 'http'))");
             int healthy = 0, degraded = 0, down = 0;
             for (Map<String, Object> row : rows) {
                 Long id = ((Number) row.get("id")).longValue();
@@ -76,7 +78,7 @@ public class HealthCheckTask {
                 log.info("[定时任务] {} 完成: {} 个目标 (健康: {}, 降级: {}, 下线: {})",
                         TASK_NAME, rows.size(), healthy, degraded, down);
             }
-        } catch (Exception e) {
+        } catch (DataAccessException e) {
             log.warn("[定时任务] {} 失败: {}", TASK_NAME, e.getMessage());
         } finally {
             taskDistributedLock.unlock(TASK_NAME);
@@ -96,7 +98,7 @@ public class HealthCheckTask {
             HttpResponse<Void> resp = client.send(req, HttpResponse.BodyHandlers.discarding());
             int code = resp.statusCode();
             return code >= 200 && code < 400;
-        } catch (Exception e) {
+        } catch (java.io.IOException | InterruptedException e) {
             return false;
         }
     }

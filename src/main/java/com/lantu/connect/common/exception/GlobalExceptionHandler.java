@@ -218,7 +218,8 @@ public class GlobalExceptionHandler {
                 || code == ResultCode.DAILY_QUOTA_EXHAUSTED.getCode()
                 || code == ResultCode.MONTHLY_QUOTA_EXHAUSTED.getCode()
                 || code == ResultCode.CIRCUIT_OPEN.getCode()
-                || code == ResultCode.QUOTA_EXCEEDED.getCode()) {
+                || code == ResultCode.QUOTA_EXCEEDED.getCode()
+                || code == ResultCode.RESOURCE_HEALTH_DOWN.getCode()) {
             return HttpStatus.TOO_MANY_REQUESTS;
         }
         return HttpStatus.INTERNAL_SERVER_ERROR;

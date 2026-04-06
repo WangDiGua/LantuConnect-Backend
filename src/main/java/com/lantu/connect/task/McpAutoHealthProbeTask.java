@@ -1,0 +1,214 @@
+package com.lantu.connect.task;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lantu.connect.gateway.dto.McpConnectivityProbeRequest;
+import com.lantu.connect.gateway.dto.McpConnectivityProbeResult;
+import com.lantu.connect.gateway.service.McpConnectivityProbeService;
+import com.lantu.connect.task.support.TaskDistributedLock;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+
+import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * 已发布 MCP 资源的周期性 JSON-RPC 探活：写入 {@code t_resource_health_config}（{@code check_type=mcp_jsonrpc}），
+ * 与仅做 HTTP GET 的 {@link HealthCheckTask} 分离，避免对 MCP 端点误发 GET。
+ */
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class McpAutoHealthProbeTask {
+
+    private static final String TASK_NAME = "McpAutoHealthProbe";
+    private static final String CHECK_TYPE_MCP = "mcp_jsonrpc";
+    private static final String TYPE_MCP = "mcp";
+    private static final String STATUS_PUBLISHED = "published";
+    /** 与 {@link McpConnectivityProbeService} 默认探测超时一致 */
+    private static final int DEFAULT_PROBE_TIMEOUT_SEC = 20;
+
+    private static final Map<Long, Integer> CONSECUTIVE_FAILURES = new ConcurrentHashMap<>();
+
+    private final TaskDistributedLock taskDistributedLock;
+    private final JdbcTemplate jdbcTemplate;
+    private final McpConnectivityProbeService mcpConnectivityProbeService;
+    private final ObjectMapper objectMapper;
+
+    @Scheduled(cron = "0 */5 * * * ?")
+    public void run() {
+        if (!taskDistributedLock.tryLock(TASK_NAME)) {
+            return;
+        }
+        try {
+            List<Map<String, Object>> targets = jdbcTemplate.queryForList(
+                    "SELECT r.id AS resource_id, r.resource_type, r.resource_code, r.display_name, "
+                            + "m.endpoint, m.protocol, m.auth_type, m.auth_config "
+                            + "FROM t_resource r INNER JOIN t_resource_mcp_ext m ON m.resource_id = r.id "
+                            + "WHERE r.deleted = 0 AND LOWER(r.status) = ? AND r.resource_type = ?",
+                    STATUS_PUBLISHED, TYPE_MCP);
+            int ok = 0, degraded = 0, down = 0, skipped = 0;
+            for (Map<String, Object> row : targets) {
+                Long resourceId = ((Number) row.get("resource_id")).longValue();
+                String endpoint = trimToNull(row.get("endpoint"));
+                if (!StringUtils.hasText(endpoint)) {
+                    skipped++;
+                    continue;
+                }
+                String protoCol = trimToNull(row.get("protocol"));
+                if (protoCol != null && "stdio".equalsIgnoreCase(protoCol)) {
+                    skipped++;
+                    continue;
+                }
+                Map<String, Object> health = jdbcTemplate.queryForList(
+                                "SELECT id, check_type, health_status, healthy_threshold, timeout_sec "
+                                        + "FROM t_resource_health_config WHERE resource_id = ? LIMIT 1",
+                                resourceId)
+                        .stream().findFirst().orElse(null);
+                if (health != null) {
+                    String hs = trimToNull(health.get("health_status"));
+                    if (hs != null && "disabled".equalsIgnoreCase(hs)) {
+                        skipped++;
+                        continue;
+                    }
+                    String ct = trimToNull(health.get("check_type"));
+                    if (ct != null && !CHECK_TYPE_MCP.equalsIgnoreCase(ct)) {
+                        skipped++;
+                        continue;
+                    }
+                }
+                int failThreshold = 3;
+                if (health != null) {
+                    Object ht = health.get("healthy_threshold");
+                    if (ht instanceof Number n) {
+                        failThreshold = Math.max(1, Math.min(20, n.intValue()));
+                    }
+                }
+                Map<String, Object> authConfig = parseJsonMap(row.get("auth_config"));
+                McpConnectivityProbeRequest probeReq = new McpConnectivityProbeRequest();
+                probeReq.setEndpoint(endpoint.trim());
+                String authType = trimToNull(row.get("auth_type"));
+                if (authType != null) {
+                    probeReq.setAuthType(authType);
+                }
+                if (!authConfig.isEmpty()) {
+                    probeReq.setAuthConfig(new LinkedHashMap<>(authConfig));
+                }
+                String transport = resolveTransport(authConfig, protoCol, endpoint);
+                if (transport != null) {
+                    probeReq.setTransport(transport);
+                }
+                McpConnectivityProbeResult probeRes = mcpConnectivityProbeService.probe(probeReq);
+                boolean probeOk = probeRes.isOk();
+
+                String status;
+                if (probeOk) {
+                    CONSECUTIVE_FAILURES.remove(resourceId);
+                    status = "healthy";
+                    ok++;
+                } else {
+                    int failures = CONSECUTIVE_FAILURES.getOrDefault(resourceId, 0) + 1;
+                    CONSECUTIVE_FAILURES.put(resourceId, failures);
+                    if (failures >= failThreshold) {
+                        status = "down";
+                        down++;
+                    } else {
+                        status = "degraded";
+                        degraded++;
+                    }
+                }
+                LocalDateTime now = LocalDateTime.now();
+                String resourceCode = valueOf(row.get("resource_code"));
+                String displayName = valueOf(row.get("display_name"));
+                if (health == null) {
+                    jdbcTemplate.update(
+                            "INSERT INTO t_resource_health_config (resource_id, resource_type, resource_code, display_name, "
+                                    + "check_type, check_url, interval_sec, healthy_threshold, timeout_sec, health_status, last_check_time) "
+                                    + "VALUES (?, ?, ?, ?, ?, ?, 300, ?, ?, ?, ?)",
+                            resourceId,
+                            TYPE_MCP,
+                            resourceCode,
+                            StringUtils.hasText(displayName) ? displayName : resourceCode,
+                            CHECK_TYPE_MCP,
+                            endpoint.trim(),
+                            failThreshold,
+                            DEFAULT_PROBE_TIMEOUT_SEC,
+                            status,
+                            now);
+                } else {
+                    Long hid = ((Number) health.get("id")).longValue();
+                    jdbcTemplate.update(
+                            "UPDATE t_resource_health_config SET health_status = ?, last_check_time = ?, check_url = ?, "
+                                    + "check_type = ?, healthy_threshold = ? WHERE id = ?",
+                            status, now, endpoint.trim(), CHECK_TYPE_MCP, failThreshold, hid);
+                }
+            }
+            if (!targets.isEmpty()) {
+                log.info("[定时任务] {} 完成: MCP {} 个 (跳过: {}, 健康: {}, 降级: {}, 下线: {})",
+                        TASK_NAME, targets.size(), skipped, ok, degraded, down);
+            }
+        } catch (DataAccessException e) {
+            log.warn("[定时任务] {} 失败: {}", TASK_NAME, e.getMessage());
+        } finally {
+            taskDistributedLock.unlock(TASK_NAME);
+        }
+    }
+
+    private static String resolveTransport(Map<String, Object> authConfig, String protocolCol, String endpoint) {
+        if (authConfig != null) {
+            Object t = authConfig.get("transport");
+            if (t != null && StringUtils.hasText(String.valueOf(t).trim())) {
+                return String.valueOf(t).trim();
+            }
+        }
+        if (protocolCol != null && "websocket".equalsIgnoreCase(protocolCol.trim())) {
+            return "websocket";
+        }
+        String e = endpoint.trim().toLowerCase(Locale.ROOT);
+        if (e.startsWith("ws://") || e.startsWith("wss://")) {
+            return "websocket";
+        }
+        return null;
+    }
+
+    private Map<String, Object> parseJsonMap(Object raw) {
+        if (raw == null) {
+            return Map.of();
+        }
+        try {
+            if (raw instanceof String s) {
+                if (!StringUtils.hasText(s)) {
+                    return Map.of();
+                }
+                return objectMapper.readValue(s, new TypeReference<>() {
+                });
+            }
+            return objectMapper.convertValue(raw, new TypeReference<>() {
+            });
+        } catch (JsonProcessingException | IllegalArgumentException e) {
+            return Map.of();
+        }
+    }
+
+    private static String trimToNull(Object v) {
+        if (v == null) {
+            return null;
+        }
+        String s = String.valueOf(v).trim();
+        return s.isEmpty() ? null : s;
+    }
+
+    private static String valueOf(Object v) {
+        return v == null ? "" : String.valueOf(v);
+    }
+}

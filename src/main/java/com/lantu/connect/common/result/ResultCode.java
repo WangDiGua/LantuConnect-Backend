@@ -44,6 +44,8 @@ public enum ResultCode {
     MONTHLY_QUOTA_EXHAUSTED(3003, "月配额已耗尽"),
     CIRCUIT_OPEN(3004, "服务熔断中"),
     QUOTA_EXCEEDED(3005, "配额已用尽"),
+    /** 与健康检查表联动：down/disabled 时拒绝 invoke，避免用户打到已知不可用资源 */
+    RESOURCE_HEALTH_DOWN(3006, "资源健康检查未通过，暂不可调用"),
 
     ILLEGAL_STATE_TRANSITION(4001, "非法状态流转"),
     REJECT_REASON_REQUIRED(4002, "审核驳回原因不能为空"),
