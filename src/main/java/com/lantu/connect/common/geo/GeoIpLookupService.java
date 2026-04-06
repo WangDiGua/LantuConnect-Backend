@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -77,7 +78,7 @@ public class GeoIpLookupService {
                 sb.append(country);
             }
             return !sb.isEmpty() ? sb.toString() : null;
-        } catch (Exception e) {
+        } catch (IOException | RuntimeException e) {
             log.debug("GeoIP lookup failed for ip={}: {}", ip, e.getMessage());
             return null;
         }

@@ -285,7 +285,7 @@ public class UserActivityServiceImpl implements UserActivityService {
         if (v instanceof Number n) return n.longValue();
         try {
             return Long.valueOf(String.valueOf(v));
-        } catch (Exception e) {
+        } catch (NumberFormatException e) {
             return null;
         }
     }

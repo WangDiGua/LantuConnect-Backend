@@ -21,6 +21,7 @@ import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
 import com.lantu.connect.gateway.security.ResourceInvokeGrantService;
 import com.lantu.connect.notification.service.NotificationEventCodes;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
+import com.lantu.connect.realtime.AuditPendingPushDebouncer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -70,6 +71,7 @@ public class AuditServiceImpl implements AuditService {
     private final CasbinAuthorizationService casbinAuthorizationService;
     private final ResourceRegistryService resourceRegistryService;
     private final ObjectMapper objectMapper;
+    private final AuditPendingPushDebouncer auditPendingPushDebouncer;
 
     @Override
     public PageResult<AuditItem> pagePendingAgents(Long operatorUserId, int page, int pageSize) {
@@ -166,6 +168,7 @@ public class AuditServiceImpl implements AuditService {
             notifySubmitter(item, NotificationEventCodes.AUDIT_APPROVED,
                     "已发布资源变更已合并",
                     "您的资源「" + item.getDisplayName() + "」的配置变更已通过审核并合并至线上默认解析版本。");
+            auditPendingPushDebouncer.requestFlush();
             return;
         }
         int n = auditItemMapper.update(null, new LambdaUpdateWrapper<AuditItem>()
@@ -182,6 +185,7 @@ public class AuditServiceImpl implements AuditService {
         notifySubmitter(item, NotificationEventCodes.AUDIT_APPROVED,
                 "资源审核通过",
                 "您的资源「" + item.getDisplayName() + "」已通过审核，请在资源中心对处于测试灰度（testing）的资源执行「发布上线」。");
+        auditPendingPushDebouncer.requestFlush();
     }
 
     @Override
@@ -241,6 +245,7 @@ public class AuditServiceImpl implements AuditService {
                     "已发布资源变更被驳回",
                     "您的资源「" + item.getDisplayName() + "」配置变更未通过审核（线上未变），原因：" + reason
                             + "。草稿已恢复到资源中心，请修改后重新提交。");
+            auditPendingPushDebouncer.requestFlush();
             return;
         }
         syncResourceStatusIf(item, STATUS_REJECTED, ResourceLifecycleStateMachine.STATUS_PENDING_REVIEW);
@@ -248,6 +253,7 @@ public class AuditServiceImpl implements AuditService {
         notifySubmitter(item, NotificationEventCodes.AUDIT_REJECTED,
                 "资源审核被驳回",
                 "您的资源「" + item.getDisplayName() + "」审核未通过，原因：" + reason);
+        auditPendingPushDebouncer.requestFlush();
     }
 
     private Map<String, Object> parseSnapshotPayload(String raw) {
@@ -257,7 +263,7 @@ public class AuditServiceImpl implements AuditService {
         try {
             Map<String, Object> m = objectMapper.readValue(raw, new TypeReference<LinkedHashMap<String, Object>>() {});
             return m == null ? Map.of() : m;
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "审核载荷 JSON 解析失败");
         }
     }
@@ -364,6 +370,7 @@ public class AuditServiceImpl implements AuditService {
         notifySubmitter(item, NotificationEventCodes.RESOURCE_PUBLISHED,
                 "资源已上线发布",
                 detail);
+        auditPendingPushDebouncer.requestFlush();
     }
 
     @Override

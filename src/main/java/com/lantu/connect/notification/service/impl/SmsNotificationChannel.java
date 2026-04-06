@@ -41,7 +41,7 @@ public class SmsNotificationChannel implements NotificationChannel {
         try {
             smsService.send(user.getMobile(), "[NexusAI] " + title + ": " + body);
             log.info("SMS notification sent to user {} ({})", userId, user.getMobile());
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.warn("Failed to send SMS notification to user {}: {}", userId, e.getMessage());
         }
     }

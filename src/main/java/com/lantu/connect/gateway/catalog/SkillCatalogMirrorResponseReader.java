@@ -87,7 +87,7 @@ public final class SkillCatalogMirrorResponseReader {
         }
         try {
             UriComponentsBuilder.fromHttpUrl(templateUrl.trim()).build();
-        } catch (Exception e) {
+        } catch (IllegalArgumentException | IllegalStateException e) {
             return Optional.empty();
         }
         return Optional.of(nextPage);
@@ -207,11 +207,10 @@ public final class SkillCatalogMirrorResponseReader {
         if (!gh.startsWith("http://") && !gh.startsWith("https://")) {
             return null;
         }
-        Optional<GitHubRepoRef> refOpt = GitHubRepoRef.parse(gh);
-        if (refOpt.isEmpty()) {
+        GitHubRepoRef ref = GitHubRepoRef.parse(gh).orElse(null);
+        if (ref == null) {
             return null;
         }
-        GitHubRepoRef ref = refOpt.get();
         String branch = firstNonBlank(text(n, "branch"), text(n, "defaultBranch"));
         if (!StringUtils.hasText(branch)) {
             branch = "main";

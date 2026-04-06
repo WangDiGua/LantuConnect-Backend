@@ -1,5 +1,6 @@
 package com.lantu.connect.sysconfig.runtime;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.config.BackendContractProperties;
@@ -93,7 +94,7 @@ public class RuntimeAppConfigService {
             } else {
                 try {
                     cachedRoot = objectMapper.readTree(row.getValue().trim());
-                } catch (Exception e) {
+                } catch (JsonProcessingException e) {
                     log.warn("{} JSON 无效，忽略 DB 覆盖: {}", PARAM_KEY, e.getMessage());
                     cachedRoot = null;
                 }

@@ -68,7 +68,7 @@ public class GitSkillPackCloner {
         URI uri;
         try {
             uri = new URI(url);
-        } catch (Exception e) {
+        } catch (java.net.URISyntaxException e) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "Git 地址无效");
         }
         Path workDir = null;

@@ -41,7 +41,7 @@ public class MultiChannelNotificationService {
         for (NotificationChannel channel : channels) {
             try {
                 channel.deliver(userId, title, body);
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
                 log.warn("Channel {} failed for user {}: {}", channel.channelName(), userId, e.getMessage());
             }
         }

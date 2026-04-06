@@ -3,12 +3,15 @@ package com.lantu.connect.onboarding.service.impl;
 import com.lantu.connect.onboarding.dto.DeveloperStatistics;
 import com.lantu.connect.onboarding.service.DeveloperStatisticsService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DeveloperStatisticsServiceImpl implements DeveloperStatisticsService {
@@ -35,7 +38,8 @@ public class DeveloperStatisticsServiceImpl implements DeveloperStatisticsServic
             avgLatency = jdbcTemplate.queryForObject(
                     "SELECT COALESCE(AVG(latency_ms), 0) FROM t_call_log WHERE user_id = ?",
                     Double.class, uid);
-        } catch (Exception ignored) {
+        } catch (DataAccessException e) {
+            log.debug("Developer statistics aggregate query failed for user {}: {}", userId, e.getMessage());
         }
         if (totalCalls == null) totalCalls = 0L;
         if (todayCalls == null) todayCalls = 0L;

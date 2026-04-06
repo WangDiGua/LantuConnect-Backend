@@ -22,10 +22,12 @@ import org.springframework.stereotype.Component;
 
 import org.springframework.util.StringUtils;
 
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 
 
+import java.io.IOException;
 import java.util.ArrayList;
 
 import java.util.List;
@@ -154,7 +156,7 @@ public class SkillCatalogMirrorClient {
 
             throw e;
 
-        } catch (Exception e) {
+        } catch (IOException | RestClientException e) {
 
             log.warn("拉取技能镜像目录失败: {}", e.getMessage());
 

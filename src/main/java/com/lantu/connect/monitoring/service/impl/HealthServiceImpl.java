@@ -11,6 +11,7 @@ import com.lantu.connect.monitoring.entity.HealthConfig;
 import com.lantu.connect.monitoring.mapper.CircuitBreakerMapper;
 import com.lantu.connect.monitoring.mapper.HealthConfigMapper;
 import com.lantu.connect.monitoring.service.HealthService;
+import com.lantu.connect.realtime.RealtimePushService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 监控Health服务实现
@@ -32,6 +34,7 @@ public class HealthServiceImpl implements HealthService {
     private final HealthConfigMapper healthConfigMapper;
     private final CircuitBreakerMapper circuitBreakerMapper;
     private final JdbcTemplate jdbcTemplate;
+    private final RealtimePushService realtimePushService;
 
     @Override
     public List<HealthConfig> listConfigs() {
@@ -61,6 +64,15 @@ public class HealthServiceImpl implements HealthService {
             entity.setCreateTime(now);
             entity.setUpdateTime(now);
             healthConfigMapper.insert(entity);
+            realtimePushService.pushHealthConfigChanged(
+                    entity.getResourceId(),
+                    entity.getAgentType(),
+                    entity.getAgentName(),
+                    entity.getDisplayName(),
+                    entity.getCheckType(),
+                    entity.getHealthStatus(),
+                    now,
+                    null);
             return entity.getId();
         }
         HealthConfig existing = healthConfigMapper.selectById(request.getId());
@@ -80,11 +92,25 @@ public class HealthServiceImpl implements HealthService {
         if (request.getCheckIntervalSec() != null) {
             existing.setIntervalSec(request.getCheckIntervalSec());
         }
+        String prevHealth = existing.getHealthStatus();
         if (request.getEnabled() != null) {
             existing.setHealthStatus(request.getEnabled() == 0 ? "disabled" : "healthy");
         }
         existing.setUpdateTime(now);
         healthConfigMapper.updateById(existing);
+        if (!Objects.equals(
+                prevHealth == null ? null : prevHealth.trim().toLowerCase(),
+                existing.getHealthStatus() == null ? null : existing.getHealthStatus().trim().toLowerCase())) {
+            realtimePushService.pushHealthConfigChanged(
+                    existing.getResourceId(),
+                    existing.getAgentType(),
+                    existing.getAgentName(),
+                    existing.getDisplayName(),
+                    existing.getCheckType(),
+                    existing.getHealthStatus(),
+                    now,
+                    prevHealth);
+        }
         return existing.getId();
     }
 
@@ -136,6 +162,7 @@ public class HealthServiceImpl implements HealthService {
         ResourceRef resource = findResourceByCode(request.getServiceKey());
         CircuitBreaker existing = circuitBreakerMapper.selectOne(
                 new LambdaQueryWrapper<CircuitBreaker>().eq(CircuitBreaker::getAgentName, request.getServiceKey()));
+        String prevState = existing == null ? null : existing.getCurrentState();
         int duration = request.getOpenDurationSeconds() != null ? request.getOpenDurationSeconds() : 60;
         if (existing == null) {
             CircuitBreaker cb = new CircuitBreaker();
@@ -150,6 +177,13 @@ public class HealthServiceImpl implements HealthService {
             cb.setCreateTime(now);
             cb.setUpdateTime(now);
             circuitBreakerMapper.insert(cb);
+            realtimePushService.pushCircuitStateChanged(
+                    resource.id(),
+                    resource.type(),
+                    request.getServiceKey(),
+                    resource.displayName(),
+                    CircuitBreaker.STATE_OPEN,
+                    prevState);
         } else {
             existing.setResourceId(resource.id());
             existing.setResourceType(resource.type());
@@ -159,6 +193,15 @@ public class HealthServiceImpl implements HealthService {
             existing.setOpenDurationSec(duration);
             existing.setUpdateTime(now);
             circuitBreakerMapper.updateById(existing);
+            if (!CircuitBreaker.STATE_OPEN.equals(prevState)) {
+                realtimePushService.pushCircuitStateChanged(
+                        resource.id(),
+                        resource.type(),
+                        request.getServiceKey(),
+                        resource.displayName(),
+                        CircuitBreaker.STATE_OPEN,
+                        prevState);
+            }
         }
     }
 
@@ -186,11 +229,21 @@ public class HealthServiceImpl implements HealthService {
         if (existing == null) {
             throw new BusinessException(ResultCode.NOT_FOUND);
         }
+        String prevState = existing.getCurrentState();
         existing.setCurrentState(CircuitBreaker.STATE_CLOSED);
         existing.setFailureCount(0L);
         existing.setLastOpenedAt(null);
         existing.setUpdateTime(LocalDateTime.now());
         circuitBreakerMapper.updateById(existing);
+        if (existing.getResourceId() != null && !CircuitBreaker.STATE_CLOSED.equals(prevState)) {
+            realtimePushService.pushCircuitStateChanged(
+                    existing.getResourceId(),
+                    existing.getResourceType(),
+                    existing.getAgentName(),
+                    existing.getDisplayName(),
+                    CircuitBreaker.STATE_CLOSED,
+                    prevState);
+        }
     }
 
     @Override

@@ -277,7 +277,7 @@ public class SkillPackChunkedUploadService {
                     if (m != null && m.createdAt > 0 && now - m.createdAt > SESSION_TTL_MS) {
                         deleteSessionQuietly(sub);
                     }
-                } catch (Exception e) {
+                } catch (IOException e) {
                     deleteSessionQuietly(sub);
                 }
             });

@@ -74,7 +74,7 @@ public class AuditLogAspect {
             row.setDetails("elapsedMs=" + (System.currentTimeMillis() - start));
             try {
                 auditLogMapper.insert(row);
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
                 log.warn("写入审计日志失败: {}", e.getMessage());
             }
 

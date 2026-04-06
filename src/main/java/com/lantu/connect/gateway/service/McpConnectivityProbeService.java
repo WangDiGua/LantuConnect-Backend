@@ -11,10 +11,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 /**
  * MCP 登记前连通性探测：向用户自管的 endpoint 发送 JSON-RPC initialize，不进行资源落库。
@@ -66,7 +69,24 @@ public class McpConnectivityProbeService {
                     .latencyMs(0L)
                     .message(ex.getMessage())
                     .build();
+        } catch (IOException | InterruptedException | ExecutionException | TimeoutException ex) {
+            String msg = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+            return McpConnectivityProbeResult.builder()
+                    .ok(false)
+                    .statusCode(0)
+                    .latencyMs(0L)
+                    .message("探测失败: " + msg)
+                    .build();
+        } catch (RuntimeException ex) {
+            String msg = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+            return McpConnectivityProbeResult.builder()
+                    .ok(false)
+                    .statusCode(0)
+                    .latencyMs(0L)
+                    .message("探测失败: " + msg)
+                    .build();
         } catch (Exception ex) {
+            // GatewayProtocolInvoker.invoke declares throws Exception; cover any remaining checked types.
             String msg = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
             return McpConnectivityProbeResult.builder()
                     .ok(false)

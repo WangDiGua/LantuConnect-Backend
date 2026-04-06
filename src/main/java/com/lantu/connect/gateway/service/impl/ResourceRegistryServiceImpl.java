@@ -25,6 +25,7 @@ import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.notification.service.NotificationEventCodes;
 import com.lantu.connect.notification.service.NotificationService;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
+import com.lantu.connect.realtime.AuditPendingPushDebouncer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -82,6 +83,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     private final UserDisplayNameResolver userDisplayNameResolver;
     private final NotificationService notificationService;
     private final SystemNotificationFacade systemNotificationFacade;
+    private final AuditPendingPushDebouncer auditPendingPushDebouncer;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -256,6 +258,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                             resourceId,
                             merged.getDisplayName() != null ? merged.getDisplayName() : row.displayName()),
                     resourceId);
+            auditPendingPushDebouncer.requestFlush();
             return getById(operatorUserId, resourceId);
         }
 
@@ -307,6 +310,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                         resourceId,
                         row.displayName()),
                 resourceId);
+        auditPendingPushDebouncer.requestFlush();
         return findResource(resourceId);
     }
 

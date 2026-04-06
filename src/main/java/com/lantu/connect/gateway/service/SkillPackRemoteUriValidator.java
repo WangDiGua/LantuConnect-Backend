@@ -10,6 +10,7 @@ import org.springframework.util.StringUtils;
 
 import java.net.InetAddress;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.util.List;
 import java.util.Locale;
 
@@ -86,7 +87,7 @@ public class SkillPackRemoteUriValidator {
             }
         } catch (BusinessException e) {
             throw e;
-        } catch (Exception e) {
+        } catch (UnknownHostException | SecurityException e) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "无法解析主机: " + e.getMessage());
         }
     }

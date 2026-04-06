@@ -28,7 +28,7 @@ public class SessionGeoEnrichmentService {
             if (StringUtils.hasText(loc)) {
                 sessionTrackerService.updateSessionMetaField(sessionId, "location", loc);
             }
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.debug("Session geo enrichment failed sessionId={}: {}", sessionId, e.getMessage());
         }
     }

@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 
 /**
@@ -55,7 +56,7 @@ public class SkillExternalCatalogRuntimeConfigService {
                 fillMissingNestedFromYamlDefaults(p);
                 patchLegacySkillHubWebOnlyBaseUrl(p);
                 return p;
-            } catch (Exception e) {
+            } catch (IOException e) {
                 log.warn("skill_external_catalog JSON 无效，回退 YAML 默认: {}", e.getMessage());
             }
         }
@@ -105,7 +106,7 @@ public class SkillExternalCatalogRuntimeConfigService {
             SkillExternalCatalogProperties d = objectMapper.readValue(
                     objectMapper.writeValueAsString(yamlDefaults), SkillExternalCatalogProperties.class);
             return d.getSkillhub() != null ? d.getSkillhub() : new SkillExternalCatalogProperties.SkillHub();
-        } catch (Exception e) {
+        } catch (IOException e) {
             return new SkillExternalCatalogProperties.SkillHub();
         }
     }
@@ -115,7 +116,7 @@ public class SkillExternalCatalogRuntimeConfigService {
             SkillExternalCatalogProperties d = objectMapper.readValue(
                     objectMapper.writeValueAsString(yamlDefaults), SkillExternalCatalogProperties.class);
             return d.getSkillsmp() != null ? d.getSkillsmp() : new SkillExternalCatalogProperties.SkillsMp();
-        } catch (Exception e) {
+        } catch (IOException e) {
             return new SkillExternalCatalogProperties.SkillsMp();
         }
     }
@@ -150,7 +151,7 @@ public class SkillExternalCatalogRuntimeConfigService {
         String json;
         try {
             json = objectMapper.writeValueAsString(incoming);
-        } catch (Exception e) {
+        } catch (IOException e) {
             throw new IllegalStateException("配置序列化失败: " + e.getMessage(), e);
         }
         SystemParam existing = systemParamMapper.selectById(PARAM_KEY);
@@ -180,7 +181,7 @@ public class SkillExternalCatalogRuntimeConfigService {
                     SkillExternalCatalogProperties.class);
             patchLegacySkillHubWebOnlyBaseUrl(p);
             return p;
-        } catch (Exception e) {
+        } catch (IOException e) {
             throw new IllegalStateException("无法克隆默认技能市场配置", e);
         }
     }

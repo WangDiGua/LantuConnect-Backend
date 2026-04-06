@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
@@ -62,7 +63,7 @@ public class NetworkApplyServiceImpl implements NetworkApplyService {
                     .message((String) body.getOrDefault("message", "网络下发失败"))
                     .status("FAILED")
                     .build();
-        } catch (Exception e) {
+        } catch (RestClientException e) {
             log.error("网络下发失败: {}", e.getMessage(), e);
             return NetworkApplyResult.builder()
                     .success(false)
@@ -103,7 +104,7 @@ public class NetworkApplyServiceImpl implements NetworkApplyService {
                     .taskId(taskId)
                     .status((String) body.getOrDefault("status", "UNKNOWN"))
                     .build();
-        } catch (Exception e) {
+        } catch (RestClientException e) {
             log.error("网络状态查询失败: {}", e.getMessage(), e);
             return NetworkApplyResult.builder()
                     .success(false)

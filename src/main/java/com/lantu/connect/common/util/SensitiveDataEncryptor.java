@@ -9,7 +9,9 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
 
@@ -52,7 +54,7 @@ public class SensitiveDataEncryptor {
             System.arraycopy(encrypted, 0, combined, iv.length, encrypted.length);
 
             return Base64.getEncoder().encodeToString(combined);
-        } catch (Exception e) {
+        } catch (GeneralSecurityException e) {
             log.error("Encryption failed: {}", e.getMessage());
             throw new RuntimeException("Encryption failed", e);
         }
@@ -79,7 +81,7 @@ public class SensitiveDataEncryptor {
 
             byte[] decrypted = cipher.doFinal(encrypted);
             return new String(decrypted, StandardCharsets.UTF_8);
-        } catch (Exception e) {
+        } catch (GeneralSecurityException | IllegalArgumentException e) {
             log.error("Decryption failed: {}", e.getMessage());
             throw new RuntimeException("Decryption failed", e);
         }
@@ -95,7 +97,7 @@ public class SensitiveDataEncryptor {
         }
         try {
             return MessageDigest.getInstance("SHA-256").digest(raw);
-        } catch (Exception e) {
+        } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("Unable to derive AES key", e);
         }
     }

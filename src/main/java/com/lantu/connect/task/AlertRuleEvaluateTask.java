@@ -5,6 +5,7 @@ import com.lantu.connect.monitoring.entity.AlertRule;
 import com.lantu.connect.monitoring.mapper.AlertRecordMapper;
 import com.lantu.connect.monitoring.mapper.AlertRuleMapper;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
+import com.lantu.connect.realtime.RealtimePushService;
 import com.lantu.connect.task.support.TaskDistributedLock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,7 @@ public class AlertRuleEvaluateTask {
     private final AlertRecordMapper alertRecordMapper;
     private final SystemNotificationFacade systemNotificationFacade;
     private final JdbcTemplate jdbcTemplate;
+    private final RealtimePushService realtimePushService;
 
     @Scheduled(cron = "0 */1 * * * ?")
     public void run() {
@@ -65,6 +67,13 @@ public class AlertRuleEvaluateTask {
                 record.setFiredAt(LocalDateTime.now());
                 alertRecordMapper.insert(record);
 
+                realtimePushService.pushAlertFiring(
+                        rule.getId(),
+                        rule.getName(),
+                        rule.getSeverity(),
+                        record.getId(),
+                        record.getMessage());
+
                 systemNotificationFacade.notifyAlertTriggered(
                         rule.getName(),
                         rule.getSeverity(),
@@ -73,7 +82,7 @@ public class AlertRuleEvaluateTask {
                         String.valueOf(sample),
                         record.getId());
             }
-        } catch (Exception ex) {
+        } catch (RuntimeException ex) {
             log.warn("{} failed: {}", TASK_NAME, ex.getMessage());
         } finally {
             taskDistributedLock.unlock(TASK_NAME);

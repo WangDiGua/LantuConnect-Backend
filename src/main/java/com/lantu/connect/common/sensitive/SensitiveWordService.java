@@ -78,7 +78,7 @@ public class SensitiveWordService {
             SensitiveWordBs newEngine = buildEngine(dbWords);
             engineRef.set(newEngine);
             log.info("敏感词库刷新完成（开源引擎 + DB词库 + 内置词库），DB有效词数: {}", dbWords.size());
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             engineRef.set(buildEngine(List.of()));
             log.warn("敏感词库刷新失败，已回退为仅开源内置词库: {}", e.getMessage());
         }

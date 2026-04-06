@@ -35,7 +35,9 @@ public class LantuConnectApplication {
             String host = "localhost";
             try {
                 host = InetAddress.getLocalHost().getHostAddress();
-            } catch (UnknownHostException ignored) {}
+            } catch (UnknownHostException e) {
+                log.debug("Could not resolve local host for startup banner, using label localhost: {}", e.toString());
+            }
 
             String baseUrl = "http://" + host + ":" + port + contextPath;
             String swaggerUrl = baseUrl + "/swagger-ui.html";

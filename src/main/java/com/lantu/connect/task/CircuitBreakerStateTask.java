@@ -3,6 +3,7 @@ package com.lantu.connect.task;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lantu.connect.monitoring.entity.CircuitBreaker;
 import com.lantu.connect.monitoring.mapper.CircuitBreakerMapper;
+import com.lantu.connect.realtime.RealtimePushService;
 import com.lantu.connect.task.support.TaskDistributedLock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +28,7 @@ public class CircuitBreakerStateTask {
 
     private final CircuitBreakerMapper circuitBreakerMapper;
     private final TaskDistributedLock taskDistributedLock;
+    private final RealtimePushService realtimePushService;
 
     @Scheduled(cron = "0 */1 * * * ?")
     public void run() {
@@ -43,12 +45,22 @@ public class CircuitBreakerStateTask {
                 }
                 LocalDateTime until = cb.getLastOpenedAt().plusSeconds(cb.getOpenDurationSec());
                 if (!now.isBefore(until)) {
+                    String prev = cb.getCurrentState();
                     cb.setCurrentState(CircuitBreaker.STATE_HALF_OPEN);
                     cb.setSuccessCount(0L);
                     cb.setFailureCount(0L);
                     cb.setUpdateTime(now);
                     circuitBreakerMapper.updateById(cb);
                     log.info("{} transitioned {} to HALF_OPEN", TASK_NAME, cb.getAgentName());
+                    if (cb.getResourceId() != null) {
+                        realtimePushService.pushCircuitStateChanged(
+                                cb.getResourceId(),
+                                cb.getResourceType(),
+                                cb.getAgentName(),
+                                cb.getDisplayName(),
+                                CircuitBreaker.STATE_HALF_OPEN,
+                                prev);
+                    }
                 }
             }
         } finally {

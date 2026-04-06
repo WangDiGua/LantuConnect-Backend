@@ -8,6 +8,7 @@ import com.lantu.connect.sysconfig.service.QuotaCheckService;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GatewayGovernanceService {
@@ -51,8 +53,8 @@ public class GatewayGovernanceService {
             if (n != null && n <= 0) {
                 stringRedisTemplate.delete(lease.concurrentKey());
             }
-        } catch (Exception ignore) {
-            // ignore release failures to avoid masking invoke errors.
+        } catch (RuntimeException e) {
+            log.debug("invoke concurrent permit release failed: {}", e.toString());
         }
     }
 

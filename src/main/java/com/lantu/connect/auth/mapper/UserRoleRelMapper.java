@@ -17,7 +17,7 @@ import java.util.List;
 @Mapper
 public interface UserRoleRelMapper extends BaseMapper<UserRoleRel> {
 
-    @Select("SELECT * FROM t_user_role_rel WHERE user_id = #{userId} ORDER BY role_id ASC")
+    @Select("SELECT id, user_id, role_id, create_time FROM t_user_role_rel WHERE user_id = #{userId} ORDER BY role_id ASC")
     List<UserRoleRel> selectByUserId(@Param("userId") Long userId);
 
     @Select("SELECT role_id FROM t_user_role_rel WHERE user_id = #{userId} ORDER BY role_id ASC")

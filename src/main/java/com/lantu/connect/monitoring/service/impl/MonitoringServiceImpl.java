@@ -310,7 +310,7 @@ public class MonitoringServiceImpl implements MonitoringService {
         }
         try {
             return Long.parseLong(String.valueOf(value));
-        } catch (Exception ex) {
+        } catch (NumberFormatException ex) {
             return 0L;
         }
     }
@@ -324,7 +324,7 @@ public class MonitoringServiceImpl implements MonitoringService {
         }
         try {
             return Double.parseDouble(String.valueOf(value));
-        } catch (Exception ex) {
+        } catch (NumberFormatException ex) {
             return 0D;
         }
     }

@@ -2,10 +2,12 @@ package com.lantu.connect.common.util;
 
 import com.lantu.connect.common.security.CasbinAuthorizationService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class DeptScopeHelper {
@@ -27,7 +29,9 @@ public class DeptScopeHelper {
             if (uid != null && !uid.isBlank()) {
                 try {
                     return Long.valueOf(uid.trim());
-                } catch (NumberFormatException ignored) {}
+                } catch (NumberFormatException ex) {
+                    log.debug("Ignoring non-numeric X-User-Id header: {}", uid, ex);
+                }
             }
         }
         return null;

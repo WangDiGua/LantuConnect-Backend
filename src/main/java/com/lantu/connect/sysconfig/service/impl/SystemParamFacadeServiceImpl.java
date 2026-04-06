@@ -225,7 +225,7 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
         try {
             return objectMapper.readValue(p.getValue().trim(), new TypeReference<>() {
             });
-        } catch (Exception ex) {
+        } catch (JsonProcessingException ex) {
             return List.of();
         }
     }
@@ -319,7 +319,7 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
         try {
             return objectMapper.readValue(p.getValue().trim(), new TypeReference<>() {
             });
-        } catch (Exception ex) {
+        } catch (JsonProcessingException ex) {
             return List.of();
         }
     }

@@ -9,7 +9,9 @@ import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
 
@@ -49,7 +51,7 @@ public class FieldEncryptor {
             buffer.put(iv);
             buffer.put(ciphertext);
             return "ENC:" + Base64.getEncoder().encodeToString(buffer.array());
-        } catch (Exception e) {
+        } catch (GeneralSecurityException e) {
             log.error("Field encryption failed", e);
             return plaintext;
         }
@@ -75,7 +77,7 @@ public class FieldEncryptor {
             cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key, "AES"),
                     new GCMParameterSpec(GCM_TAG_LENGTH, iv));
             return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
-        } catch (Exception e) {
+        } catch (GeneralSecurityException | IllegalArgumentException e) {
             log.error("Field decryption failed", e);
             return ciphertext;
         }
@@ -92,7 +94,7 @@ public class FieldEncryptor {
         }
         try {
             return MessageDigest.getInstance("SHA-256").digest(raw);
-        } catch (Exception e) {
+        } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("Unable to derive field encryption key", e);
         }
     }

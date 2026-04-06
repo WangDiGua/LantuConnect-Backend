@@ -26,7 +26,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -100,7 +99,7 @@ public class SkillExternalCatalogService {
         } catch (BusinessException e) {
             log.warn("技能市场远程拉取失败（保留库内数据）: {}", e.getMessage());
             return List.of();
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.warn("技能市场远程拉取异常（保留库内数据）: {}", e.toString());
             return List.of();
         }
@@ -383,7 +382,7 @@ public class SkillExternalCatalogService {
                 for (SkillHubSearchSkillJson s : skills) {
                     mergeSkillHubIntoMap(byDedupeKey, s, branch);
                 }
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
                 log.warn("SkillHub 搜索词 [{}] 跳过: {}", q, e.getMessage());
             }
         }
@@ -401,11 +400,10 @@ public class SkillExternalCatalogService {
         String slug = s.getSlug().trim();
         String b = StringUtils.hasText(branch) ? branch : "main";
         String treeUrl = String.format(Locale.ROOT, "https://github.com/%s/tree/%s/%s", sid, b, slug);
-        Optional<GitHubRepoRef> refOpt = GitHubRepoRef.parse(treeUrl);
-        if (refOpt.isEmpty()) {
+        GitHubRepoRef ref = GitHubRepoRef.parse(treeUrl).orElse(null);
+        if (ref == null) {
             return;
         }
-        GitHubRepoRef ref = refOpt.get();
         String packUrl = ref.defaultBranchArchiveZip(b);
         String name = StringUtils.hasText(s.getName()) ? s.getName().trim() : slug;
         String id = (sid.replace('/', '-') + "-" + slug).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9\\-]", "-");
@@ -472,11 +470,10 @@ public class SkillExternalCatalogService {
         if (s == null) {
             return;
         }
-        Optional<GitHubRepoRef> refOpt = GitHubRepoRef.parse(s.getGithubUrl());
-        if (refOpt.isEmpty()) {
+        GitHubRepoRef ref = GitHubRepoRef.parse(s.getGithubUrl()).orElse(null);
+        if (ref == null) {
             return;
         }
-        GitHubRepoRef ref = refOpt.get();
         String packUrl = ref.defaultBranchArchiveZip(branch);
         String id = StringUtils.hasText(s.getId())
                 ? s.getId().trim()

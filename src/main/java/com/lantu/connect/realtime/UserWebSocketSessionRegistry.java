@@ -12,6 +12,10 @@ import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
  * 按 userId 管理浏览器 WebSocket 会话（多标签页可多连接）。
+ *
+ * <p><b>多节点部署：</b>注册表为进程内内存。运行多个应用实例且未做跨节点消息广播时，由其它实例触发的
+ * {@link RealtimePushService} 无法到达连接在本实例之外的会话。生产多副本需在推送链路上增加 Redis Pub/Sub、
+ * 消息队列或与会话亲和的网关策略。
  */
 @Component
 @Slf4j

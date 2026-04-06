@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
@@ -62,7 +63,7 @@ public class AclPublishServiceImpl implements AclPublishService {
                     .message((String) body.getOrDefault("message", "ACL发布失败"))
                     .status("FAILED")
                     .build();
-        } catch (Exception e) {
+        } catch (RestClientException e) {
             log.error("ACL发布失败: {}", e.getMessage(), e);
             return AclPublishResult.builder()
                     .success(false)
@@ -103,7 +104,7 @@ public class AclPublishServiceImpl implements AclPublishService {
                     .aclId(aclId)
                     .status((String) body.getOrDefault("status", "UNKNOWN"))
                     .build();
-        } catch (Exception e) {
+        } catch (RestClientException e) {
             log.error("ACL状态查询失败: {}", e.getMessage(), e);
             return AclPublishResult.builder()
                     .success(false)

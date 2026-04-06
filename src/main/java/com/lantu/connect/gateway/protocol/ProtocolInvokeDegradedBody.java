@@ -1,5 +1,6 @@
 package com.lantu.connect.gateway.protocol;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.exception.BusinessException;
 
@@ -17,7 +18,7 @@ public final class ProtocolInvokeDegradedBody {
     public static String buildJson(ObjectMapper objectMapper, String label, Throwable t) {
         try {
             return objectMapper.writeValueAsString(degradedMap(label, t));
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             return "{\"error\":\"" + escapeJson(label) + "\",\"message\":\"failed to serialize degraded details\"}";
         }
     }

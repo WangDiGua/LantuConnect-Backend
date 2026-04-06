@@ -1,5 +1,6 @@
 package com.lantu.connect.gateway.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
@@ -220,7 +221,7 @@ public class SkillPackUploadService {
         String manifestJson;
         try {
             manifestJson = objectMapper.writeValueAsString(manifest);
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "manifest 序列化失败");
         }
         jdbcTemplate.update("""

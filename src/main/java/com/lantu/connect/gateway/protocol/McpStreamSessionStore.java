@@ -8,6 +8,7 @@ import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.Optional;
@@ -65,7 +66,7 @@ public class McpStreamSessionStore {
                 sb.append(String.format("%02x", b));
             }
             return sb.toString();
-        } catch (Exception e) {
+        } catch (NoSuchAlgorithmException e) {
             return String.valueOf(java.util.Arrays.hashCode(raw));
         }
     }

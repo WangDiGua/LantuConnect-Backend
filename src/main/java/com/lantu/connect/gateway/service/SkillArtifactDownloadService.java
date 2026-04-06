@@ -186,7 +186,7 @@ public class SkillArtifactDownloadService {
         }
         try {
             return Long.valueOf(String.valueOf(v));
-        } catch (Exception e) {
+        } catch (NumberFormatException e) {
             return null;
         }
     }

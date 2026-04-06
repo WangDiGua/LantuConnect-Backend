@@ -121,6 +121,7 @@ public class FileStorageSupport {
             return createMinioClient().getObject(
                     GetObjectArgs.builder().bucket(minioBucket).object(objectKey).build());
         } catch (Exception e) {
+            // MinIO client throws multiple checked types (e.g. ErrorResponseException) besides IOException.
             throw new BusinessException(ResultCode.FILE_STORAGE_ERROR, "对象存储读取失败");
         }
     }

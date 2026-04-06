@@ -1,5 +1,6 @@
 package com.lantu.connect.gateway.protocol.auth;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.exception.BusinessException;
@@ -10,6 +11,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -55,7 +57,7 @@ public class Oauth2ClientCredentialsTokenService {
                 if (exp > System.currentTimeMillis() + skewMs) {
                     return n.path("token").asText();
                 }
-            } catch (Exception ignored) {
+            } catch (JsonProcessingException ignored) {
                 stringRedisTemplate.delete(cacheKey);
             }
         }
@@ -99,7 +101,7 @@ public class Oauth2ClientCredentialsTokenService {
             return access;
         } catch (BusinessException e) {
             throw e;
-        } catch (Exception e) {
+        } catch (IOException | InterruptedException e) {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "OAuth2 token 请求异常: " + e.getMessage());
         }
     }

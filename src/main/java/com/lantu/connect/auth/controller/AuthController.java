@@ -18,6 +18,7 @@ import com.lantu.connect.common.util.JwtUtil;
 import com.lantu.connect.common.web.ClientIpResolver;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -141,7 +142,7 @@ public class AuthController {
         try {
             Claims claims = jwtUtil.parseToken(token);
             return claims.get("sid", String.class);
-        } catch (Exception e) {
+        } catch (JwtException e) {
             return null;
         }
     }

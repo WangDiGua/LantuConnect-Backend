@@ -10,7 +10,9 @@ import org.springframework.stereotype.Service;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
@@ -51,7 +53,7 @@ public class AliyunSmsServiceImpl implements SmsService {
             params.put("Signature", signature);
 
             log.info("[AliyunSMS] 发送验证码到 {} 成功", phone);
-        } catch (Exception e) {
+        } catch (GeneralSecurityException | IllegalStateException e) {
             log.error("[AliyunSMS] 发送验证码失败: {}", e.getMessage());
             throw new BusinessException(ResultCode.SMS_SEND_ERROR, "短信发送失败: " + e.getMessage());
         }
@@ -71,7 +73,7 @@ public class AliyunSmsServiceImpl implements SmsService {
         return params;
     }
 
-    private String generateSignature(Map<String, String> params) throws Exception {
+    private String generateSignature(Map<String, String> params) throws GeneralSecurityException {
         StringBuilder sb = new StringBuilder();
         for (Map.Entry<String, String> entry : params.entrySet()) {
             if (sb.length() > 0) sb.append("&");
@@ -91,7 +93,7 @@ public class AliyunSmsServiceImpl implements SmsService {
                     .replace("+", "%20")
                     .replace("*", "%2A")
                     .replace("%7E", "~");
-        } catch (Exception e) {
+        } catch (UnsupportedEncodingException e) {
             return value;
         }
     }

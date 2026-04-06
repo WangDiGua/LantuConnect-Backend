@@ -202,7 +202,7 @@ public class AuthServiceImpl implements AuthService {
                 sessionRevocationRegistry.revoke(sessionId);
                 sessionTrackerService.removeSession(sessionId);
             }
-        } catch (Exception e) {
+        } catch (JwtException e) {
             log.debug("登出时解析token失败，忽略会话清理: {}", e.getMessage());
         }
     }
@@ -299,7 +299,7 @@ public class AuthServiceImpl implements AuthService {
     private TokenResponse parseCachedRefreshPair(String json) {
         try {
             return objectMapper.readValue(json, TokenResponse.class);
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             log.debug("refresh pair cache parse failed: {}", e.getMessage());
             return null;
         }
@@ -586,11 +586,11 @@ public class AuthServiceImpl implements AuthService {
             h.setResult(result);
             h.setFailureReason(failureReason);
             loginHistoryMapper.insert(h);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             if (bestEffort) {
                 log.warn("写入登录历史失败: {}", e.getMessage());
             } else {
-                throw e instanceof RuntimeException re ? re : new RuntimeException(e);
+                throw e;
             }
         }
     }
@@ -602,7 +602,8 @@ public class AuthServiceImpl implements AuthService {
                 String ip = clientIpResolver.resolve(sra.getRequest());
                 return StringUtils.hasText(ip) ? ip : "0.0.0.0";
             }
-        } catch (Exception ignored) {
+        } catch (RuntimeException e) {
+            log.debug("resolveClientIp failed: {}", e.toString());
         }
         return "0.0.0.0";
     }
@@ -616,7 +617,8 @@ public class AuthServiceImpl implements AuthService {
                     return ua.length() > 512 ? ua.substring(0, 512) : ua;
                 }
             }
-        } catch (Exception ignored) {
+        } catch (RuntimeException e) {
+            // optional header context; avoid noise at INFO
         }
         return null;
     }
@@ -681,8 +683,8 @@ public class AuthServiceImpl implements AuthService {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] hash = md.digest(input.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(hash);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
         }
     }
 }

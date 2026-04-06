@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Component;
@@ -53,7 +54,7 @@ public class EmailNotificationChannel implements NotificationChannel {
             message.setText(body);
             mailSender.send(message);
             log.info("Email notification sent to user {} ({})", userId, user.getMail());
-        } catch (Exception e) {
+        } catch (MailException e) {
             log.warn("Failed to send email notification to user {}: {}", userId, e.getMessage());
         }
     }

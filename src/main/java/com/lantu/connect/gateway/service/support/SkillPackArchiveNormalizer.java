@@ -286,15 +286,11 @@ public final class SkillPackArchiveNormalizer {
         if (probe < 4) {
             return false;
         }
-        try {
-            String head = new String(raw, 0, probe, StandardCharsets.UTF_8);
-            if (head.startsWith("---")) {
-                return true;
-            }
-            return head.stripLeading().startsWith("#");
-        } catch (Exception e) {
-            return false;
+        String head = new String(raw, 0, probe, StandardCharsets.UTF_8);
+        if (head.startsWith("---")) {
+            return true;
         }
+        return head.stripLeading().startsWith("#");
     }
 
     private static byte[] singleMarkdownOrTextToZip(byte[] content, String filenameHint) {

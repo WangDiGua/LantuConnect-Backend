@@ -1,5 +1,6 @@
 package com.lantu.connect.gateway.protocol;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.config.IntegrationProperties;
 import com.lantu.connect.common.exception.BusinessException;
@@ -17,6 +18,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -77,7 +79,7 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
         final String bodyJson;
         try {
             bodyJson = buildJsonRpcBody(traceId, payload, spec);
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             throw new IOException("MCP 请求体构造失败: " + e.getMessage(), e);
         }
         String accept = StringUtils.hasText(i().getMcpHttpAccept()) ? i().getMcpHttpAccept().trim() : "application/json, text/event-stream";
@@ -88,9 +90,11 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("MCP 流式请求被中断", e);
+        } catch (BusinessException e) {
+            throw e;
         } catch (java.io.IOException e) {
             throw e;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             throw new IOException("MCP 流式请求失败: " + e.getMessage(), e);
         }
         if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
@@ -106,7 +110,11 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     throw new IOException("MCP 流式请求被中断", e);
-                } catch (Exception e) {
+                } catch (BusinessException e) {
+                    throw e;
+                } catch (java.io.IOException e) {
+                    throw e;
+                } catch (RuntimeException e) {
                     throw new IOException("MCP 流式请求失败: " + e.getMessage(), e);
                 }
                 if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
@@ -287,7 +295,8 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
         return new ProtocolInvokeResult(200, respBody, ms);
     }
 
-    private String buildJsonRpcBody(String traceId, Map<String, Object> payload, Map<String, Object> spec) throws Exception {
+    private String buildJsonRpcBody(String traceId, Map<String, Object> payload, Map<String, Object> spec)
+            throws JsonProcessingException {
         String rpcMethod = "tools/call";
         if (payload != null && payload.get("method") != null
                 && StringUtils.hasText(String.valueOf(payload.get("method")))) {
@@ -366,7 +375,8 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
                                                             String accept,
                                                             Map<String, Object> spec,
                                                             ProtocolInvokeContext ctx,
-                                                            boolean attachCachedMcpSession) throws Exception {
+                                                            boolean attachCachedMcpSession)
+            throws IOException, InterruptedException {
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(Math.min(timeoutSec, 120)))
                 .followRedirects(HttpClient.Redirect.NEVER)
@@ -438,7 +448,7 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
                 }
             } catch (BusinessException ex) {
                 throw ex;
-            } catch (Exception ex) {
+            } catch (UnknownHostException | SecurityException ex) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "Unable to resolve MCP endpoint host");
             }
         }
