@@ -211,7 +211,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 }
                 if (Boolean.TRUE.equals(request.getCallableOnly())) {
                     Long rid = parseId(rId);
-                    if (!isResourcePhysicallyCallable(rid, rType, valueOf(row.get("resource_code")))) {
+                    if (!isResourcePhysicallyCallable(rid, rType)) {
                         continue;
                     }
                 }
@@ -1092,20 +1092,53 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         }
     }
 
-    /** 与 {@link #ensureResourceHealthNotDown}、{@link #ensureNotCircuitOpen} 一致，供目录 callableOnly 过滤。 */
-    private boolean isResourcePhysicallyCallable(Long resourceId, String resourceType, String resourceCode) {
+    /**
+     * 目录 {@code callableOnly=true}：与前端 {@code isCatalogMcpCallable} 对齐，避免「广场已标不可调用仍出现在 MCP 对外集成」。
+     * 比 {@link #ensureResourceHealthNotDown} 更严：含 unhealthy/offline/degraded、熔断 HALF_OPEN / FORCED_OPEN 等（invoke 仍走原校验）。
+     */
+    private boolean isResourcePhysicallyCallable(Long resourceId, String resourceType) {
         if (resourceId == null) {
             return false;
         }
-        try {
-            ensureResourceHealthNotDown(resourceId);
-            if (StringUtils.hasText(resourceCode)) {
-                ensureNotCircuitOpen(resourceType, resourceCode);
+        Map<String, Object> healthRow = queryOne(
+                "SELECT health_status FROM t_resource_health_config WHERE resource_id = ? LIMIT 1",
+                resourceId);
+        if (healthRow != null) {
+            String hs = valueOf(healthRow.get("health_status"));
+            if (isHealthStatusExcludedFromCallableCatalog(hs)) {
+                return false;
             }
-            return true;
-        } catch (BusinessException ignored) {
+        }
+        return !isCircuitExcludedFromCallableCatalog(resourceId, resourceType);
+    }
+
+    private static boolean isHealthStatusExcludedFromCallableCatalog(String raw) {
+        if (!StringUtils.hasText(raw)) {
             return false;
         }
+        String h = raw.trim().toLowerCase(Locale.ROOT).replace('-', '_');
+        return "down".equals(h)
+                || "disabled".equals(h)
+                || "unhealthy".equals(h)
+                || "offline".equals(h)
+                || "out_of_service".equals(h)
+                || "degraded".equals(h);
+    }
+
+    /** 与前端目录「不可调用」一致：OPEN / FORCED_OPEN / HALF_OPEN 均不纳入 callableOnly（invoke 对 HALF_OPEN 在达次限时才拒）。 */
+    private boolean isCircuitExcludedFromCallableCatalog(Long resourceId, String resourceType) {
+        if (resourceId == null || !StringUtils.hasText(resourceType)) {
+            return false;
+        }
+        String rt = resourceType.trim().toLowerCase(Locale.ROOT);
+        Map<String, Object> row = queryOne(
+                "SELECT current_state FROM t_resource_circuit_breaker WHERE resource_type = ? AND resource_id = ? LIMIT 1",
+                rt, resourceId);
+        if (row == null) {
+            return false;
+        }
+        String state = valueOf(row.get("current_state")).trim().toUpperCase(Locale.ROOT);
+        return "OPEN".equals(state) || "FORCED_OPEN".equals(state) || "HALF_OPEN".equals(state);
     }
 
     private void ensureNotCircuitOpen(String resourceType, String resourceCode) {
