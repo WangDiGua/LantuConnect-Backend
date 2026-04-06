@@ -1153,7 +1153,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             return;
         }
         String state = valueOf(row.get("current_state"));
-        if ("OPEN".equalsIgnoreCase(state)) {
+        if ("OPEN".equalsIgnoreCase(state) || "FORCED_OPEN".equalsIgnoreCase(state)) {
             String fallbackMessage = valueOf(row.get("fallback_message"));
             throw new BusinessException(
                     ResultCode.CIRCUIT_OPEN,

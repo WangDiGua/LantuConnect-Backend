@@ -199,10 +199,12 @@ public class UserSettingsServiceImpl implements UserSettingsService {
             if (!StringUtils.hasText(ridRaw)) {
                 continue;
             }
+            String trimmed = ridRaw.trim();
             Long rid;
             try {
-                rid = Long.valueOf(ridRaw.trim());
+                rid = Long.valueOf(trimmed);
             } catch (NumberFormatException e) {
+                out.put(trimmed, false);
                 continue;
             }
             boolean ok = resourceInvokeGrantService.isInvokeGrantSatisfied(key, rt, rid, userId);
