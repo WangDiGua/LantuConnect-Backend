@@ -1412,10 +1412,32 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             }
             vo.setQualityFactors(factors);
         }
-        DegradationHintVO hint = buildDegradationHint(vo.getHealthStatus(), vo.getCircuitState());
-        if (hint != null) {
-            vo.setDegradationCode(hint.getDegradationCode());
-            vo.setDegradationHint(hint.getUserFacingHint());
+        applyObservabilityDegradationHints(vo, quality);
+    }
+
+    /**
+     * 熔断优先；否则若最近一次网关调用失败（t_call_log），用真实错误摘要覆盖「仅健康检查表」带来的误判。
+     */
+    private void applyObservabilityDegradationHints(ResourceManageVO vo, Map<String, Object> quality) {
+        if (vo == null || quality == null) {
+            return;
+        }
+        String invokeHint = stringValue(quality.get("lastInvokeFailureHint"));
+        DegradationHintVO circuitOrHealth = buildDegradationHint(vo.getHealthStatus(), vo.getCircuitState());
+        String c = vo.getCircuitState() == null ? "" : vo.getCircuitState().trim().toLowerCase(Locale.ROOT);
+        if (circuitOrHealth != null && "open".equals(c)) {
+            vo.setDegradationCode(circuitOrHealth.getDegradationCode());
+            vo.setDegradationHint(circuitOrHealth.getUserFacingHint());
+            return;
+        }
+        if (StringUtils.hasText(invokeHint)) {
+            vo.setDegradationCode("RECENT_GATEWAY_INVOKE_FAILED");
+            vo.setDegradationHint(invokeHint);
+            return;
+        }
+        if (circuitOrHealth != null) {
+            vo.setDegradationCode(circuitOrHealth.getDegradationCode());
+            vo.setDegradationHint(circuitOrHealth.getUserFacingHint());
         }
     }
 
@@ -1457,11 +1479,42 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         factors.put("avgLatencyMs", avgLatencyMs);
         factors.put("totalCalls7d", totalCalls);
         factors.put("latencyFactor", latencyFactor);
+
+        String lastInvokeFailureHint = null;
+        List<Map<String, Object>> lastInvokeRows = jdbcTemplate.queryForList("""
+                SELECT status, error_message, create_time
+                FROM t_call_log
+                WHERE agent_id = ?
+                ORDER BY create_time DESC
+                LIMIT 1
+                """, String.valueOf(resourceId));
+        if (!lastInvokeRows.isEmpty()) {
+            Map<String, Object> li = lastInvokeRows.get(0);
+            String st = stringValue(li.get("status"));
+            if (StringUtils.hasText(st) && !"success".equalsIgnoreCase(st.trim())) {
+                health = "down";
+                String em = stringValue(li.get("error_message"));
+                if (StringUtils.hasText(em)) {
+                    String clip = em.length() > 220 ? em.substring(0, 217) + "..." : em;
+                    lastInvokeFailureHint = "最近网关调用未成功：" + clip;
+                } else {
+                    lastInvokeFailureHint = "最近网关调用未成功（详见监控中心调用日志）";
+                }
+                factors.put("lastGatewayInvokeStatus", st);
+                if (StringUtils.hasText(em)) {
+                    factors.put("lastGatewayInvokeErrorPreview", em.length() > 500 ? em.substring(0, 497) + "..." : em);
+                }
+            } else if (StringUtils.hasText(st)) {
+                factors.put("lastGatewayInvokeStatus", st);
+            }
+        }
+
         Map<String, Object> qualityBlock = new LinkedHashMap<>();
         qualityBlock.put("healthStatus", health != null ? health : "unknown");
         qualityBlock.put("circuitState", circuitState != null ? circuitState : "unknown");
         qualityBlock.put("qualityScore", qualityScore);
         qualityBlock.put("qualityFactors", factors);
+        qualityBlock.put("lastInvokeFailureHint", lastInvokeFailureHint);
         return qualityBlock;
     }
 
