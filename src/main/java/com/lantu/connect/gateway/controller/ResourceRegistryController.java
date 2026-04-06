@@ -134,6 +134,14 @@ public class ResourceRegistryController {
         return R.ok(resourceRegistryService.switchVersion(userId, id, version));
     }
 
+    @PostMapping("/{id}/versions/{version}/apply-to-working-copy")
+    @AuditLog(action = "resource_version_apply", resource = "resource-center")
+    public R<ResourceManageVO> applyVersionToWorkingCopy(@RequestHeader("X-User-Id") Long userId,
+                                                       @PathVariable Long id,
+                                                       @PathVariable String version) {
+        return R.ok(resourceRegistryService.applyVersionSnapshotToWorkingCopy(userId, id, version));
+    }
+
     @GetMapping("/{id}/versions")
     public R<List<ResourceVersionVO>> versions(@RequestHeader("X-User-Id") Long userId,
                                                @PathVariable Long id) {

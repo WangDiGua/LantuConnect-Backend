@@ -30,6 +30,12 @@ public interface ResourceRegistryService {
 
     ResourceManageVO switchVersion(Long operatorUserId, Long resourceId, String version);
 
+    /**
+     * 将某一 active 版本行的 {@code snapshot_json} 合并写回主资源与扩展表（含目录标签/关联的保留策略见实现）；
+     * {@link com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine#ensureEditable} 与 update 一致。
+     */
+    ResourceManageVO applyVersionSnapshotToWorkingCopy(Long operatorUserId, Long resourceId, String version);
+
     List<ResourceVersionVO> listVersions(Long operatorUserId, Long resourceId);
 
     ResourceManageVO withdraw(Long operatorUserId, Long resourceId);

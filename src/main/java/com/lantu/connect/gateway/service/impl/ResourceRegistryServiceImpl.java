@@ -475,6 +475,56 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ResourceManageVO applyVersionSnapshotToWorkingCopy(Long operatorUserId, Long resourceId, String version) {
+        ensureAuthenticated(operatorUserId);
+        ResourceRow row = requireManageableResource(operatorUserId, resourceId);
+        ResourceLifecycleStateMachine.ensureEditable(row.status());
+        String v = normalizeVersion(version);
+        List<Map<String, Object>> verRows = jdbcTemplate.queryForList("""
+                        SELECT snapshot_json FROM t_resource_version
+                        WHERE resource_id = ? AND version = ? AND status = 'active'
+                        LIMIT 1
+                        """,
+                resourceId, v);
+        if (verRows.isEmpty()) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "版本不存在或不可用");
+        }
+        Map<String, Object> snap = parseJsonMap(verRows.get(0).get("snapshot_json"));
+        if (snap.isEmpty()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "版本快照为空");
+        }
+        ResourceManageVO current = findResource(resourceId);
+        ResourceUpsertRequest req = mergeSnapshotOntoCurrent(current, snap);
+        String type = normalizeType(row.resourceType());
+        if (!type.equals(normalizeType(req.getResourceType()))) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "快照 resourceType 与资源不一致");
+        }
+        validateByType(type, req);
+        ensureUniqueCode(type, req.getResourceCode(), resourceId);
+        ResourceAccessPolicy accessPolicy = resolveAccessPolicyForUpdate(resourceId, req);
+
+        jdbcTemplate.update("""
+                        UPDATE t_resource
+                        SET resource_code = ?, display_name = ?, description = ?, source_type = ?, provider_id = ?, category_id = ?, access_policy = ?, update_time = NOW()
+                        WHERE id = ? AND deleted = 0
+                        """,
+                req.getResourceCode().trim(),
+                req.getDisplayName().trim(),
+                req.getDescription(),
+                req.getSourceType(),
+                req.getProviderId(),
+                req.getCategoryId(),
+                accessPolicy.wireValue(),
+                resourceId);
+        upsertExtension(type, resourceId, req);
+        syncResourceRelations(resourceId, type, req.getRelatedResourceIds());
+        syncResourceTagRels(resourceId, type, req);
+        upsertCurrentVersionSnapshot(resourceId, snapshotForVersion(type, resourceId, req, false));
+        return getById(operatorUserId, resourceId);
+    }
+
+    @Override
     public LifecycleTimelineVO lifecycleTimeline(Long operatorUserId, Long resourceId) {
         ResourceManageVO detail = getById(operatorUserId, resourceId);
         List<LifecycleTimelineVO.Event> events = new ArrayList<>();
@@ -590,6 +640,215 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 ORDER BY is_current DESC, create_time DESC
                 """, resourceId);
         return rows.stream().map(this::toVersionVo).toList();
+    }
+
+    private static LinkedHashMap<String, Object> shallowCopyMap(Map<String, Object> src) {
+        if (src == null) {
+            return new LinkedHashMap<>();
+        }
+        return new LinkedHashMap<>(src);
+    }
+
+    /**
+     * 将当前 VO 转为更新请求体，供「快照写回」与 {@link #mergeSnapshotOntoCurrent} 叠加；目录标签依赖 categoryId，关联资源显式拷贝以免被 sync 误删语义依赖 null。
+     */
+    private ResourceUpsertRequest voToUpsertRequest(ResourceManageVO vo) {
+        ResourceUpsertRequest req = new ResourceUpsertRequest();
+        req.setResourceType(vo.getResourceType());
+        req.setResourceCode(vo.getResourceCode());
+        req.setDisplayName(vo.getDisplayName());
+        req.setDescription(vo.getDescription());
+        req.setSourceType(vo.getSourceType());
+        req.setProviderId(vo.getProviderId());
+        req.setCategoryId(vo.getCategoryId());
+        req.setAccessPolicy(vo.getAccessPolicy());
+        if (vo.getRelatedResourceIds() != null) {
+            req.setRelatedResourceIds(new ArrayList<>(vo.getRelatedResourceIds()));
+        }
+        req.setAgentType(vo.getAgentType());
+        req.setMode(vo.getMode());
+        req.setSpec(vo.getSpec() == null || vo.getSpec().isEmpty() ? null : shallowCopyMap(vo.getSpec()));
+        req.setIsPublic(vo.getIsPublic());
+        req.setHidden(vo.getHidden());
+        req.setMaxConcurrency(vo.getMaxConcurrency());
+        req.setMaxSteps(vo.getMaxSteps());
+        req.setTemperature(vo.getTemperature());
+        req.setSystemPrompt(vo.getSystemPrompt());
+        req.setServiceDetailMd(vo.getServiceDetailMd());
+        req.setSkillType(vo.getSkillType());
+        req.setArtifactUri(vo.getArtifactUri());
+        req.setArtifactSha256(vo.getArtifactSha256());
+        req.setManifest(vo.getManifest() == null || vo.getManifest().isEmpty() ? null : shallowCopyMap(vo.getManifest()));
+        req.setEntryDoc(vo.getEntryDoc());
+        req.setSkillRootPath(vo.getSkillRootPath());
+        req.setParentResourceId(vo.getParentResourceId());
+        req.setDisplayTemplate(vo.getDisplayTemplate());
+        req.setParametersSchema(vo.getParametersSchema() == null || vo.getParametersSchema().isEmpty()
+                ? null
+                : shallowCopyMap(vo.getParametersSchema()));
+        req.setEndpoint(vo.getEndpoint());
+        req.setProtocol(vo.getProtocol());
+        req.setAuthType(vo.getAuthType());
+        req.setAuthConfig(vo.getAuthConfig() == null || vo.getAuthConfig().isEmpty()
+                ? null
+                : shallowCopyMap(vo.getAuthConfig()));
+        req.setAppUrl(vo.getAppUrl());
+        req.setEmbedType(vo.getEmbedType());
+        req.setIcon(vo.getIcon());
+        if (vo.getScreenshots() != null) {
+            req.setScreenshots(new ArrayList<>(vo.getScreenshots()));
+        }
+        req.setDataType(vo.getDataType());
+        req.setFormat(vo.getFormat());
+        req.setRecordCount(vo.getRecordCount());
+        req.setFileSize(vo.getFileSize());
+        if (vo.getTags() != null) {
+            req.setTags(new ArrayList<>(vo.getTags()));
+        }
+        return req;
+    }
+
+    /**
+     * 以当前主资源为基准合并版本快照；保留 {@code categoryId}、关联 ID、快照未给出的扩展字段。
+     */
+    private ResourceUpsertRequest mergeSnapshotOntoCurrent(ResourceManageVO current, Map<String, Object> snap) {
+        ResourceUpsertRequest req = voToUpsertRequest(current);
+        req.setResourceType(current.getResourceType());
+        req.setCategoryId(current.getCategoryId());
+        if (current.getRelatedResourceIds() != null) {
+            req.setRelatedResourceIds(new ArrayList<>(current.getRelatedResourceIds()));
+        }
+        if (snap.containsKey("resourceCode") && StringUtils.hasText(stringValue(snap.get("resourceCode")))) {
+            req.setResourceCode(stringValue(snap.get("resourceCode")).trim());
+        }
+        if (snap.containsKey("displayName") && StringUtils.hasText(stringValue(snap.get("displayName")))) {
+            req.setDisplayName(stringValue(snap.get("displayName")).trim());
+        }
+        if (snap.containsKey("description")) {
+            Object d = snap.get("description");
+            req.setDescription(d == null ? null : String.valueOf(d));
+        }
+        if (snap.containsKey("accessPolicy") && snap.get("accessPolicy") != null
+                && StringUtils.hasText(stringValue(snap.get("accessPolicy")))) {
+            req.setAccessPolicy(ResourceAccessPolicy.parseRequestValue(stringValue(snap.get("accessPolicy"))).wireValue());
+        }
+        String type = normalizeType(current.getResourceType());
+        switch (type) {
+            case "agent" -> {
+                if (snap.containsKey("spec") && snap.get("spec") != null) {
+                    req.setSpec(shallowCopyMap(parseJsonMap(snap.get("spec"))));
+                }
+                if (StringUtils.hasText(stringValue(snap.get("endpoint")))) {
+                    String ep = stringValue(snap.get("endpoint")).trim();
+                    Map<String, Object> sp = req.getSpec() == null ? new LinkedHashMap<>() : shallowCopyMap(req.getSpec());
+                    sp.put("url", ep);
+                    req.setSpec(sp);
+                }
+                if (snap.containsKey("serviceDetailMd")) {
+                    Object raw = snap.get("serviceDetailMd");
+                    req.setServiceDetailMd(raw == null ? null : String.valueOf(raw));
+                }
+            }
+            case "skill" -> {
+                if (StringUtils.hasText(stringValue(snap.get("packFormat")))) {
+                    req.setSkillType(stringValue(snap.get("packFormat")).trim().toLowerCase(Locale.ROOT));
+                }
+                if (StringUtils.hasText(stringValue(snap.get("endpoint")))) {
+                    req.setArtifactUri(stringValue(snap.get("endpoint")).trim());
+                }
+                if (snap.containsKey("artifactSha256") && StringUtils.hasText(stringValue(snap.get("artifactSha256")))) {
+                    req.setArtifactSha256(stringValue(snap.get("artifactSha256")).trim().toLowerCase(Locale.ROOT));
+                }
+                Map<String, Object> specSnap = parseJsonMap(snap.get("spec"));
+                if (!specSnap.isEmpty()) {
+                    if (specSnap.containsKey("manifest")) {
+                        req.setManifest(shallowCopyMap(parseJsonMap(specSnap.get("manifest"))));
+                    }
+                    if (specSnap.containsKey("entryDoc")) {
+                        req.setEntryDoc(stringValue(specSnap.get("entryDoc")));
+                    }
+                    if (specSnap.containsKey("skillRootPath")) {
+                        req.setSkillRootPath(stringValue(specSnap.get("skillRootPath")));
+                    }
+                    if (specSnap.containsKey("extra")) {
+                        req.setSpec(shallowCopyMap(parseJsonMap(specSnap.get("extra"))));
+                    }
+                }
+                if (snap.containsKey("serviceDetailMd")) {
+                    Object raw = snap.get("serviceDetailMd");
+                    req.setServiceDetailMd(raw == null ? null : String.valueOf(raw));
+                }
+            }
+            case "mcp" -> {
+                LinkedHashMap<String, Object> specSnap = shallowCopyMap(parseJsonMap(snap.get("spec")));
+                String at = stringValue(specSnap.remove(McpOutboundHeaderBuilder.REGISTRY_AUTH_TYPE_KEY));
+                if (StringUtils.hasText(at)) {
+                    req.setAuthType(at.trim().toLowerCase(Locale.ROOT));
+                }
+                req.setAuthConfig(specSnap);
+                if (StringUtils.hasText(stringValue(snap.get("endpoint")))) {
+                    req.setEndpoint(stringValue(snap.get("endpoint")).trim());
+                }
+                if (StringUtils.hasText(stringValue(snap.get("invokeType")))) {
+                    req.setProtocol(stringValue(snap.get("invokeType")).trim().toLowerCase(Locale.ROOT));
+                }
+                if (snap.containsKey("serviceDetailMd")) {
+                    Object raw = snap.get("serviceDetailMd");
+                    req.setServiceDetailMd(raw == null ? null : String.valueOf(raw));
+                }
+            }
+            case "app" -> {
+                if (StringUtils.hasText(stringValue(snap.get("endpoint")))) {
+                    req.setAppUrl(stringValue(snap.get("endpoint")).trim());
+                }
+                Map<String, Object> appSpec = parseJsonMap(snap.get("spec"));
+                if (!appSpec.isEmpty()) {
+                    if (appSpec.containsKey("embedType") && StringUtils.hasText(stringValue(appSpec.get("embedType")))) {
+                        req.setEmbedType(stringValue(appSpec.get("embedType")).trim().toLowerCase(Locale.ROOT));
+                    }
+                    if (appSpec.containsKey("icon")) {
+                        req.setIcon(stringValue(appSpec.get("icon")));
+                    }
+                    if (appSpec.containsKey("screenshots")) {
+                        req.setScreenshots(toStringListFromJsonColumn(appSpec.get("screenshots")));
+                    }
+                }
+                if (snap.containsKey("serviceDetailMd")) {
+                    Object raw = snap.get("serviceDetailMd");
+                    req.setServiceDetailMd(raw == null ? null : String.valueOf(raw));
+                }
+            }
+            case "dataset" -> {
+                Map<String, Object> dspec = parseJsonMap(snap.get("spec"));
+                if (!dspec.isEmpty()) {
+                    if (dspec.containsKey("dataType") && StringUtils.hasText(stringValue(dspec.get("dataType")))) {
+                        req.setDataType(stringValue(dspec.get("dataType")).trim());
+                    }
+                    if (dspec.containsKey("format") && StringUtils.hasText(stringValue(dspec.get("format")))) {
+                        req.setFormat(stringValue(dspec.get("format")).trim());
+                    }
+                    if (dspec.containsKey("recordCount")) {
+                        req.setRecordCount(longObject(dspec.get("recordCount")));
+                    }
+                    if (dspec.containsKey("fileSize")) {
+                        req.setFileSize(longObject(dspec.get("fileSize")));
+                    }
+                    if (dspec.containsKey("tags")) {
+                        req.setTags(parseJsonList(dspec.get("tags")).stream().map(String::valueOf).toList());
+                    }
+                }
+                if (snap.containsKey("serviceDetailMd")) {
+                    Object raw = snap.get("serviceDetailMd");
+                    req.setServiceDetailMd(raw == null ? null : String.valueOf(raw));
+                }
+            }
+            default -> {
+            }
+        }
+        if ("dataset".equals(type) && !snap.containsKey("spec")) {
+            req.setTags(current.getTags() == null ? null : new ArrayList<>(current.getTags()));
+        }
+        return req;
     }
 
     private ResourceManageVO findResource(Long id) {
