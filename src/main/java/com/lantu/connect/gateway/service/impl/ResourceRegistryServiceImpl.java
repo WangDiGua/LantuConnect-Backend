@@ -321,10 +321,10 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         systemNotificationFacade.notifyResourceStateChange(
                 operatorUserId,
                 NotificationEventCodes.RESOURCE_DEPRECATED,
-                "资源已下线弃用",
+                "资源已暂停对外开放",
                 row.resourceType(),
                 resourceId,
-                "状态已切换为 deprecated");
+                "状态已切换为 deprecated（暂停对外）");
         return findResource(resourceId);
     }
 
@@ -1000,7 +1000,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         } else if ("deprecated".equalsIgnoreCase(detail.getStatus())) {
             events.add(LifecycleTimelineVO.Event.builder()
                     .eventType("deprecated")
-                    .title("资源已下线")
+                    .title("资源已暂停对外开放")
                     .status("deprecated")
                     .eventTime(detail.getUpdateTime())
                     .build());
@@ -1389,7 +1389,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             case "testing" -> "测试阶段，建议观察稳定性后发布";
             case "published" -> "线上可用，建议持续关注质量指标";
             case "rejected" -> StringUtils.hasText(rejectReason) ? "已驳回：" + rejectReason : "已驳回，请修改后重提";
-            case "deprecated" -> "已下线，可修复后重新提审";
+            case "deprecated" -> "已暂停对外开放，可修复后重新提审";
             default -> "状态待确认";
         };
     }
