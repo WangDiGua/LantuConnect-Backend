@@ -112,7 +112,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
         List<Object> args = new ArrayList<>();
         StringBuilder sql = new StringBuilder("""
-                SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.source_type, r.update_time, r.created_by, r.access_policy
+                SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.source_type, r.update_time, r.created_by, r.access_policy, COALESCE(r.view_count, 0) AS view_count
                 FROM t_resource r
                 WHERE r.deleted = 0
                 """);
@@ -221,6 +221,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                             .accessPolicy(ResourceAccessPolicy.fromStored(row.get("access_policy")).wireValue())
                             .updateTime(toDateTime(row.get("update_time")))
                             .createdBy(longOrNull(row.get("created_by")))
+                            .viewCount(longValue(row.get("view_count")))
                             .tags(new ArrayList<>())
                             .build());
                 }
@@ -234,8 +235,78 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         attachCatalogTagNames(paged);
         attachCatalogCreatorNames(paged);
         attachCatalogReviewAggregates(paged);
+        attachCatalogEngagementMetrics(paged);
         attachIncludesToCatalogItems(paged, includes);
         return PageResult.of(paged, filteredCount, page, pageSize);
+    }
+
+    /**
+     * 市场卡片：调用量（呼叫日志）、应用使用量（usage_record）、技能下载量（技能包下载事件）。
+     * 浏览量在 SQL 主查询中随 {@code t_resource.view_count} 返回，并在详情 GET 成功路径上增量更新。
+     */
+    private void attachCatalogEngagementMetrics(List<ResourceCatalogItemVO> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        List<Long> ids = new ArrayList<>();
+        for (ResourceCatalogItemVO vo : items) {
+            Long id = longOrNull(vo.getResourceId());
+            if (id != null) {
+                ids.add(id);
+            }
+        }
+        if (ids.isEmpty()) {
+            return;
+        }
+        String placeholders = ids.stream().map(i -> "?").collect(Collectors.joining(","));
+        Object[] idArgs = ids.toArray();
+
+        Map<Long, Long> callById = new HashMap<>();
+        for (Map<String, Object> row : jdbcTemplate.queryForList(
+                "SELECT agent_id, COUNT(*) AS c FROM t_call_log WHERE agent_id IN (" + placeholders + ") GROUP BY agent_id",
+                idArgs)) {
+            Long aid = longOrNull(row.get("agent_id"));
+            if (aid != null) {
+                callById.put(aid, longValue(row.get("c")));
+            }
+        }
+
+        Map<Long, Long> usageById = new HashMap<>();
+        for (Map<String, Object> row : jdbcTemplate.queryForList(
+                "SELECT resource_id, COUNT(*) AS c FROM t_usage_record WHERE type = 'app' AND action = 'invoke' AND resource_id IN ("
+                        + placeholders
+                        + ") GROUP BY resource_id",
+                idArgs)) {
+            Long rid = longOrNull(row.get("resource_id"));
+            if (rid != null) {
+                usageById.put(rid, longValue(row.get("c")));
+            }
+        }
+
+        Map<Long, Long> downloadById = new HashMap<>();
+        for (Map<String, Object> row : jdbcTemplate.queryForList(
+                "SELECT resource_id, COUNT(*) AS c FROM t_skill_pack_download_event WHERE resource_id IN ("
+                        + placeholders
+                        + ") GROUP BY resource_id",
+                idArgs)) {
+            Long rid = longOrNull(row.get("resource_id"));
+            if (rid != null) {
+                downloadById.put(rid, longValue(row.get("c")));
+            }
+        }
+
+        for (ResourceCatalogItemVO vo : items) {
+            Long rid = longOrNull(vo.getResourceId());
+            if (rid == null) {
+                vo.setCallCount(0L);
+                vo.setUsageCount(0L);
+                vo.setDownloadCount(0L);
+                continue;
+            }
+            vo.setCallCount(callById.getOrDefault(rid, 0L));
+            vo.setUsageCount(usageById.getOrDefault(rid, 0L));
+            vo.setDownloadCount(downloadById.getOrDefault(rid, 0L));
+        }
     }
 
     private void attachCatalogCreatorNames(List<ResourceCatalogItemVO> items) {
@@ -427,6 +498,9 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         }
         merged = attachIncludesToResolve(merged, parseIncludes(include));
         enrichResolveCreator(merged);
+        if ("catalog_read".equalsIgnoreCase(action)) {
+            jdbcTemplate.update("UPDATE t_resource SET view_count = view_count + 1 WHERE id = ? AND deleted = 0", id);
+        }
         return ResourceResolveSpecSanitizer.sanitize(merged);
     }
 

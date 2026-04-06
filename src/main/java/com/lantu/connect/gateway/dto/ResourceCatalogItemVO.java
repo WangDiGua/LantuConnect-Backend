@@ -49,6 +49,24 @@ public class ResourceCatalogItemVO {
     /** {@code t_review} 条数（{@code deleted=0}），无评论时为 null */
     private Long reviewCount;
 
+    /** {@code t_call_log} 按 agent_id=资源 id 聚合计数；适用于 agent / mcp / app 等可走网关 invoke 的资源 */
+    @Schema(description = "网关统一调用次数（t_call_log.agent_id）")
+    private Long callCount;
+
+    /** {@code t_usage_record}：type=app 且 action=invoke 的次数 */
+    @Schema(description = "应用使用量（usage_record，app invoke）")
+    private Long usageCount;
+
+    /**
+     * 技能包受控下载次数（{@code t_skill_pack_download_event}）；数据集当前无独立下载流水时为 0。
+     */
+    @Schema(description = "下载量：技能为技能包下载事件计数；数据集暂无流水时为 0")
+    private Long downloadCount;
+
+    /** {@code t_resource.view_count}，详情 GET 成功时递增 */
+    @Schema(description = "资源详情页累计浏览次数")
+    private Long viewCount;
+
     /** 目录标签名（t_resource_tag_rel + t_tag），与市场筛选 tags 一致 */
     @Schema(description = "资源标签名列表（t_resource_tag_rel）；请求 `include` 含 tags 时与扩展块语义一致")
     private List<String> tags;
