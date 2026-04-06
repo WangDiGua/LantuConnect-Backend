@@ -236,6 +236,50 @@ public class ResourceInvokeGrantService {
                 .toList();
     }
 
+    /**
+     * 被授权方（grantee）为指定 API Key 时的生效 Grant 列表（用户设置 / MCP 集成页）。
+     *
+     * @param granteeApiKeyId  API Key 主键 id（库内 id，非 secretPlain）
+     * @param resourceTypeFilter 若非空则限定资源类型（如 mcp），为空则返回全部类型
+     */
+    public List<ResourceGrantVO> listActiveGrantsForGranteeApiKey(String granteeApiKeyId, String resourceTypeFilter) {
+        if (!StringUtils.hasText(granteeApiKeyId)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "API Key id 不能为空");
+        }
+        String granteeId = granteeApiKeyId.trim();
+        LocalDateTime now = LocalDateTime.now();
+        LambdaQueryWrapper<ResourceInvokeGrant> q = new LambdaQueryWrapper<ResourceInvokeGrant>()
+                .eq(ResourceInvokeGrant::getGranteeType, "api_key")
+                .eq(ResourceInvokeGrant::getGranteeId, granteeId)
+                .eq(ResourceInvokeGrant::getStatus, "active");
+        if (StringUtils.hasText(resourceTypeFilter)) {
+            q.eq(ResourceInvokeGrant::getResourceType, normalizeType(resourceTypeFilter));
+        }
+        q.orderByDesc(ResourceInvokeGrant::getUpdateTime);
+        List<ResourceInvokeGrant> grants = resourceInvokeGrantMapper.selectList(q);
+        List<ResourceInvokeGrant> effective = grants.stream()
+                .filter(g -> g.getExpiresAt() == null || g.getExpiresAt().isAfter(now))
+                .toList();
+        Map<Long, String> names = userDisplayNameResolver.resolveDisplayNames(
+                effective.stream().map(ResourceInvokeGrant::getGrantedByUserId).toList());
+        return effective.stream()
+                .map(grant -> ResourceGrantVO.builder()
+                        .id(grant.getId())
+                        .resourceType(grant.getResourceType())
+                        .resourceId(grant.getResourceId())
+                        .granteeType(grant.getGranteeType())
+                        .granteeId(grant.getGranteeId())
+                        .actions(grant.getActions())
+                        .status(grant.getStatus())
+                        .grantedByUserId(grant.getGrantedByUserId())
+                        .grantedByName(names.get(grant.getGrantedByUserId()))
+                        .expiresAt(grant.getExpiresAt())
+                        .createTime(grant.getCreateTime())
+                        .updateTime(grant.getUpdateTime())
+                        .build())
+                .toList();
+    }
+
     private void ensureCanManageGrant(Long operatorUserId, Long ownerUserId) {
         if (operatorUserId == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证用户无法管理授权");

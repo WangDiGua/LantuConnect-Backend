@@ -22,6 +22,7 @@ public class RedisAuthRateLimiter {
     private static final String REGISTER_IP = "lantu:rl:reg:ip:";
     private static final String CAPTCHA_IP = "lantu:rl:captcha:ip:";
     private static final String SMS_IP = "lantu:rl:sms:ip:";
+    private static final String API_KEY_REVOKE_USER = "lantu:rl:api-key-revoke:user:";
 
     private final StringRedisTemplate redisTemplate;
 
@@ -39,6 +40,9 @@ public class RedisAuthRateLimiter {
 
     @Value("${lantu.security.rate-limit.send-sms-per-ip-per-hour:30}")
     private int sendSmsPerIpPerHour;
+
+    @Value("${lantu.security.rate-limit.api-key-revoke-per-user-per-hour:30}")
+    private int apiKeyRevokePerUserPerHour;
 
     public void checkLogin(String clientIp, String username) {
         if (StringUtils.hasText(clientIp)) {
@@ -68,6 +72,17 @@ public class RedisAuthRateLimiter {
             return;
         }
         enforceWindow(SMS_IP + normalize(clientIp), sendSmsPerIpPerHour, Duration.ofHours(1), "短信发送过于频繁");
+    }
+
+    /**
+     * 按用户限流撤销 API Key 尝试次数，缓解密码/验证码暴力试探。
+     */
+    public void checkApiKeyRevokeByUser(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        enforceWindow(API_KEY_REVOKE_USER + userId, apiKeyRevokePerUserPerHour, Duration.ofHours(1),
+                "撤销尝试过于频繁，请稍后再试");
     }
 
     private void enforceWindow(String key, int max, Duration ttl, String message) {

@@ -62,6 +62,9 @@ public enum ResultCode {
     GRANT_APPLICATION_NOT_APPROVED(4013, "仅已通过的授权申请可撤回生效授权"),
     GRANT_APPLICATION_NO_ACTIVE_GRANT(4014, "未找到可撤销的生效授权，可能已撤销，请至资源授权管理核对"),
 
+    /** 旧版 DELETE /user-settings/api-keys/{id} 已停用，须使用带密码/短信校验的 POST revoke */
+    API_KEY_DELETE_USE_REVOKE(4015, "请改用 POST /user-settings/api-keys/{id}/revoke，并校验密码或短信验证码"),
+
     INTERNAL_ERROR(5001, "内部错误"),
     EXTERNAL_SERVICE_ERROR(5002, "外部服务调用失败"),
     TIMEOUT(5003, "服务超时"),

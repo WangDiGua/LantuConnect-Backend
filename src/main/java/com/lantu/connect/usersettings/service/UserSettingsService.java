@@ -1,8 +1,10 @@
 package com.lantu.connect.usersettings.service;
 
+import com.lantu.connect.gateway.dto.ResourceGrantVO;
 import com.lantu.connect.usermgmt.dto.ApiKeyCreateRequest;
 import com.lantu.connect.usermgmt.dto.ApiKeyResponse;
 import com.lantu.connect.usermgmt.entity.ApiKey;
+import com.lantu.connect.usersettings.dto.ApiKeyRevokeRequest;
 import com.lantu.connect.usersettings.dto.UserStatsVO;
 import com.lantu.connect.usersettings.dto.WorkspaceSettingsVO;
 import com.lantu.connect.usersettings.dto.WorkspaceUpdateRequest;
@@ -26,6 +28,12 @@ public interface UserSettingsService {
     ApiKeyResponse createApiKey(Long userId, ApiKeyCreateRequest request);
 
     void deleteApiKey(Long userId, String apiKeyId);
+
+    List<ResourceGrantVO> listResourceGrantsForApiKey(Long userId, String apiKeyId, String resourceType);
+
+    void sendRevokeApiKeySms(Long userId, String clientIp);
+
+    void revokeApiKey(Long userId, String apiKeyId, ApiKeyRevokeRequest request, String clientIp);
 
     UserStatsVO getStats(Long userId);
 }
