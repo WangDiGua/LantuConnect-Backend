@@ -119,7 +119,7 @@ public class NotificationServiceImpl implements NotificationService {
                 .eq(Notification::getUserId, userId)
                 .eq(Notification::getIsRead, false)
                 .set(Notification::getIsRead, true));
-        realtimePushService.pushUnreadSync(userId, 0);
+        realtimePushService.pushUnreadSync(userId, unreadCount(userId));
     }
 
     private void publishCreated(Notification n) {

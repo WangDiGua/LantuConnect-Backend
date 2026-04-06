@@ -20,6 +20,8 @@ import java.util.Map;
 
 /**
  * WebSocket 握手中通过 query {@code access_token} 校验 Access JWT（浏览器无法为握手设置 Authorization）。
+ * <p><b>安全提示：</b>Access Token 会出现在 URL query 中，可能被反向代理/浏览器扩展访问日志记录；
+ * 生产环境应缩短 Access Token 有效期，并避免在日志中记录完整 query string。</p>
  */
 @Component
 @RequiredArgsConstructor
