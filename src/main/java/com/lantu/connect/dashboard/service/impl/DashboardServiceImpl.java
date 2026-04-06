@@ -130,6 +130,7 @@ public class DashboardServiceImpl implements DashboardService {
             row.put("action", r.getAction());
             row.put("targetType", r.getType());
             row.put("targetId", r.getAgentName());
+            row.put("resourceId", r.getResourceId());
             row.put("displayName", r.getDisplayName() != null ? r.getDisplayName() : r.getAgentName());
             row.put("createTime", r.getCreateTime());
             recent.add(row);
