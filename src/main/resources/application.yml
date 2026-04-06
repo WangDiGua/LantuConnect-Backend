@@ -145,6 +145,13 @@ lantu:
   notification:
     sms-enabled: false
     email-enabled: false
+  realtime:
+    push-health: true
+    push-circuit: true
+    push-alert: true
+    push-audit: true
+    push-monitoring-kpi: true
+    monitor-recipient-cache-ttl-ms: 60000
   contract:
     freeze-version: 2026-03-contract-v1
     freeze-effective-date: 2026-03-24

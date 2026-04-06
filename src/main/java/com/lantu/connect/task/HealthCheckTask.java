@@ -1,5 +1,6 @@
 package com.lantu.connect.task;
 
+import com.lantu.connect.realtime.RealtimePushService;
 import com.lantu.connect.task.support.TaskDistributedLock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +29,7 @@ public class HealthCheckTask {
 
     private final TaskDistributedLock taskDistributedLock;
     private final JdbcTemplate jdbcTemplate;
+    private final RealtimePushService realtimePushService;
 
     @Scheduled(cron = "0 */1 * * * ?")
     public void run() {
@@ -36,12 +38,19 @@ public class HealthCheckTask {
         }
         try {
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                    "SELECT id, resource_code, check_url, timeout_sec, healthy_threshold, interval_sec FROM t_resource_health_config "
+                    "SELECT id, resource_id, resource_type, resource_code, display_name, check_type, check_url, timeout_sec, "
+                            + "healthy_threshold, interval_sec, health_status FROM t_resource_health_config "
                             + "WHERE check_url IS NOT NULL AND TRIM(check_url) <> '' "
                             + "AND (check_type IS NULL OR LOWER(TRIM(check_type)) IN ('', 'http'))");
             int healthy = 0, degraded = 0, down = 0;
             for (Map<String, Object> row : rows) {
                 Long id = ((Number) row.get("id")).longValue();
+                Long resourceId = row.get("resource_id") instanceof Number n ? n.longValue() : null;
+                String resourceType = row.get("resource_type") == null ? null : String.valueOf(row.get("resource_type"));
+                String resourceCode = row.get("resource_code") == null ? null : String.valueOf(row.get("resource_code"));
+                String displayName = row.get("display_name") == null ? null : String.valueOf(row.get("display_name"));
+                String checkTypeVal = row.get("check_type") == null ? "http" : String.valueOf(row.get("check_type"));
+                String prevHealth = row.get("health_status") == null ? null : String.valueOf(row.get("health_status")).trim();
                 String url = String.valueOf(row.get("check_url"));
                 int timeoutSec = 10;
                 int failThreshold = 3;
@@ -70,9 +79,22 @@ public class HealthCheckTask {
                         degraded++;
                     }
                 }
+                LocalDateTime checkedAt = LocalDateTime.now();
                 jdbcTemplate.update(
                         "UPDATE t_resource_health_config SET health_status = ?, last_check_time = ? WHERE id = ?",
-                        status, LocalDateTime.now(), id);
+                        status, checkedAt, id);
+                if (resourceId != null
+                        && !normHealthStatus(prevHealth).equals(normHealthStatus(status))) {
+                    realtimePushService.pushHealthProbeStatusChanged(
+                            resourceId,
+                            resourceType,
+                            resourceCode,
+                            displayName != null ? displayName : resourceCode,
+                            checkTypeVal,
+                            status,
+                            prevHealth,
+                            checkedAt);
+                }
             }
             if (rows.size() > 0) {
                 log.info("[定时任务] {} 完成: {} 个目标 (健康: {}, 降级: {}, 下线: {})",
@@ -83,6 +105,10 @@ public class HealthCheckTask {
         } finally {
             taskDistributedLock.unlock(TASK_NAME);
         }
+    }
+
+    private static String normHealthStatus(String s) {
+        return s == null ? "" : s.trim().toLowerCase();
     }
 
     private static boolean probe(String url, int timeoutSec) {

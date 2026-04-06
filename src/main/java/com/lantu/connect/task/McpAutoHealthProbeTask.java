@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.gateway.dto.McpConnectivityProbeRequest;
 import com.lantu.connect.gateway.dto.McpConnectivityProbeResult;
 import com.lantu.connect.gateway.service.McpConnectivityProbeService;
+import com.lantu.connect.realtime.RealtimePushService;
 import com.lantu.connect.task.support.TaskDistributedLock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +45,7 @@ public class McpAutoHealthProbeTask {
     private final JdbcTemplate jdbcTemplate;
     private final McpConnectivityProbeService mcpConnectivityProbeService;
     private final ObjectMapper objectMapper;
+    private final RealtimePushService realtimePushService;
 
     @Scheduled(cron = "0 */5 * * * ?")
     public void run() {
@@ -130,6 +132,7 @@ public class McpAutoHealthProbeTask {
                 LocalDateTime now = LocalDateTime.now();
                 String resourceCode = valueOf(row.get("resource_code"));
                 String displayName = valueOf(row.get("display_name"));
+                String prevProbeStatus = health == null ? null : trimToNull(health.get("health_status"));
                 if (health == null) {
                     jdbcTemplate.update(
                             "INSERT INTO t_resource_health_config (resource_id, resource_type, resource_code, display_name, "
@@ -151,6 +154,18 @@ public class McpAutoHealthProbeTask {
                             "UPDATE t_resource_health_config SET health_status = ?, last_check_time = ?, check_url = ?, "
                                     + "check_type = ?, healthy_threshold = ? WHERE id = ?",
                             status, now, endpoint.trim(), CHECK_TYPE_MCP, failThreshold, hid);
+                }
+                String typeCol = valueOf(row.get("resource_type"));
+                if (!normHealthStatus(prevProbeStatus).equals(normHealthStatus(status))) {
+                    realtimePushService.pushHealthProbeStatusChanged(
+                            resourceId,
+                            TYPE_MCP.equalsIgnoreCase(typeCol) ? TYPE_MCP : typeCol,
+                            resourceCode,
+                            StringUtils.hasText(displayName) ? displayName : resourceCode,
+                            CHECK_TYPE_MCP,
+                            status,
+                            prevProbeStatus,
+                            now);
                 }
             }
             if (!targets.isEmpty()) {
@@ -210,5 +225,9 @@ public class McpAutoHealthProbeTask {
 
     private static String valueOf(Object v) {
         return v == null ? "" : String.valueOf(v);
+    }
+
+    private static String normHealthStatus(String s) {
+        return s == null ? "" : s.trim().toLowerCase();
     }
 }

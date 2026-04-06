@@ -5,7 +5,6 @@ import com.lantu.connect.auth.support.SessionRevocationRegistry;
 import com.lantu.connect.common.config.SecurityProperties;
 import com.lantu.connect.common.util.JwtUtil;
 import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.server.ServerHttpRequest;
@@ -63,7 +62,7 @@ public class JwtWebSocketHandshakeInterceptor implements HandshakeInterceptor {
             long userId = Long.parseLong(claims.getSubject());
             attributes.put(ATTR_USER_ID, userId);
             return true;
-        } catch (ExpiredJwtException | JwtException | IllegalArgumentException e) {
+        } catch (JwtException | IllegalArgumentException e) {
             return false;
         }
     }
