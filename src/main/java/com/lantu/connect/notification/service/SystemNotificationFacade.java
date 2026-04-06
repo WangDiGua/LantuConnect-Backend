@@ -113,6 +113,16 @@ public class SystemNotificationFacade {
                 "api_key", keyId);
     }
 
+    public void notifyApiKeyRotated(Long userId, String keyId, String keyName) {
+        String details = String.format(Locale.ROOT, "Key ID: %s\nKey 名称: %s", fallbackText(keyId, "-"), fallbackText(keyName, "-"));
+        notifyToUser(userId,
+                NotificationEventCodes.API_KEY_ROTATED,
+                "API Key 已轮换",
+                buildBody("API Key 管理", "轮换成功", details, "旧密钥已失效，请立即更新所有集成与环境变量中的 X-Api-Key。"),
+                "api_key",
+                keyId);
+    }
+
     public void notifyUserStatusChanged(Long targetUserId, Long operatorUserId, String oldStatus, String newStatus) {
         String details = String.format(
                 Locale.ROOT,

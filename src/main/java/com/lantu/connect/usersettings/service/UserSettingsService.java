@@ -39,5 +39,10 @@ public interface UserSettingsService {
 
     void revokeApiKey(Long userId, String apiKeyId, ApiKeyRevokeRequest request, String clientIp);
 
+    /**
+     * 轮换 API Key 明文：库内仅存摘要，无法找回旧明文；验证身份后为该记录生成新 secretPlain，旧值立即失效。
+     */
+    ApiKeyResponse rotateApiKey(Long userId, String apiKeyId, ApiKeyRevokeRequest request, String clientIp);
+
     UserStatsVO getStats(Long userId);
 }

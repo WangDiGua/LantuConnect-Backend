@@ -35,6 +35,8 @@ public final class NotificationEventCodes {
 
     public static final String API_KEY_CREATED = "api_key_created";
     public static final String API_KEY_REVOKED = "api_key_revoked";
+    /** 用户轮换密钥：同一 Key 记录换用新明文，旧明文失效 */
+    public static final String API_KEY_ROTATED = "api_key_rotated";
 
     public static final String USER_STATUS_CHANGED = "user_status_changed";
     public static final String USER_DELETED = "user_deleted";

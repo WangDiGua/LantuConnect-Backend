@@ -96,6 +96,14 @@ public class UserSettingsController {
         return R.ok();
     }
 
+    @PostMapping("/api-keys/{id}/rotate")
+    public R<ApiKeyResponse> rotateApiKey(@RequestHeader("X-User-Id") Long userId,
+                                           @PathVariable String id,
+                                           @RequestBody ApiKeyRevokeRequest body,
+                                           HttpServletRequest request) {
+        return R.ok(userSettingsService.rotateApiKey(userId, id, body, clientIpResolver.resolve(request)));
+    }
+
     @GetMapping("/stats")
     public R<UserStatsVO> stats(@RequestHeader("X-User-Id") Long userId) {
         return R.ok(userSettingsService.getStats(userId));

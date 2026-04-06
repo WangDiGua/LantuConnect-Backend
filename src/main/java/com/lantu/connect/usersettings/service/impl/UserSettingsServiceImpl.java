@@ -246,6 +246,48 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void revokeApiKey(Long userId, String apiKeyId, ApiKeyRevokeRequest request, String clientIp) {
+        ApiKey key = assertOwnedApiKeyAfterCredentialCheck(userId, apiKeyId, request, clientIp, "api_key_revoke");
+        key.setStatus("revoked");
+        apiKeyMapper.updateById(key);
+        systemNotificationFacade.notifyApiKeyChanged(userId, key.getId(), key.getName(), false);
+        insertAudit(userId, "api_key_revoke", apiKeyId, true, null, clientIp);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ApiKeyResponse rotateApiKey(Long userId, String apiKeyId, ApiKeyRevokeRequest request, String clientIp) {
+        ApiKey key = assertOwnedApiKeyAfterCredentialCheck(userId, apiKeyId, request, clientIp, "api_key_rotate");
+        if (!"active".equalsIgnoreCase(key.getStatus())) {
+            insertAudit(userId, "api_key_rotate", apiKeyId, false, "API Key 不可用", clientIp);
+            throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不可用");
+        }
+        String plain = "sk_" + UUID.randomUUID().toString().replace("-", "");
+        key.setKeyHash(sha256Hex(plain));
+        String prefix = plain.length() > 16 ? plain.substring(0, 16) : plain;
+        key.setPrefix(prefix);
+        key.setMaskedKey(prefix.length() > 4 ? prefix.substring(0, 4) + "****" : "****");
+        apiKeyMapper.updateById(key);
+        systemNotificationFacade.notifyApiKeyRotated(userId, key.getId(), key.getName());
+        insertAudit(userId, "api_key_rotate", apiKeyId, true, null, clientIp);
+        return ApiKeyResponse.builder()
+                .id(key.getId())
+                .name(key.getName())
+                .scopes(key.getScopes())
+                .secretPlain(plain)
+                .expiresAt(key.getExpiresAt())
+                .revoked(false)
+                .build();
+    }
+
+    /**
+     * 校验归属与密码/短信（与撤销相同），失败写入敏感操作审计。成功返回可用的 Key 行。
+     */
+    private ApiKey assertOwnedApiKeyAfterCredentialCheck(
+            Long userId,
+            String apiKeyId,
+            ApiKeyRevokeRequest request,
+            String clientIp,
+            String auditActionType) {
         if (request == null) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "请求体不能为空");
         }
@@ -253,19 +295,19 @@ public class UserSettingsServiceImpl implements UserSettingsService {
         ApiKey key = apiKeyMapper.selectById(apiKeyId);
         if (key == null || !OWNER_USER.equals(key.getOwnerType())
                 || !String.valueOf(userId).equals(key.getOwnerId())) {
-            insertAudit(userId, apiKeyId, false, "API Key 不存在", clientIp);
+            insertAudit(userId, auditActionType, apiKeyId, false, "API Key 不存在", clientIp);
             throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不存在");
         }
         User user = userMapper.selectById(userId);
         if (user == null) {
-            insertAudit(userId, apiKeyId, false, "用户不存在", clientIp);
+            insertAudit(userId, auditActionType, apiKeyId, false, "用户不存在", clientIp);
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
         }
         boolean hasPassword = StringUtils.hasText(user.getPasswordHash());
         try {
             if (hasPassword) {
                 if (!StringUtils.hasText(request.getPassword())) {
-                    throw new BusinessException(ResultCode.PARAM_ERROR, "请输入登录密码以撤销 API Key");
+                    throw new BusinessException(ResultCode.PARAM_ERROR, "请输入登录密码以继续操作");
                 }
                 if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
                     throw new BusinessException(ResultCode.PASSWORD_ERROR);
@@ -276,19 +318,16 @@ public class UserSettingsServiceImpl implements UserSettingsService {
                 }
                 if (!StringUtils.hasText(user.getMobile())) {
                     throw new BusinessException(ResultCode.PARAM_ERROR,
-                            "未绑定手机号，无法校验撤销；请先绑定手机或设置密码");
+                            "未绑定手机号，无法校验；请先绑定手机或设置密码");
                 }
                 verifySmsForRevoke(user.getMobile().trim(), request.getSmsCode().trim());
             }
         } catch (BusinessException e) {
             String reason = StringUtils.hasText(e.getMessage()) ? e.getMessage() : ("code=" + e.getCode());
-            insertAudit(userId, apiKeyId, false, reason, clientIp);
+            insertAudit(userId, auditActionType, apiKeyId, false, reason, clientIp);
             throw e;
         }
-        key.setStatus("revoked");
-        apiKeyMapper.updateById(key);
-        systemNotificationFacade.notifyApiKeyChanged(userId, key.getId(), key.getName(), false);
-        insertAudit(userId, apiKeyId, true, null, clientIp);
+        return key;
     }
 
     private void verifySmsForRevoke(String phone, String code) {
@@ -308,10 +347,10 @@ public class UserSettingsServiceImpl implements UserSettingsService {
         smsVerifyCodeMapper.updateById(row);
     }
 
-    private void insertAudit(Long userId, String targetId, boolean success, String failReason, String clientIp) {
+    private void insertAudit(Long userId, String actionType, String targetId, boolean success, String failReason, String clientIp) {
         SensitiveActionAudit row = new SensitiveActionAudit();
         row.setUserId(userId);
-        row.setActionType("api_key_revoke");
+        row.setActionType(actionType);
         row.setTargetId(targetId);
         row.setSuccess(success ? 1 : 0);
         if (StringUtils.hasText(failReason) && failReason.length() > 512) {
