@@ -1387,7 +1387,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             case "draft" -> "草稿态，可编辑后重新提审";
             case "pending_review" -> "审核进行中，可撤回到草稿";
             case "testing" -> "测试阶段，建议观察稳定性后发布";
-            case "published" -> "线上可用，建议持续关注质量指标";
+            case "published" -> "已上架：可在平台内检索并经网关调用；不代表上游实例当前已启动，连通性以「运行健康」或健康检查/试调用为准";
             case "rejected" -> StringUtils.hasText(rejectReason) ? "已驳回：" + rejectReason : "已驳回，请修改后重提";
             case "deprecated" -> "已暂停对外开放，可修复后重新提审";
             default -> "状态待确认";
