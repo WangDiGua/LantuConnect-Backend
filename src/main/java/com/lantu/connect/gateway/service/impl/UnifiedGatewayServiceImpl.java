@@ -209,7 +209,18 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                         continue;
                     }
                 }
+                if (Boolean.TRUE.equals(request.getCallableOnly())) {
+                    Long rid = parseId(rId);
+                    if (!isResourcePhysicallyCallable(rid, rType, valueOf(row.get("resource_code")))) {
+                        continue;
+                    }
+                }
                 if (filteredCount >= from && filteredCount < to) {
+                    Long ridForGrant = parseId(rId);
+                    Boolean grantFlag = null;
+                    if (apiKey != null && ridForGrant != null) {
+                        grantFlag = resourceInvokeGrantService.isInvokeGrantSatisfied(apiKey, rType, ridForGrant, userId);
+                    }
                     paged.add(ResourceCatalogItemVO.builder()
                             .resourceType(rType)
                             .resourceId(rId)
@@ -223,6 +234,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                             .createdBy(longOrNull(row.get("created_by")))
                             .viewCount(longValue(row.get("view_count")))
                             .tags(new ArrayList<>())
+                            .hasGrantForKey(grantFlag)
                             .build());
                 }
                 filteredCount++;
@@ -1077,6 +1089,22 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         }
         if ("disabled".equals(hs)) {
             throw new BusinessException(ResultCode.RESOURCE_HEALTH_DOWN, "资源健康检查已关闭或未启用，暂不可调用");
+        }
+    }
+
+    /** 与 {@link #ensureResourceHealthNotDown}、{@link #ensureNotCircuitOpen} 一致，供目录 callableOnly 过滤。 */
+    private boolean isResourcePhysicallyCallable(Long resourceId, String resourceType, String resourceCode) {
+        if (resourceId == null) {
+            return false;
+        }
+        try {
+            ensureResourceHealthNotDown(resourceId);
+            if (StringUtils.hasText(resourceCode)) {
+                ensureNotCircuitOpen(resourceType, resourceCode);
+            }
+            return true;
+        } catch (BusinessException ignored) {
+            return false;
         }
     }
 

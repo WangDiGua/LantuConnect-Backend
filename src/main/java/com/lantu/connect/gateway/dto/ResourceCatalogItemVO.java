@@ -82,4 +82,10 @@ public class ResourceCatalogItemVO {
      */
     @Schema(description = "仅当请求包含 include=quality 时存在")
     private Map<String, Object> quality;
+
+    /**
+     * 仅当请求携带有效 X-Api-Key 时填充：与 resolve/invoke 网关 Grant 判定一致（含 access_policy 短路、owner Key 等）。
+     */
+    @Schema(description = "携带 X-Api-Key 时非空：当前 Key 是否满足 invoke 的 Grant/策略（与网关一致）")
+    private Boolean hasGrantForKey;
 }

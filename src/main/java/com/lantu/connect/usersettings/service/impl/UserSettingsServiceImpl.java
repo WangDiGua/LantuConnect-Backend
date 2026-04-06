@@ -21,6 +21,8 @@ import com.lantu.connect.usermgmt.dto.ApiKeyResponse;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import com.lantu.connect.usermgmt.mapper.ApiKeyMapper;
 import com.lantu.connect.useractivity.mapper.UsageRecordMapper;
+import com.lantu.connect.usersettings.dto.InvokeEligibilityRequest;
+import com.lantu.connect.usersettings.dto.InvokeEligibilityResponse;
 import com.lantu.connect.usersettings.dto.ApiKeyRevokeRequest;
 import com.lantu.connect.usersettings.dto.UserStatsVO;
 import com.lantu.connect.usersettings.dto.WorkspaceSettingsVO;
@@ -43,6 +45,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -172,6 +175,40 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     @Override
     public List<ResourceGrantVO> listResourceGrantsForApiKey(Long userId, String apiKeyId, String resourceType) {
         return resourceInvokeGrantService.listActiveGrantsForGranteeApiKey(userId, apiKeyId, resourceType);
+    }
+
+    @Override
+    public InvokeEligibilityResponse invokeEligibilityForApiKey(Long userId, String apiKeyId, InvokeEligibilityRequest request) {
+        if (userId == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证用户无法查询");
+        }
+        if (!StringUtils.hasText(apiKeyId)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "API Key id 不能为空");
+        }
+        ApiKey key = apiKeyMapper.selectById(apiKeyId.trim());
+        if (key == null || !OWNER_USER.equalsIgnoreCase(key.getOwnerType())
+                || !String.valueOf(userId).equals(String.valueOf(key.getOwnerId()).trim())) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不存在");
+        }
+        if (!"active".equalsIgnoreCase(key.getStatus())) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不可用");
+        }
+        String rt = request.getResourceType().trim().toLowerCase(Locale.ROOT);
+        Map<String, Boolean> out = new LinkedHashMap<>();
+        for (String ridRaw : request.getResourceIds()) {
+            if (!StringUtils.hasText(ridRaw)) {
+                continue;
+            }
+            Long rid;
+            try {
+                rid = Long.valueOf(ridRaw.trim());
+            } catch (NumberFormatException e) {
+                continue;
+            }
+            boolean ok = resourceInvokeGrantService.isInvokeGrantSatisfied(key, rt, rid, userId);
+            out.put(String.valueOf(rid), ok);
+        }
+        return InvokeEligibilityResponse.builder().byResourceId(out).build();
     }
 
     @Override

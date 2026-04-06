@@ -7,6 +7,8 @@ import com.lantu.connect.gateway.dto.ResourceGrantVO;
 import com.lantu.connect.usermgmt.dto.ApiKeyCreateRequest;
 import com.lantu.connect.usermgmt.dto.ApiKeyResponse;
 import com.lantu.connect.usermgmt.entity.ApiKey;
+import com.lantu.connect.usersettings.dto.InvokeEligibilityRequest;
+import com.lantu.connect.usersettings.dto.InvokeEligibilityResponse;
 import com.lantu.connect.usersettings.dto.ApiKeyRevokeRequest;
 import com.lantu.connect.usersettings.dto.UserStatsVO;
 import com.lantu.connect.usersettings.dto.WorkspaceSettingsVO;
@@ -70,6 +72,13 @@ public class UserSettingsController {
                                                                @RequestParam(required = false) String resourceType) {
         String rt = StringUtils.hasText(resourceType) ? resourceType.trim() : "mcp";
         return R.ok(userSettingsService.listResourceGrantsForApiKey(userId, apiKeyId, rt));
+    }
+
+    @PostMapping("/api-keys/{apiKeyId}/invoke-eligibility")
+    public R<InvokeEligibilityResponse> invokeEligibility(@RequestHeader("X-User-Id") Long userId,
+                                                          @PathVariable String apiKeyId,
+                                                          @Valid @RequestBody InvokeEligibilityRequest request) {
+        return R.ok(userSettingsService.invokeEligibilityForApiKey(userId, apiKeyId, request));
     }
 
     @PostMapping("/api-keys/revoke/send-sms")

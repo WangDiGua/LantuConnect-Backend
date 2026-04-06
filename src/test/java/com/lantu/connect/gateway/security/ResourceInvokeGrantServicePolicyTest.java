@@ -55,6 +55,9 @@ class ResourceInvokeGrantServicePolicyTest {
         assertThatCode(() -> resourceInvokeGrantService.ensureApiKeyGranted(
                 apiKey, "invoke", "agent", 101L, 8001L))
                 .doesNotThrowAnyException();
+        org.assertj.core.api.Assertions.assertThat(resourceInvokeGrantService.isInvokeGrantSatisfied(
+                apiKey, "agent", 101L, 8001L))
+                .isTrue();
     }
 
     @Test
@@ -71,6 +74,9 @@ class ResourceInvokeGrantServicePolicyTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(ex -> ((BusinessException) ex).getCode())
                 .isEqualTo(ResultCode.FORBIDDEN.getCode());
+        org.assertj.core.api.Assertions.assertThat(resourceInvokeGrantService.isInvokeGrantSatisfied(
+                apiKey, "agent", 101L, 8001L))
+                .isFalse();
     }
 
     @Test

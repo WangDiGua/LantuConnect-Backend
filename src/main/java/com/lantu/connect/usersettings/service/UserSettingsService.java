@@ -1,6 +1,8 @@
 package com.lantu.connect.usersettings.service;
 
 import com.lantu.connect.gateway.dto.ResourceGrantVO;
+import com.lantu.connect.usersettings.dto.InvokeEligibilityRequest;
+import com.lantu.connect.usersettings.dto.InvokeEligibilityResponse;
 import com.lantu.connect.usermgmt.dto.ApiKeyCreateRequest;
 import com.lantu.connect.usermgmt.dto.ApiKeyResponse;
 import com.lantu.connect.usermgmt.entity.ApiKey;
@@ -30,6 +32,8 @@ public interface UserSettingsService {
     void deleteApiKey(Long userId, String apiKeyId);
 
     List<ResourceGrantVO> listResourceGrantsForApiKey(Long userId, String apiKeyId, String resourceType);
+
+    InvokeEligibilityResponse invokeEligibilityForApiKey(Long userId, String apiKeyId, InvokeEligibilityRequest request);
 
     void sendRevokeApiKeySms(Long userId, String clientIp);
 

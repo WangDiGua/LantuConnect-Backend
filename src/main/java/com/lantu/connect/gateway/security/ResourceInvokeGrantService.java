@@ -40,6 +40,25 @@ public class ResourceInvokeGrantService {
     private final UserDisplayNameResolver userDisplayNameResolver;
     private final SystemNotificationFacade systemNotificationFacade;
 
+    /**
+     * 与 {@link #ensureApiKeyGranted} 同款规则（open_platform / open_org / owner Key / caller=owner / 平台 Key / 有效 Grant），
+     * 不抛业务异常，供目录打标与控制台批量预判集成。
+     */
+    public boolean isInvokeGrantSatisfied(ApiKey apiKey, String resourceType, Long resourceId, Long callerUserId) {
+        if (apiKey == null) {
+            return false;
+        }
+        try {
+            ensureApiKeyGranted(apiKey, "invoke", resourceType, resourceId, callerUserId);
+            return true;
+        } catch (BusinessException ex) {
+            if (ex.getCode() == ResultCode.FORBIDDEN.getCode() || ex.getCode() == ResultCode.NOT_FOUND.getCode()) {
+                return false;
+            }
+            throw ex;
+        }
+    }
+
     public void ensureApiKeyGranted(ApiKey apiKey, String action, String resourceType, Long resourceId, Long callerUserId) {
         if (apiKey == null) {
             return;

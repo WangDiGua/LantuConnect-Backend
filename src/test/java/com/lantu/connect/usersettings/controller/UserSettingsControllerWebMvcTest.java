@@ -5,6 +5,8 @@ import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.web.ClientIpResolver;
 import com.lantu.connect.gateway.dto.ResourceGrantVO;
+import com.lantu.connect.usersettings.dto.InvokeEligibilityRequest;
+import com.lantu.connect.usersettings.dto.InvokeEligibilityResponse;
 import com.lantu.connect.usersettings.service.UserSettingsService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -60,5 +63,22 @@ class UserSettingsControllerWebMvcTest {
         assertThrows(
                 BusinessException.class,
                 () -> userSettingsController.listApiKeyResourceGrants(7L, "missing", null));
+    }
+
+    @Test
+    void invokeEligibility_delegatesToService() {
+        InvokeEligibilityRequest req = new InvokeEligibilityRequest();
+        req.setResourceType("mcp");
+        req.setResourceIds(List.of("58"));
+        InvokeEligibilityResponse body = InvokeEligibilityResponse.builder()
+                .byResourceId(Map.of("58", true))
+                .build();
+        when(userSettingsService.invokeEligibilityForApiKey(7L, "key-1", req)).thenReturn(body);
+
+        R<InvokeEligibilityResponse> r = userSettingsController.invokeEligibility(7L, "key-1", req);
+
+        assertEquals(0, r.getCode());
+        assertEquals(true, r.getData().getByResourceId().get("58"));
+        verify(userSettingsService).invokeEligibilityForApiKey(7L, "key-1", req);
     }
 }
