@@ -381,6 +381,11 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
     }
 
     private GrantApplicationVO toVO(ResourceGrantApplication app, Map<Long, String> names) {
+        Long linkedGrantId = app.getCreatedGrantId();
+        if (linkedGrantId == null && "approved".equalsIgnoreCase(String.valueOf(app.getStatus()))) {
+            linkedGrantId = resourceInvokeGrantService.findActiveGrantId(
+                    app.getResourceType(), app.getResourceId(), app.getApiKeyId());
+        }
         return GrantApplicationVO.builder()
                 .id(app.getId())
                 .applicantId(app.getApplicantId())
@@ -396,7 +401,7 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
                 .reviewerName(names.get(app.getReviewerId()))
                 .rejectReason(app.getRejectReason())
                 .reviewTime(app.getReviewTime())
-                .createdGrantId(app.getCreatedGrantId())
+                .createdGrantId(linkedGrantId)
                 .expiresAt(app.getExpiresAt())
                 .createTime(app.getCreateTime())
                 .build();
