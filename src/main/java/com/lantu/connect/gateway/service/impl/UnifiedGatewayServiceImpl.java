@@ -195,11 +195,19 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 if (!catalogTypeOk.allow(rType)) {
                     continue;
                 }
-                if (apiKey != null && !apiKeyScopeService.canCatalog(apiKey, rType, rId)) {
-                    continue;
-                }
-                if (apiKey != null && !resourceInvokeGrantService.canCatalog(apiKey, rType, parseId(rId), userId)) {
-                    continue;
+                /*
+                 * 仅 API Key、无登录态：目录按 Key 的 scope + Resource Grant 裁剪（集成方只能看到自己被授予的资源）。
+                 * 浏览器常在 axios 拦截器里附带个人 Key 与 JWT 并存：若对已登录用户仍按 Grant 逐行过滤，
+                 * 则 grant_required 且非本人发布的资源会从广场消失（表现为「仅开发者本人能看见」）。
+                 * 登录态下市场发现只受 RBAC（catalogTypeOk）约束；Grant 仍在 resolve/invoke  enforce。
+                 */
+                if (apiKey != null && userId == null) {
+                    if (!apiKeyScopeService.canCatalog(apiKey, rType, rId)) {
+                        continue;
+                    }
+                    if (!resourceInvokeGrantService.canCatalog(apiKey, rType, parseId(rId), null)) {
+                        continue;
+                    }
                 }
                 if (filteredCount >= from && filteredCount < to) {
                     paged.add(ResourceCatalogItemVO.builder()
@@ -392,7 +400,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         if (userId != null) {
             gatewayUserPermissionService.ensureAccess(userId, type);
         }
-        if (apiKey != null) {
+        boolean jwtCatalogMetadata = userId != null && "catalog_read".equalsIgnoreCase(action);
+        if (apiKey != null && !jwtCatalogMetadata) {
             if ("invoke".equals(action)) {
                 apiKeyScopeService.ensureInvokeAllowed(apiKey, type, String.valueOf(id));
             } else {
