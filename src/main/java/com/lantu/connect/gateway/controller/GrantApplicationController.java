@@ -71,4 +71,14 @@ public class GrantApplicationController {
         grantApplicationService.reject(userId, id, body != null ? body.getReason() : null);
         return R.ok();
     }
+
+    /**
+     * 撤销该已通过申请所建立的生效资源授权（权限与审批相同：资源 owner / reviewer / 平台管理员）。
+     */
+    @PostMapping("/{id}/revoke-grant")
+    @AuditLog(action = "grant_application_revoke_grant", resource = "grant-applications")
+    public R<Void> revokeEffectiveGrant(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
+        grantApplicationService.revokeEffectiveGrant(userId, id);
+        return R.ok();
+    }
 }

@@ -31,6 +31,8 @@ public class ResourceGrantApplication {
     private Long reviewerId;
     private String rejectReason;
     private LocalDateTime reviewTime;
+    /** 审批通过后写入 {@code t_resource_invoke_grant.id}；撤销生效授权后置空 */
+    private Long createdGrantId;
     private LocalDateTime expiresAt;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;

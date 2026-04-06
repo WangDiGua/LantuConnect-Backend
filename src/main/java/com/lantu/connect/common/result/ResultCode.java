@@ -59,6 +59,8 @@ public enum ResultCode {
     GRANT_APPLICATION_DUPLICATE(4010, "已有待审批的授权申请"),
     GRANT_APPLICATION_NOT_FOUND(4011, "授权申请不存在"),
     GRANT_APPLICATION_NOT_PENDING(4012, "授权申请不在待审批状态"),
+    GRANT_APPLICATION_NOT_APPROVED(4013, "仅已通过的授权申请可撤回生效授权"),
+    GRANT_APPLICATION_NO_ACTIVE_GRANT(4014, "未找到可撤销的生效授权，可能已撤销，请至资源授权管理核对"),
 
     INTERNAL_ERROR(5001, "内部错误"),
     EXTERNAL_SERVICE_ERROR(5002, "外部服务调用失败"),

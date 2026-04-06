@@ -108,19 +108,20 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
     public void approve(Long reviewerUserId, Long applicationId) {
         ResourceGrantApplication app = requirePending(applicationId);
         resourceInvokeGrantService.ensureMayReviewGrantApplication(reviewerUserId, app.getResourceType(), app.getResourceId());
-        app.setStatus("approved");
-        app.setReviewerId(reviewerUserId);
-        app.setReviewTime(LocalDateTime.now());
-        app.setUpdateTime(LocalDateTime.now());
-        applicationMapper.updateById(app);
-
         ResourceGrantCreateRequest grantReq = new ResourceGrantCreateRequest();
         grantReq.setResourceType(app.getResourceType());
         grantReq.setResourceId(app.getResourceId());
         grantReq.setGranteeApiKeyId(app.getApiKeyId());
         grantReq.setActions(app.getActions());
         grantReq.setExpiresAt(app.getExpiresAt());
-        resourceInvokeGrantService.grant(reviewerUserId, grantReq);
+        Long grantId = resourceInvokeGrantService.grant(reviewerUserId, grantReq);
+
+        app.setStatus("approved");
+        app.setReviewerId(reviewerUserId);
+        app.setReviewTime(LocalDateTime.now());
+        app.setCreatedGrantId(grantId);
+        app.setUpdateTime(LocalDateTime.now());
+        applicationMapper.updateById(app);
 
         systemNotificationFacade.notifyToUser(
                 app.getApplicantId(),
@@ -181,6 +182,33 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
                         reason),
                 "grant_application",
                 String.valueOf(applicationId));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void revokeEffectiveGrant(Long operatorUserId, Long applicationId) {
+        ResourceGrantApplication app = applicationMapper.selectById(applicationId);
+        if (app == null) {
+            throw new BusinessException(ResultCode.GRANT_APPLICATION_NOT_FOUND);
+        }
+        if (!"approved".equalsIgnoreCase(String.valueOf(app.getStatus()))) {
+            throw new BusinessException(ResultCode.GRANT_APPLICATION_NOT_APPROVED);
+        }
+        resourceInvokeGrantService.ensureMayReviewGrantApplication(
+                operatorUserId, app.getResourceType(), app.getResourceId());
+
+        Long grantId = app.getCreatedGrantId();
+        if (grantId == null) {
+            grantId = resourceInvokeGrantService.findActiveGrantId(
+                    app.getResourceType(), app.getResourceId(), app.getApiKeyId());
+        }
+        if (grantId == null) {
+            throw new BusinessException(ResultCode.GRANT_APPLICATION_NO_ACTIVE_GRANT);
+        }
+        resourceInvokeGrantService.revoke(operatorUserId, grantId);
+        app.setCreatedGrantId(null);
+        app.setUpdateTime(LocalDateTime.now());
+        applicationMapper.updateById(app);
     }
 
     @Override
@@ -368,6 +396,7 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
                 .reviewerName(names.get(app.getReviewerId()))
                 .rejectReason(app.getRejectReason())
                 .reviewTime(app.getReviewTime())
+                .createdGrantId(app.getCreatedGrantId())
                 .expiresAt(app.getExpiresAt())
                 .createTime(app.getCreateTime())
                 .build();

@@ -23,6 +23,8 @@ public class GrantApplicationVO {
     private String reviewerName;
     private String rejectReason;
     private LocalDateTime reviewTime;
+    /** 审批通过后建立的资源授权行 ID，用于待办列表「撤回授权」 */
+    private Long createdGrantId;
     private LocalDateTime expiresAt;
     private LocalDateTime createTime;
 }

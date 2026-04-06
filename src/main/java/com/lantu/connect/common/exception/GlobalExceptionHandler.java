@@ -211,6 +211,8 @@ public class GlobalExceptionHandler {
                 || code == ResultCode.FAVORITE_EXISTS.getCode()
                 || code == ResultCode.GRANT_APPLICATION_DUPLICATE.getCode()
                 || code == ResultCode.GRANT_APPLICATION_NOT_PENDING.getCode()
+                || code == ResultCode.GRANT_APPLICATION_NOT_APPROVED.getCode()
+                || code == ResultCode.GRANT_APPLICATION_NO_ACTIVE_GRANT.getCode()
                 || code == ResultCode.ILLEGAL_STATE_TRANSITION.getCode()) {
             return HttpStatus.CONFLICT;
         }

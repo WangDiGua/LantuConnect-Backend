@@ -136,6 +136,25 @@ public class ResourceInvokeGrantService {
         return grant.getId();
     }
 
+    /**
+     * 按资源 + 被授权 API Key 查找当前生效的 grant 主键（用于历史工单未写入 created_grant_id 时的兜底撤销）。
+     */
+    public Long findActiveGrantId(String resourceType, Long resourceId, String granteeApiKeyId) {
+        if (!StringUtils.hasText(granteeApiKeyId) || resourceId == null) {
+            return null;
+        }
+        String rt = normalizeType(resourceType);
+        ResourceInvokeGrant row = resourceInvokeGrantMapper.selectOne(
+                new LambdaQueryWrapper<ResourceInvokeGrant>()
+                        .eq(ResourceInvokeGrant::getResourceType, rt)
+                        .eq(ResourceInvokeGrant::getResourceId, resourceId)
+                        .eq(ResourceInvokeGrant::getGranteeType, "api_key")
+                        .eq(ResourceInvokeGrant::getGranteeId, granteeApiKeyId.trim())
+                        .eq(ResourceInvokeGrant::getStatus, "active")
+                        .last("LIMIT 1"));
+        return row != null ? row.getId() : null;
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public void revoke(Long operatorUserId, Long grantId) {
         ResourceInvokeGrant grant = resourceInvokeGrantMapper.selectById(grantId);
