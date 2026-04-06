@@ -215,42 +215,30 @@ public class ResourceInvokeGrantService {
         }
         q.orderByDesc(ResourceInvokeGrant::getUpdateTime);
         List<ResourceInvokeGrant> grants = resourceInvokeGrantMapper.selectList(q);
-        Map<Long, String> names = userDisplayNameResolver.resolveDisplayNames(
-                grants.stream().map(ResourceInvokeGrant::getGrantedByUserId).toList());
-        return grants
-                .stream()
-                .map(grant -> ResourceGrantVO.builder()
-                        .id(grant.getId())
-                        .resourceType(grant.getResourceType())
-                        .resourceId(grant.getResourceId())
-                        .granteeType(grant.getGranteeType())
-                        .granteeId(grant.getGranteeId())
-                        .actions(grant.getActions())
-                        .status(grant.getStatus())
-                        .grantedByUserId(grant.getGrantedByUserId())
-                        .grantedByName(names.get(grant.getGrantedByUserId()))
-                        .expiresAt(grant.getExpiresAt())
-                        .createTime(grant.getCreateTime())
-                        .updateTime(grant.getUpdateTime())
-                        .build())
-                .toList();
+        return toGrantVoList(grants);
     }
 
     /**
-     * 被授权方（grantee）为指定 API Key 时的生效 Grant 列表（用户设置 / MCP 集成页）。
+     * 被授权方（grantee）为指定 API Key 时的生效 Grant 列表；校验 Key 归属当前用户（与 UserSettings 撤销规则一致）。
      *
-     * @param granteeApiKeyId  API Key 主键 id（库内 id，非 secretPlain）
-     * @param resourceTypeFilter 若非空则限定资源类型（如 mcp），为空则返回全部类型
+     * @param resourceTypeFilter 若非空则限定资源类型（如 mcp）；为空则不限定类型
      */
-    public List<ResourceGrantVO> listActiveGrantsForGranteeApiKey(String granteeApiKeyId, String resourceTypeFilter) {
-        if (!StringUtils.hasText(granteeApiKeyId)) {
+    public List<ResourceGrantVO> listActiveGrantsForGranteeApiKey(Long userId, String apiKeyId, String resourceTypeFilter) {
+        if (userId == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证用户无法查询授权");
+        }
+        if (!StringUtils.hasText(apiKeyId)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "API Key id 不能为空");
         }
-        String granteeId = granteeApiKeyId.trim();
+        String keyId = apiKeyId.trim();
+        ApiKey key = apiKeyMapper.selectById(keyId);
+        if (key == null || !isApiKeyOwnedByUser(key, userId)) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不存在");
+        }
         LocalDateTime now = LocalDateTime.now();
         LambdaQueryWrapper<ResourceInvokeGrant> q = new LambdaQueryWrapper<ResourceInvokeGrant>()
                 .eq(ResourceInvokeGrant::getGranteeType, "api_key")
-                .eq(ResourceInvokeGrant::getGranteeId, granteeId)
+                .eq(ResourceInvokeGrant::getGranteeId, keyId)
                 .eq(ResourceInvokeGrant::getStatus, "active");
         if (StringUtils.hasText(resourceTypeFilter)) {
             q.eq(ResourceInvokeGrant::getResourceType, normalizeType(resourceTypeFilter));
@@ -260,9 +248,16 @@ public class ResourceInvokeGrantService {
         List<ResourceInvokeGrant> effective = grants.stream()
                 .filter(g -> g.getExpiresAt() == null || g.getExpiresAt().isAfter(now))
                 .toList();
+        return toGrantVoList(effective);
+    }
+
+    private List<ResourceGrantVO> toGrantVoList(List<ResourceInvokeGrant> grants) {
+        if (grants.isEmpty()) {
+            return List.of();
+        }
         Map<Long, String> names = userDisplayNameResolver.resolveDisplayNames(
-                effective.stream().map(ResourceInvokeGrant::getGrantedByUserId).toList());
-        return effective.stream()
+                grants.stream().map(ResourceInvokeGrant::getGrantedByUserId).toList());
+        return grants.stream()
                 .map(grant -> ResourceGrantVO.builder()
                         .id(grant.getId())
                         .resourceType(grant.getResourceType())

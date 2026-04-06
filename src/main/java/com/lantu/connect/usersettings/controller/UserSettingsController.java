@@ -19,6 +19,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 
@@ -67,7 +68,8 @@ public class UserSettingsController {
     public R<List<ResourceGrantVO>> listApiKeyResourceGrants(@RequestHeader("X-User-Id") Long userId,
                                                                @PathVariable String apiKeyId,
                                                                @RequestParam(required = false) String resourceType) {
-        return R.ok(userSettingsService.listResourceGrantsForApiKey(userId, apiKeyId, resourceType));
+        String rt = StringUtils.hasText(resourceType) ? resourceType.trim() : "mcp";
+        return R.ok(userSettingsService.listResourceGrantsForApiKey(userId, apiKeyId, rt));
     }
 
     @PostMapping("/api-keys/revoke/send-sms")

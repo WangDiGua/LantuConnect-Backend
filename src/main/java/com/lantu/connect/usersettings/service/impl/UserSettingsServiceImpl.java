@@ -171,13 +171,7 @@ public class UserSettingsServiceImpl implements UserSettingsService {
 
     @Override
     public List<ResourceGrantVO> listResourceGrantsForApiKey(Long userId, String apiKeyId, String resourceType) {
-        ApiKey key = apiKeyMapper.selectById(apiKeyId);
-        if (key == null || !OWNER_USER.equals(key.getOwnerType())
-                || !String.valueOf(userId).equals(key.getOwnerId())) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不存在");
-        }
-        String rt = StringUtils.hasText(resourceType) ? resourceType.trim() : null;
-        return resourceInvokeGrantService.listActiveGrantsForGranteeApiKey(apiKeyId, rt);
+        return resourceInvokeGrantService.listActiveGrantsForGranteeApiKey(userId, apiKeyId, resourceType);
     }
 
     @Override
