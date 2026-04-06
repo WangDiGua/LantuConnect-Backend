@@ -8,6 +8,7 @@ import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.notification.entity.Notification;
 import com.lantu.connect.notification.mapper.NotificationMapper;
 import com.lantu.connect.notification.service.NotificationService;
+import com.lantu.connect.realtime.RealtimePushService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,7 @@ import java.util.List;
 public class NotificationServiceImpl implements NotificationService {
 
     private final NotificationMapper notificationMapper;
+    private final RealtimePushService realtimePushService;
 
     @Override
     @Async
@@ -37,6 +39,7 @@ public class NotificationServiceImpl implements NotificationService {
             notification.setIsRead(false);
         }
         notificationMapper.insert(notification);
+        publishCreated(notification);
     }
 
     @Override
@@ -55,6 +58,7 @@ public class NotificationServiceImpl implements NotificationService {
             n.setSourceId(sourceId != null ? String.valueOf(sourceId) : null);
             n.setIsRead(false);
             notificationMapper.insert(n);
+            publishCreated(n);
         }
     }
 
@@ -105,6 +109,7 @@ public class NotificationServiceImpl implements NotificationService {
         }
         n.setIsRead(true);
         notificationMapper.updateById(n);
+        realtimePushService.pushUnreadSync(userId, unreadCount(userId));
     }
 
     @Override
@@ -114,5 +119,13 @@ public class NotificationServiceImpl implements NotificationService {
                 .eq(Notification::getUserId, userId)
                 .eq(Notification::getIsRead, false)
                 .set(Notification::getIsRead, true));
+        realtimePushService.pushUnreadSync(userId, 0);
+    }
+
+    private void publishCreated(Notification n) {
+        if (n == null || n.getUserId() == null) {
+            return;
+        }
+        realtimePushService.pushNotificationCreated(n.getUserId(), n, unreadCount(n.getUserId()));
     }
 }

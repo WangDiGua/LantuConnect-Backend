@@ -65,6 +65,7 @@ public class SecurityProperties {
             "/swagger-ui.html",
             "/v3/api-docs/**",
             "/actuator/health",
-            "/actuator/info"
+            "/actuator/info",
+            "/ws/**"
     ));
 }
