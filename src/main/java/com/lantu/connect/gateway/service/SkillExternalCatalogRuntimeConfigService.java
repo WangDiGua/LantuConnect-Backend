@@ -171,6 +171,7 @@ public class SkillExternalCatalogRuntimeConfigService {
             systemParamMapper.updateById(existing);
         }
         cacheCoordinator.invalidate();
+        skillExternalCatalogPersistenceService.markPendingResyncWhenPersistenceEnabled(incoming);
         skillExternalCatalogPersistenceService.scheduleSyncAfterConfigSave(incoming);
     }
 

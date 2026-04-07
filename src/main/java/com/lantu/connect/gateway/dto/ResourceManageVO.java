@@ -58,7 +58,9 @@ public class ResourceManageVO {
     private String packValidationMessage;
     /** zip 内技能根（语义校验子树）；空表示整包 */
     private String skillRootPath;
+    /** skill：已废弃，API 恒为 null（技能包不挂载 MCP）。 */
     private Long parentResourceId;
+    /** skill：已废弃，API 恒为 null。 */
     private String displayTemplate;
     private Map<String, Object> parametersSchema;
 

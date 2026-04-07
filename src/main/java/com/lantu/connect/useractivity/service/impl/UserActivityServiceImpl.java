@@ -145,12 +145,12 @@ public class UserActivityServiceImpl implements UserActivityService {
     }
 
     /**
-     * 我的 Skill 列表：联合 Skill 扩展表补充类型和父级信息。
+     * 我的 Skill 列表：联合 Skill 扩展表补充技能包格式（无 MCP 父级）。
      */
     @Override
     public List<Map<String, Object>> mySkills(Long userId) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT r.id, r.resource_code, r.display_name, r.status, r.update_time, ext.skill_type, ext.parent_resource_id "
+                "SELECT r.id, r.resource_code, r.display_name, r.status, r.update_time, ext.skill_type "
                         + "FROM t_resource r LEFT JOIN t_resource_skill_ext ext ON r.id = ext.resource_id "
                         + "WHERE r.deleted = 0 AND r.resource_type = 'skill' AND r.created_by = ? ORDER BY r.update_time DESC",
                 userId);
@@ -162,8 +162,7 @@ public class UserActivityServiceImpl implements UserActivityService {
             r.put("displayName", row.get("display_name"));
             r.put("status", row.get("status"));
             r.put("packFormat", row.get("skill_type"));
-            r.put("agentType", row.get("skill_type"));
-            r.put("parentId", row.get("parent_resource_id"));
+            r.put("agentType", "skill_pack");
             r.put("updateTime", toDateTime(row.get("update_time")));
             out.add(r);
         }

@@ -188,6 +188,8 @@ lantu:
     remote-catalog-mode: merged
     cache-ttl-seconds: 3600
     persistence-enabled: true
+    skill-md-prefetch-on-sync: true
+    skill-md-prefetch-max-per-sync: 0
     mirror-catalog-url: ${SKILL_MIRROR_CATALOG_URL}
     mirror-catalog-urls: []
     catalog-http-sources: []
@@ -279,6 +281,12 @@ resilience4j:
         failure-rate-threshold: 50
         wait-duration-in-open-state: 15s
         sliding-window-size: 20
+      skillCatalogRemote:
+        base-config: default
+        failure-rate-threshold: 55
+        wait-duration-in-open-state: 120s
+        sliding-window-size: 24
+        minimum-number-of-calls: 8
       mcpInvoke:
         base-config: default
         failure-rate-threshold: 50
@@ -334,6 +342,10 @@ resilience4j:
         base-config: default
       mcpInvoke:
         base-config: default
+      skillCatalogRemote:
+        base-config: default
+        max-attempts: 3
+        wait-duration: 1s
   bulkhead:
     configs:
       default:

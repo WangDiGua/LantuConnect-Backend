@@ -14,9 +14,17 @@ public interface SkillExternalCatalogItemMapper extends BaseMapper<SkillExternal
 
     int deleteWhereSyncBatchLt(@Param("batch") long batch);
 
-    long countKeyword(@Param("keyword") String keyword);
+    long countKeyword(@Param("keyword") String keyword,
+                      @Param("minStars") Integer minStars,
+                      @Param("maxStars") Integer maxStars,
+                      @Param("source") String source);
 
     List<SkillExternalCatalogItem> selectKeywordPage(@Param("keyword") String keyword,
                                                      @Param("offset") long offset,
-                                                     @Param("limit") int limit);
+                                                     @Param("limit") int limit,
+                                                     @Param("minStars") Integer minStars,
+                                                     @Param("maxStars") Integer maxStars,
+                                                     @Param("source") String source);
+
+    SkillExternalCatalogItem selectByDedupeKey(@Param("key") String key);
 }

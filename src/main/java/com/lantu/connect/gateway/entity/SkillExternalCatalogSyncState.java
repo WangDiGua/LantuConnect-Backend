@@ -24,6 +24,12 @@ public class SkillExternalCatalogSyncState {
     @TableField("last_error")
     private String lastError;
 
+    /**
+     * 保存配置或跨实例抢锁失败等场景置 1；成功同步并消费后清 0，必要时再调度一次异步同步。
+     */
+    @TableField("pending_resync")
+    private Boolean pendingResync;
+
     @TableField("current_batch")
     private Long currentBatch;
 }

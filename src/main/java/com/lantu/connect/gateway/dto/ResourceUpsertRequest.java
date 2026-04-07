@@ -40,10 +40,12 @@ public class ResourceUpsertRequest {
      * 仅 agent 使用。
      */
     private String agentType;
+    /** agent 运行模式；resourceType=skill 时服务端忽略。 */
     private String mode;
     private Map<String, Object> spec;
     private Boolean isPublic;
     private Boolean hidden;
+    /** agent 等可调用资源使用；resourceType=skill 时服务端忽略。 */
     private Integer maxConcurrency;
     private Integer maxSteps;
     private Double temperature;
@@ -63,7 +65,11 @@ public class ResourceUpsertRequest {
     private String entryDoc;
     /** zip 内技能根目录（可选），与上传 skillRoot 一致。 */
     private String skillRootPath;
+    /**
+     * 已废弃：技能仅为技能包资源，不再挂载 MCP；服务端对 resourceType=skill 忽略此字段。
+     */
     private Long parentResourceId;
+    /** 已废弃：技能包资源不使用；服务端对 skill 忽略。 */
     private String displayTemplate;
     private Map<String, Object> parametersSchema;
 

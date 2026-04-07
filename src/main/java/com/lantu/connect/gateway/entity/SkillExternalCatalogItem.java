@@ -25,6 +25,15 @@ public class SkillExternalCatalogItem {
     @TableField("source_url")
     private String sourceUrl;
     private Integer stars;
+
+    /** 同步时预取的 SKILL.md；详情优先读此字段 */
+    @TableField("skill_md")
+    private String skillMd;
+    @TableField("skill_md_resolved_url")
+    private String skillMdResolvedUrl;
+    @TableField("skill_md_truncated")
+    private Boolean skillMdTruncated;
+
     @TableField("sync_batch")
     private Long syncBatch;
     @TableField("create_time")

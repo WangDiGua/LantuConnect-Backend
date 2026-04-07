@@ -25,4 +25,17 @@ public final class SkillCatalogOutboundRestTemplateFactory {
         }
         return new RestTemplate(factory);
     }
+
+    /**
+     * 拉取公开 raw 文档用小超时，避免详情页长尾阻塞线程；仍复用市场出站代理。
+     */
+    public static RestTemplate createSkillMarkdownFetch(SkillExternalCatalogProperties.OutboundHttpProxy proxy) {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(8_000);
+        factory.setReadTimeout(18_000);
+        if (proxy != null && StringUtils.hasText(proxy.getHost()) && proxy.getPort() > 0) {
+            factory.setProxy(new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxy.getHost().trim(), proxy.getPort())));
+        }
+        return new RestTemplate(factory);
+    }
 }

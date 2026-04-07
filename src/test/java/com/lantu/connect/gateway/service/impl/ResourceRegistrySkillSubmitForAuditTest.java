@@ -8,6 +8,7 @@ import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.gateway.protocol.ProtocolInvokerRegistry;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
 import com.lantu.connect.notification.service.NotificationService;
+import com.lantu.connect.realtime.AuditPendingPushDebouncer;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,6 +51,8 @@ class ResourceRegistrySkillSubmitForAuditTest {
     private NotificationService notificationService;
     @Mock
     private SystemNotificationFacade systemNotificationFacade;
+    @Mock
+    private AuditPendingPushDebouncer auditPendingPushDebouncer;
 
     @InjectMocks
     private ResourceRegistryServiceImpl resourceRegistryService;

@@ -89,8 +89,12 @@ public class SandboxServiceImpl implements SandboxService {
         return out;
     }
 
+    /**
+     * 不在此方法上使用外层 {@code @Transactional}：网关调用可能耗时数十秒至数分钟，
+     * 与「先扣减沙箱配额再 invoke、失败则 rollbackUsedCalls」也不需要与远程 I/O 同事务；
+     * 长事务会长时间占用连接并增加与其它写路径锁竞争的风险。
+     */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public InvokeResponse sandboxInvoke(String sessionToken, String traceId, String ip, InvokeRequest request) {
         if (!StringUtils.hasText(sessionToken)) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "缺少 X-Sandbox-Token");

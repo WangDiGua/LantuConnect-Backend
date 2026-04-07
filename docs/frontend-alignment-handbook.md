@@ -253,7 +253,7 @@
 | `quick-access` | 保留 | 当前主要本地态 |
 | `recent-use` | 保留 | `/user/recent-use` |
 | `agent-market` | 下线（旧调用） | 从 `/agents/**` 迁移到 `/catalog/resources` + `/invoke` |
-| `skill-market` | 下线（旧调用） | 从 `/v1/skills/**` 迁移到 `/catalog/resources` + `/invoke` |
+| `skill-market` | 下线（旧调用） | 从 `/v1/skills/**` 迁移到 `/catalog/resources` + `resolve` + **技能包下载**（**无**统一网关 `invoke`） |
 | `app-market` | 下线（旧调用） | 从 `/v1/apps/**` 迁移到 `/catalog/resources` + `/invoke` |
 | `dataset-market` | 下线（旧调用） | 从 `/v1/datasets/**` 迁移到 `/catalog/resources` + `/invoke` |
 | `my-agents-pub` | 迁移 | 当前占位页，迁移到统一资源“我的发布” |
@@ -350,6 +350,32 @@ Controller 方法无类级 `@RequireRole`；**待办可见范围与通过/驳回
 | POST | `/resource-center/resources/{id}/versions` | path:`id` + body:`ResourceVersionCreateRequest` | `X-User-Id`；资源拥有者或平台管理员 | 保留（新增） |
 | POST | `/resource-center/resources/{id}/versions/{version}/switch` | path:`id,version` | `X-User-Id`；资源拥有者或平台管理员 | 保留（新增） |
 | GET | `/resource-center/resources/{id}/versions` | path:`id` | `X-User-Id`；资源拥有者或平台管理员 | 保留（新增） |
+
+## 4.2.2a 技能在线市场（外部聚合目录，非 `t_resource`）
+
+外部条目与平台内技能（`GET /catalog/resources/skill/{id}`、`resourceId` 为数值）**无关**；路由与埋点以 **`itemKey` / `dedupe_key`** 为稳定键。
+前端详情路径推荐 **`__skext_v1__` + UTF-8 Base64URL** 单段（避免 `#`、`/`、`%` 与 fragment/额外路径段问题）；旧版书签仍兼容 `encodeURIComponent(itemKey)` 单段。
+
+互动计数（收藏/下载/浏览/评论聚合）由接口请求时对 **`t_skill_external_*` 事件表** 做 SQL `COUNT` / `AVG` 汇总，**不**单独做与事实表脱节的长期计数缓存；远程目录条目列表本身仍可有 TTL 缓存，与互动数字解耦。
+
+**SKILL.md 代拉**：详情页长文由 `GET .../item/skill-md` 提供。后端仅构造 `https://raw.githubusercontent.com/{owner}/{repo}/{ref}/...`（按 `sourceUrl` 的 tree/blob 路径候选 `SKILL.md`，否则结合 archive zip 分支尝试仓库根），**不**接受任意 URL，以降低 SSRF 面；走 `lantu.skill-external-catalog.outbound-http-proxy`、连接/读超时约 8s/18s，正文上限约 512KB（超出截断并标记）；**成功结果**进程内短 TTL 缓存（约 10 分钟）以减轻匿名 raw 频控；失败或非 GitHub 来源时 `markdown` 为空并由 `hint` 说明。
+
+| 方法 | 路径 | 请求要点 | 鉴权/权限 | 结论 |
+|---|---|---|---|---|
+| GET | `/resource-center/skill-external-catalog` | query:`keyword?,page,pageSize,minStars?,maxStars?,source?`（`source`=`skillhub`\|`skillsmp`\|`mirror`）；可选头 `X-User-Id` 填充 `favoritedByMe`；**刷新列表**须重新请求本接口（可加 `cache: no-store` 或查询参数防缓存） | `@RequirePermission("skill:read")` | 保留 |
+| GET | `/resource-center/skill-external-catalog/item` | query:`key`（与 itemKey 一致，可 URL 编码） | `skill:read`；可选 `X-User-Id` | 保留 |
+| GET | `/resource-center/skill-external-catalog/item/skill-md` | query:`key`；响应 `SkillExternalSkillMdResponse`（`markdown?`, `resolvedRawUrl?`, `hint?`, `truncated`, `fromCache`） | `skill:read` | 保留 |
+| GET | `/resource-center/skill-external-catalog/settings` | 无 | `system:config` | 保留（仅超管配置） |
+| PUT | `/resource-center/skill-external-catalog/settings` | body:`SkillExternalCatalogProperties` | `system:config` + `X-User-Id` | 保留 |
+| POST | `/resource-center/skill-external-catalog/engagement/favorites` | body:`{ itemKey }` | `X-User-Id` | 保留 |
+| DELETE | `/resource-center/skill-external-catalog/engagement/favorites` | query:`itemKey` | `X-User-Id` | 保留 |
+| POST | `/resource-center/skill-external-catalog/engagement/downloads` | body:`{ itemKey }` | 可选 `X-User-Id` | 保留 |
+| POST | `/resource-center/skill-external-catalog/engagement/views` | body:`{ itemKey }` | 可选 `X-User-Id` | 保留 |
+| GET | `/resource-center/skill-external-catalog/engagement/reviews` | query:`itemKey,page,pageSize` | `skill:read` | 保留 |
+| POST | `/resource-center/skill-external-catalog/engagement/reviews` | body:`SkillExternalReviewCreateRequest` | `X-User-Id` | 保留 |
+| DELETE | `/resource-center/skill-external-catalog/engagement/reviews/{id}` | path:`id` | `X-User-Id` | 保留 |
+
+持久化增量脚本：`sql/incremental/V27__skill_external_engagement.sql`（`t_skill_external_favorite`、`t_skill_external_review`、`t_skill_external_download_event`、`t_skill_external_view_event`）。
 
 ## 4.3 SDK v1（核心主链路）
 
@@ -636,7 +662,8 @@ Controller 方法无类级 `@RequireRole`；**待办可见范围与通过/驳回
 | `description` | String | 否 | 描述 |
 | `sourceType/providerId/categoryId` | String/Long | 否 | 来源与归属 |
 | `agentType/spec` | String/Object | agent 必填 | Agent 扩展 |
-| `skillType/spec` | String/Object | skill 必填 | Skill 扩展 |
+| `skillType` / `artifactUri` / `manifest` / `entryDoc` / `skillRootPath` / `spec` / `parametersSchema` / `serviceDetailMd` / `isPublic` | 各类 | skill | **技能包**扩展：`skillType` 须 `anthropic_v1` 或 `folder_v1`；制品上传走 `/resource-center/resources/skills/package-upload*`；远程可调用工具须注册 **`resourceType=mcp`** |
+| （兼容入参，已废弃）`mode`、`parentResourceId`、`displayTemplate`、`maxConcurrency` | — | skill | **服务端忽略**，写入扩展表时统一清空；管理 VO **不返回**上述 skill 字段 |
 | `endpoint/protocol/authType/authConfig` | String/Object | mcp: endpoint 必填 | MCP 扩展；`protocol` 必须后端可调用 |
 | `appUrl/embedType` | String | app 必填 | App 扩展 |
 | `dataType/format` | String | dataset 必填 | Dataset 扩展 |
@@ -663,7 +690,7 @@ Controller 方法无类级 `@RequireRole`；**待办可见范围与通过/驳回
 表结构说明：
 
 - 本次注册闭环接口使用已有表：`t_resource`、`t_resource_agent_ext`、`t_resource_skill_ext`、`t_resource_mcp_ext`、`t_resource_app_ext`、`t_resource_dataset_ext`、`t_resource_version`、`t_audit_item`。
-- 本次未新增/变更表结构；若后续需改表，必须按 `sql/migrations/README.md` 追加增量脚本并同步本文件。
+- 技能包口径收紧：`sql/incremental/V26__skill_pack_deprecate_runtime_columns.sql` 清理 `t_resource_skill_ext` 中历史 `parent_resource_id` / `mode` / `display_template` / `max_concurrency` 及 `skill_child_of` 关系数据（列仍保留）；若需删列须另起脚本并同步本文件；增量执行约定见 `sql/migrations/README.md` / `sql/incremental/`。
 
 ## 5.4 沙箱会话 `POST /sandbox/sessions`
 

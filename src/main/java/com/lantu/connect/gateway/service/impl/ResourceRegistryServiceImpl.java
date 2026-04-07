@@ -935,6 +935,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         vo.setRecordCount(r.getRecordCount());
         vo.setFileSize(r.getFileSize());
         vo.setTags(r.getTags() == null ? null : new ArrayList<>(r.getTags()));
+        if ("skill".equalsIgnoreCase(normalizeType(vo.getResourceType()))) {
+            vo.setMode(null);
+            vo.setParentResourceId(null);
+            vo.setDisplayTemplate(null);
+            vo.setMaxConcurrency(null);
+        }
     }
 
     private void applyDraftOverlayToPublishedDetail(ResourceManageVO vo, Long resourceId) {
@@ -1133,6 +1139,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         if (vo.getTags() != null) {
             req.setTags(new ArrayList<>(vo.getTags()));
         }
+        if ("skill".equalsIgnoreCase(normalizeType(req.getResourceType()))) {
+            req.setMode(null);
+            req.setParentResourceId(null);
+            req.setDisplayTemplate(null);
+            req.setMaxConcurrency(null);
+        }
         return req;
     }
 
@@ -1275,6 +1287,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
         if ("dataset".equals(type) && !snap.containsKey("spec")) {
             req.setTags(current.getTags() == null ? null : new ArrayList<>(current.getTags()));
+        }
+        if ("skill".equalsIgnoreCase(type)) {
+            req.setMode(null);
+            req.setParentResourceId(null);
+            req.setDisplayTemplate(null);
+            req.setMaxConcurrency(null);
         }
         return req;
     }
@@ -1644,10 +1662,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
         String manifestJson = writeJson(defaultMap(request.getManifest()));
         String serviceMd = resolveExtServiceDetailMd("t_resource_skill_ext", resourceId, request.getServiceDetailMd());
+        // Skill 仅为技能包/清单资源：不接受客户端写入 mode、parent MCP、display_template、max_concurrency（统一清空，见产品定义）。
         int updated = jdbcTemplate.update("""
                         UPDATE t_resource_skill_ext
                         SET skill_type = ?, artifact_uri = ?, artifact_sha256 = ?, manifest_json = CAST(? AS JSON), entry_doc = ?,
-                            mode = ?, parent_resource_id = ?, display_template = ?, spec_json = CAST(? AS JSON), parameters_schema = CAST(? AS JSON), is_public = ?, max_concurrency = ?,
+                            mode = NULL, parent_resource_id = NULL, display_template = NULL,
+                            spec_json = CAST(? AS JSON), parameters_schema = CAST(? AS JSON), is_public = ?, max_concurrency = NULL,
                             pack_validation_status = ?, pack_validated_at = ?, pack_validation_message = ?, skill_root_path = ?, service_detail_md = ?
                         WHERE resource_id = ?
                         """,
@@ -1656,13 +1676,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 newSha,
                 manifestJson,
                 request.getEntryDoc(),
-                defaultString(request.getMode(), "TOOL"),
-                request.getParentResourceId(),
-                request.getDisplayTemplate(),
                 writeJson(defaultMap(request.getSpec())),
                 writeJson(defaultMap(request.getParametersSchema())),
                 toBoolNumber(request.getIsPublic()),
-                request.getMaxConcurrency() == null ? 10 : request.getMaxConcurrency(),
                 packStatus,
                 packValidatedAt,
                 packValidationMessage,
@@ -1672,7 +1688,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         if (updated == 0) {
             jdbcTemplate.update("""
                             INSERT INTO t_resource_skill_ext(resource_id, skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, mode, parent_resource_id, display_template, spec_json, parameters_schema, is_public, max_concurrency, pack_validation_status, pack_validated_at, pack_validation_message, skill_root_path, service_detail_md)
-                            VALUES(?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), ?, ?, ?, ?, ?, ?, ?)
+                            VALUES(?, ?, ?, ?, CAST(? AS JSON), ?, NULL, NULL, NULL, CAST(? AS JSON), CAST(? AS JSON), ?, NULL, ?, ?, ?, ?, ?)
                             """,
                     resourceId,
                     request.getSkillType().trim().toLowerCase(Locale.ROOT),
@@ -1680,13 +1696,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     newSha,
                     manifestJson,
                     request.getEntryDoc(),
-                    defaultString(request.getMode(), "TOOL"),
-                    request.getParentResourceId(),
-                    request.getDisplayTemplate(),
                     writeJson(defaultMap(request.getSpec())),
                     writeJson(defaultMap(request.getParametersSchema())),
                     toBoolNumber(request.getIsPublic()),
-                    request.getMaxConcurrency() == null ? 10 : request.getMaxConcurrency(),
                     SkillPackValidationStatus.NONE,
                     null,
                     null,
@@ -2376,14 +2388,15 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         vo.setPackValidatedAt(toDateTime(r.get("pack_validated_at")));
         vo.setPackValidationMessage(stringValue(r.get("pack_validation_message")));
         vo.setSkillRootPath(stringValue(r.get("skill_root_path")));
-        vo.setMode(stringValue(r.get("mode")));
-        vo.setParentResourceId(longObject(r.get("parent_resource_id")));
-        vo.setDisplayTemplate(stringValue(r.get("display_template")));
         vo.setSpec(parseJsonMap(r.get("spec_json")));
         vo.setParametersSchema(parseJsonMap(r.get("parameters_schema")));
         vo.setIsPublic(boolObject(r.get("is_public")));
-        vo.setMaxConcurrency(intObject(r.get("max_concurrency")));
         vo.setServiceDetailMd(stringValue(r.get("service_detail_md")));
+        // 技能包资源不再对外暴露运行时 / MCP 挂载字段（列可能仍为历史 NULL，统一不返回）
+        vo.setMode(null);
+        vo.setParentResourceId(null);
+        vo.setDisplayTemplate(null);
+        vo.setMaxConcurrency(null);
     }
 
     private void enrichMcpFields(ResourceManageVO vo, Long resourceId) {

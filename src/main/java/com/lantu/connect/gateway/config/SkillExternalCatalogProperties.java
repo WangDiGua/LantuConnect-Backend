@@ -38,6 +38,27 @@ public class SkillExternalCatalogProperties {
     private boolean persistenceEnabled = true;
 
     /**
+     * 全量库同步是否使用 Redis 分布式锁（SET NX + token 释放）；false 时仅依赖本 JVM 内单飞。
+     * Redis 连接失败时会降级为 JVM 单飞并打点 {@code skill.catalog.sync} {@code result=redis_degraded}。
+     */
+    private boolean syncRedisLockEnabled = true;
+
+    /**
+     * Redis 锁 TTL（分钟），应大于最坏情况下的单次全量同步耗时。
+     */
+    private int syncRedisLockTtlMinutes = 30;
+
+    /**
+     * 目录全量同步时是否从 GitHub raw 预取 SKILL.md 写入镜像表；详情接口优先读库，避免依赖 SkillsMP 人机校验页与展示时超时。
+     */
+    private boolean skillMdPrefetchOnSync = true;
+
+    /**
+     * 单次同步最多预取条数（0 表示不限制）。过大可能拉长同步耗时并触及 GitHub 限速。
+     */
+    private int skillMdPrefetchMaxPerSync = 0;
+
+    /**
      * 可选：自建技能目录 JSON 的 HTTPS 地址（国内 OSS/CDN 或第三方导出接口）。SkillsMP 全失败或关闭时作为回退。
      * 格式：JSON 数组，或与业务 R 一致的对象含 data 数组；元素字段同 SkillExternalCatalogItemVO。
      * 与 {@link #mirrorCatalogUrls} 叠加（URL 去重后依次请求）。

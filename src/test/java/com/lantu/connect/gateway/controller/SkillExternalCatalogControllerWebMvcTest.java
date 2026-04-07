@@ -11,7 +11,9 @@ import com.lantu.connect.common.security.RequirePermissionAspect;
 import com.lantu.connect.common.util.JwtUtil;
 import com.lantu.connect.gateway.dto.SkillExternalCatalogItemVO;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
+import com.lantu.connect.gateway.dto.SkillExternalSkillMdResponse;
 import com.lantu.connect.gateway.service.SkillExternalCatalogService;
+import com.lantu.connect.gateway.service.SkillExternalSkillMdService;
 import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,8 +24,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -55,7 +57,7 @@ class SkillExternalCatalogControllerWebMvcTest {
         when(blacklist.contains(any())).thenReturn(false);
         when(jwtUtil.parseToken("token-admin")).thenReturn(claims);
         SkillExternalCatalogService catalogService = mock(SkillExternalCatalogService.class);
-        when(catalogService.listCatalogPage(isNull(), eq(1), eq(20))).thenReturn(PageResult.of(List.of(
+        when(catalogService.listCatalogPage(any(), anyInt(), anyInt(), any(), any(), any(), any())).thenReturn(PageResult.of(List.of(
                 SkillExternalCatalogItemVO.builder()
                         .id("row-1")
                         .name("Test Pack")
@@ -65,8 +67,14 @@ class SkillExternalCatalogControllerWebMvcTest {
                         .sourceUrl("https://example.com")
                         .stars(10)
                         .build()), 1, 1, 20));
+        SkillExternalSkillMdService skillMdService = mock(SkillExternalSkillMdService.class);
+        when(skillMdService.fetchForItemKey("k1")).thenReturn(SkillExternalSkillMdResponse.builder()
+                .markdown("# Hi")
+                .resolvedRawUrl("https://raw.githubusercontent.com/o/r/main/SKILL.md")
+                .fromCache(false)
+                .build());
 
-        SkillExternalCatalogController controller = new SkillExternalCatalogController(catalogService);
+        SkillExternalCatalogController controller = new SkillExternalCatalogController(catalogService, skillMdService);
         SkillExternalCatalogController proxied = proxyWithPermissionAspect(controller, casbinAuthorizationService);
 
         mockMvc = MockMvcBuilders
@@ -77,7 +85,7 @@ class SkillExternalCatalogControllerWebMvcTest {
     }
 
     @Test
-    void listShouldReturn403WhenMissingSystemConfig() throws Exception {
+    void listShouldReturn403WhenMissingSkillRead() throws Exception {
         when(casbinAuthorizationService.hasPermissions(eq(1L), any(String[].class), any())).thenReturn(false);
 
         mockMvc.perform(get("/resource-center/skill-external-catalog")
@@ -99,6 +107,19 @@ class SkillExternalCatalogControllerWebMvcTest {
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.page").value(1))
                 .andExpect(jsonPath("$.data.pageSize").value(20));
+    }
+
+    @Test
+    void itemSkillMdShouldReturnBodyWhenGranted() throws Exception {
+        when(casbinAuthorizationService.hasPermissions(eq(1L), any(String[].class), any())).thenReturn(true);
+
+        mockMvc.perform(get("/resource-center/skill-external-catalog/item/skill-md")
+                        .param("key", "k1")
+                        .header("Authorization", "Bearer token-admin"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.markdown").value("# Hi"))
+                .andExpect(jsonPath("$.data.resolvedRawUrl").value("https://raw.githubusercontent.com/o/r/main/SKILL.md"));
     }
 
     private static SkillExternalCatalogController proxyWithPermissionAspect(SkillExternalCatalogController controller,

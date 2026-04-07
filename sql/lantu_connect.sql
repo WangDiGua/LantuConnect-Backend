@@ -945,11 +945,7 @@ CREATE TABLE `t_resource_relation`  (
 -- ----------------------------
 INSERT INTO `t_resource_relation` VALUES (1, 26, 3, 'dataset_binds_agent', '2026-03-24 12:13:38');
 INSERT INTO `t_resource_relation` VALUES (2, 28, 1, 'dataset_binds_agent', '2026-03-24 12:13:38');
-INSERT INTO `t_resource_relation` VALUES (4, 9, 8, 'skill_child_of', '2026-03-24 12:13:38');
-INSERT INTO `t_resource_relation` VALUES (5, 10, 8, 'skill_child_of', '2026-03-24 12:13:38');
-INSERT INTO `t_resource_relation` VALUES (6, 11, 8, 'skill_child_of', '2026-03-24 12:13:38');
-INSERT INTO `t_resource_relation` VALUES (7, 12, 8, 'skill_child_of', '2026-03-24 12:13:38');
-INSERT INTO `t_resource_relation` VALUES (8, 13, 8, 'skill_child_of', '2026-03-24 12:13:38');
+-- skill_child_of 已废弃（技能包不与 MCP 建立子关系）；见 incremental V26
 
 -- ----------------------------
 -- Table structure for t_resource_skill_ext
@@ -983,7 +979,7 @@ CREATE TABLE `t_resource_skill_ext`  (
 -- ----------------------------
 -- Records of t_resource_skill_ext
 -- ----------------------------
-INSERT INTO `t_resource_skill_ext` VALUES (31, 'anthropic_v1', 'https://example.com/skills/demo-skill-pack.zip', NULL, '{\"name\": \"demo-skill-pack\", \"version\": \"1.0.0\"}', 'SKILL.md', 'TOOL', NULL, NULL, NULL, NULL, 1, 10, 'valid', NULL, NULL, NULL, NULL);
+INSERT INTO `t_resource_skill_ext` VALUES (31, 'anthropic_v1', 'https://example.com/skills/demo-skill-pack.zip', NULL, '{\"name\": \"demo-skill-pack\", \"version\": \"1.0.0\"}', 'SKILL.md', NULL, NULL, NULL, NULL, NULL, 1, NULL, 'valid', NULL, NULL, NULL, NULL);
 
 -- ----------------------------
 -- Table structure for t_resource_tag_rel
