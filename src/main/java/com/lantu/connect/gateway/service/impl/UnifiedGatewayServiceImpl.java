@@ -399,6 +399,22 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         }
     }
 
+    /**
+     * 资源详情/resolve 与 {@link #catalog} 列表项对齐：补充 {@code t_review} 聚合，避免前端 Tab 角标与页眉仅用详情接口时始终为 0。
+     */
+    private void attachResolveReviewAggregates(ResourceResolveVO vo) {
+        if (vo == null || !StringUtils.hasText(vo.getResourceType()) || !StringUtils.hasText(vo.getResourceId())) {
+            return;
+        }
+        ResourceCatalogItemVO bridge = ResourceCatalogItemVO.builder()
+                .resourceType(vo.getResourceType().trim().toLowerCase(Locale.ROOT))
+                .resourceId(vo.getResourceId().trim())
+                .build();
+        attachCatalogReviewAggregates(List.of(bridge));
+        vo.setRatingAvg(bridge.getRatingAvg());
+        vo.setReviewCount(bridge.getReviewCount());
+    }
+
     private void attachCatalogTagNames(List<ResourceCatalogItemVO> items) {
         if (items == null || items.isEmpty()) {
             return;
@@ -510,6 +526,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         }
         merged = attachIncludesToResolve(merged, parseIncludes(include));
         enrichResolveCreator(merged);
+        attachResolveReviewAggregates(merged);
         if ("catalog_read".equalsIgnoreCase(action)) {
             jdbcTemplate.update("UPDATE t_resource SET view_count = view_count + 1 WHERE id = ? AND deleted = 0", id);
         }

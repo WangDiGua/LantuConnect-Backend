@@ -36,6 +36,8 @@ public final class ResourceResolveSpecSanitizer {
                 .status(source.getStatus())
                 .createdBy(source.getCreatedBy())
                 .createdByName(source.getCreatedByName())
+                .ratingAvg(source.getRatingAvg())
+                .reviewCount(source.getReviewCount())
                 .invokeType(source.getInvokeType())
                 .endpoint(source.getEndpoint())
                 .spec(spec == null ? null : sanitizeSpec(spec))

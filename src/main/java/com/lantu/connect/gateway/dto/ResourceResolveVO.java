@@ -29,6 +29,12 @@ public class ResourceResolveVO {
 
     private String createdByName;
 
+    /** {@code t_review} 平均分（含回复行时其 rating 为 0，与目录列表聚合一致）；无评论时为 null */
+    private Double ratingAvg;
+
+    /** {@code t_review} 条数（{@code deleted=0}，含回复），与目录列表一致；无评论时为 null */
+    private Long reviewCount;
+
     private String invokeType;
 
     private String endpoint;
