@@ -57,7 +57,6 @@ public class SecurityProperties {
             "/auth/register",
             "/auth/refresh",
             "/auth/logout",
-            "/auth/send-sms",
             "/catalog/apps/launch",
             "/captcha/**",
             "/error",

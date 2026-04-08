@@ -13,7 +13,6 @@ import com.lantu.connect.auth.entity.LoginHistory;
 import com.lantu.connect.auth.service.AuthService;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.R;
-import com.lantu.connect.common.security.RedisAuthRateLimiter;
 import com.lantu.connect.common.util.JwtUtil;
 import com.lantu.connect.common.web.ClientIpResolver;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
@@ -35,7 +34,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 认证 Auth 控制器
@@ -51,7 +49,6 @@ public class AuthController {
     private final AuthService authService;
     private final JwtUtil jwtUtil;
     private final ClientIpResolver clientIpResolver;
-    private final RedisAuthRateLimiter redisAuthRateLimiter;
 
     @PostMapping("/login")
     @RateLimiter(name = "authLogin")
@@ -95,21 +92,6 @@ public class AuthController {
             @RequestHeader("X-User-Id") Long userId,
             @Valid @RequestBody ProfileUpdateRequest request) {
         authService.updateProfile(userId, request);
-        return R.ok();
-    }
-
-    @PostMapping("/send-sms")
-    @RateLimiter(name = "authSendSms")
-    public R<Void> sendSms(@RequestBody Map<String, String> body, HttpServletRequest http) {
-        redisAuthRateLimiter.checkSendSms(clientIpResolver.resolve(http));
-        authService.sendSms(body);
-        return R.ok();
-    }
-
-    @PostMapping("/bind-phone")
-    public R<Void> bindPhone(@RequestHeader("X-User-Id") Long userId,
-                             @RequestBody Map<String, String> body) {
-        authService.bindPhone(userId, body);
         return R.ok();
     }
 

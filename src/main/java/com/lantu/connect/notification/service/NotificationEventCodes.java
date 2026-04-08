@@ -30,7 +30,6 @@ public final class NotificationEventCodes {
     public static final String ONBOARDING_REJECTED = "onboarding_rejected";
 
     public static final String PASSWORD_CHANGED = "password_changed";
-    public static final String PHONE_BOUND = "phone_bound";
     public static final String SESSION_KILLED = "session_killed";
 
     public static final String API_KEY_CREATED = "api_key_created";

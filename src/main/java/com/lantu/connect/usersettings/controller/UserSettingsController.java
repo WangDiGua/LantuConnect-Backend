@@ -81,12 +81,6 @@ public class UserSettingsController {
         return R.ok(userSettingsService.invokeEligibilityForApiKey(userId, apiKeyId, request));
     }
 
-    @PostMapping("/api-keys/revoke/send-sms")
-    public R<Void> sendRevokeApiKeySms(@RequestHeader("X-User-Id") Long userId, HttpServletRequest request) {
-        userSettingsService.sendRevokeApiKeySms(userId, clientIpResolver.resolve(request));
-        return R.ok();
-    }
-
     @PostMapping("/api-keys/{id}/revoke")
     public R<Void> revokeApiKey(@RequestHeader("X-User-Id") Long userId,
                                   @PathVariable String id,

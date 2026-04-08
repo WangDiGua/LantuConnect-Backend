@@ -35,8 +35,6 @@ public interface UserSettingsService {
 
     InvokeEligibilityResponse invokeEligibilityForApiKey(Long userId, String apiKeyId, InvokeEligibilityRequest request);
 
-    void sendRevokeApiKeySms(Long userId, String clientIp);
-
     void revokeApiKey(Long userId, String apiKeyId, ApiKeyRevokeRequest request, String clientIp);
 
     /**

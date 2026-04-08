@@ -5,12 +5,10 @@ import com.lantu.connect.auth.dto.*;
 import com.lantu.connect.auth.entity.OrgMenu;
 import com.lantu.connect.auth.entity.PlatformRole;
 import com.lantu.connect.auth.entity.LoginHistory;
-import com.lantu.connect.auth.entity.SmsVerifyCode;
 import com.lantu.connect.auth.entity.User;
 import com.lantu.connect.auth.mapper.LoginHistoryMapper;
 import com.lantu.connect.auth.mapper.OrgMenuMapper;
 import com.lantu.connect.auth.mapper.PlatformRoleMapper;
-import com.lantu.connect.auth.mapper.SmsVerifyCodeMapper;
 import com.lantu.connect.auth.mapper.UserMapper;
 import com.lantu.connect.auth.mapper.UserRoleRelMapper;
 import com.lantu.connect.auth.entity.UserRoleRel;
@@ -58,7 +56,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.security.SecureRandom;
 
 /**
  * 认证服务实现
@@ -76,8 +73,6 @@ public class AuthServiceImpl implements AuthService {
     /** 同一 refresh 并发刷新时缓存新发 token 对，供另一请求复用（避免 React StrictMode 等双次请求误杀）。 */
     private static final String REFRESH_PAIR_PREFIX = "token:refresh:pair:";
     private static final String USER_PREF_PREFIX = "lantu:user:pref:";
-    private static final String SMS_RATE_PREFIX = "sms:ratelimit:";
-
     private final UserMapper userMapper;
     private final UserRoleRelMapper userRoleRelMapper;
     private final PlatformRoleMapper platformRoleMapper;
@@ -87,7 +82,6 @@ public class AuthServiceImpl implements AuthService {
     private final JwtUtil jwtUtil;
     private final AccessTokenBlacklist accessTokenBlacklist;
     private final SessionRevocationRegistry sessionRevocationRegistry;
-    private final SmsVerifyCodeMapper smsVerifyCodeMapper;
     private final LoginHistoryMapper loginHistoryMapper;
     private final SessionTrackerService sessionTrackerService;
     private final SessionGeoEnrichmentService sessionGeoEnrichmentService;
@@ -99,8 +93,6 @@ public class AuthServiceImpl implements AuthService {
     private final ObjectMapper objectMapper;
     private final ClientIpResolver clientIpResolver;
     private final CasbinAuthorizationService casbinAuthorizationService;
-
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     /** JWT /me 主角色：多角色时取职级最高者（与 {@code ORDER BY r.id} 无关）。 */
     private static final List<String> PLATFORM_ROLE_PRECEDENCE = List.of(
@@ -367,69 +359,6 @@ public class AuthServiceImpl implements AuthService {
             user.setTwoStep(request.getTwoStep());
         }
         userMapper.updateById(user);
-    }
-
-    @Override
-    public void sendSms(Map<String, String> body) {
-        if (body == null) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "请求体不能为空");
-        }
-        String phone = body.get("phone");
-        String purpose = StringUtils.hasText(body.get("purpose")) ? body.get("purpose") : "bind_phone";
-        if (!StringUtils.hasText(phone)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "手机号不能为空");
-        }
-        phone = phone.trim();
-        String rateKey = SMS_RATE_PREFIX + phone;
-        if (Boolean.TRUE.equals(redisTemplate.hasKey(rateKey))) {
-            throw new BusinessException(ResultCode.SMS_RATE_LIMITED);
-        }
-        String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
-        SmsVerifyCode row = new SmsVerifyCode();
-        row.setPhone(phone);
-        row.setCode(code);
-        row.setPurpose(purpose);
-        row.setStatus("pending");
-        row.setExpireTime(LocalDateTime.now().plusMinutes(5));
-        smsVerifyCodeMapper.insert(row);
-        redisTemplate.opsForValue().set(rateKey, "1", Duration.ofSeconds(60));
-        log.info("[SMS mock] phone={} purpose={} code={}", phone, purpose, code);
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void bindPhone(Long userId, Map<String, String> body) {
-        if (body == null) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "请求体不能为空");
-        }
-        String phone = body.get("phone");
-        String code = body.get("code");
-        if (!StringUtils.hasText(phone) || !StringUtils.hasText(code)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "手机号与验证码不能为空");
-        }
-        phone = phone.trim();
-        code = code.trim();
-        SmsVerifyCode row = smsVerifyCodeMapper.selectOne(
-                new LambdaQueryWrapper<SmsVerifyCode>()
-                        .eq(SmsVerifyCode::getPhone, phone)
-                        .eq(SmsVerifyCode::getPurpose, "bind_phone")
-                        .eq(SmsVerifyCode::getStatus, "pending")
-                        .gt(SmsVerifyCode::getExpireTime, LocalDateTime.now())
-                        .orderByDesc(SmsVerifyCode::getCreateTime)
-                        .last("LIMIT 1"));
-        if (row == null || !code.equals(row.getCode())) {
-            throw new BusinessException(ResultCode.SMS_CODE_ERROR);
-        }
-        User user = userMapper.selectById(userId);
-        if (user == null) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
-        }
-        user.setMobile(phone);
-        userMapper.updateById(user);
-        row.setStatus("verified");
-        row.setVerifyTime(LocalDateTime.now());
-        smsVerifyCodeMapper.updateById(row);
-        systemNotificationFacade.notifyPhoneBound(userId, phone);
     }
 
     @Override

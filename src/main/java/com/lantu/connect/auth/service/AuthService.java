@@ -13,7 +13,6 @@ import com.lantu.connect.auth.entity.LoginHistory;
 import com.lantu.connect.common.result.PageResult;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * 认证Auth服务接口
@@ -36,10 +35,6 @@ public interface AuthService {
     void changePassword(Long userId, ChangePasswordRequest request);
 
     void updateProfile(Long userId, ProfileUpdateRequest request);
-
-    void sendSms(Map<String, String> body);
-
-    void bindPhone(Long userId, Map<String, String> body);
 
     PageResult<LoginHistory> loginHistory(Long userId, int page, int pageSize);
 

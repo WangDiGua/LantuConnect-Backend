@@ -1191,29 +1191,6 @@ CREATE TABLE `t_sensitive_word`  (
 -- ----------------------------
 
 -- ----------------------------
--- Table structure for t_sms_verify_code
--- ----------------------------
-DROP TABLE IF EXISTS `t_sms_verify_code`;
-CREATE TABLE `t_sms_verify_code`  (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `phone` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `code` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `purpose` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT 'login / bind_phone / reset_password',
-  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT 'pending' COMMENT 'pending / verified / expired',
-  `ip` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
-  `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
-  `expire_time` datetime NOT NULL,
-  `verify_time` datetime NULL DEFAULT NULL,
-  PRIMARY KEY (`id`) USING BTREE,
-  INDEX `idx_sms_code_phone`(`phone` ASC, `purpose` ASC, `status` ASC) USING BTREE,
-  INDEX `idx_sms_code_expire`(`expire_time` ASC) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '短信验证码记录表' ROW_FORMAT = DYNAMIC;
-
--- ----------------------------
--- Records of t_sms_verify_code
--- ----------------------------
-
--- ----------------------------
 -- Table structure for t_system_param
 -- ----------------------------
 DROP TABLE IF EXISTS `t_system_param`;

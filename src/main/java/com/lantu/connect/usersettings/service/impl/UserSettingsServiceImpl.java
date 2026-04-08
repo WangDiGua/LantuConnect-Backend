@@ -3,9 +3,7 @@ package com.lantu.connect.usersettings.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lantu.connect.audit.entity.SensitiveActionAudit;
 import com.lantu.connect.audit.mapper.SensitiveActionAuditMapper;
-import com.lantu.connect.auth.entity.SmsVerifyCode;
 import com.lantu.connect.auth.entity.User;
-import com.lantu.connect.auth.mapper.SmsVerifyCodeMapper;
 import com.lantu.connect.auth.mapper.UserMapper;
 import com.lantu.connect.useractivity.entity.UsageRecord;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -42,14 +40,12 @@ import org.springframework.util.StringUtils;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.time.Duration;
 import java.time.LocalDateTime;
 
 /**
@@ -67,10 +63,6 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     private static final String WORKSPACE_KEY_PREFIX = "lantu:usersettings:workspace:";
     /** 工作区偏好 Redis 过期（天），避免无限堆积；到期后回到默认，可再保存 */
     private static final long WORKSPACE_TTL_DAYS = 365;
-    private static final String SMS_PURPOSE_REVOKE_API_KEY = "revoke_api_key";
-    private static final String SMS_RATE_PREFIX = "sms:ratelimit:";
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-
     private final ApiKeyMapper apiKeyMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
@@ -81,7 +73,6 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     private final ResourceInvokeGrantService resourceInvokeGrantService;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
-    private final SmsVerifyCodeMapper smsVerifyCodeMapper;
     private final SensitiveActionAuditMapper sensitiveActionAuditMapper;
     private final RedisAuthRateLimiter redisAuthRateLimiter;
 
@@ -215,36 +206,6 @@ public class UserSettingsServiceImpl implements UserSettingsService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void sendRevokeApiKeySms(Long userId, String clientIp) {
-        redisAuthRateLimiter.checkSendSms(clientIp);
-        User user = userMapper.selectById(userId);
-        if (user == null) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
-        }
-        String phone = user.getMobile();
-        if (!StringUtils.hasText(phone)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR,
-                    "未绑定手机号，无法接收撤销验证码；请先绑定手机或设置登录密码");
-        }
-        phone = phone.trim();
-        String rateKey = SMS_RATE_PREFIX + phone;
-        if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(rateKey))) {
-            throw new BusinessException(ResultCode.SMS_RATE_LIMITED);
-        }
-        String code = String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
-        SmsVerifyCode row = new SmsVerifyCode();
-        row.setPhone(phone);
-        row.setCode(code);
-        row.setPurpose(SMS_PURPOSE_REVOKE_API_KEY);
-        row.setStatus("pending");
-        row.setExpireTime(LocalDateTime.now().plusMinutes(5));
-        smsVerifyCodeMapper.insert(row);
-        stringRedisTemplate.opsForValue().set(rateKey, "1", Duration.ofSeconds(60));
-        log.info("[SMS mock revoke_api_key] userId={} phone={} code={}", userId, phone, code);
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
     public void revokeApiKey(Long userId, String apiKeyId, ApiKeyRevokeRequest request, String clientIp) {
         ApiKey key = assertOwnedApiKeyAfterCredentialCheck(userId, apiKeyId, request, clientIp, "api_key_revoke");
         key.setStatus("revoked");
@@ -280,7 +241,7 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     }
 
     /**
-     * 校验归属与密码/短信（与撤销相同），失败写入敏感操作审计。成功返回可用的 Key 行。
+     * 校验归属与登录密码，失败写入敏感操作审计。成功返回可用的 Key 行。
      */
     private ApiKey assertOwnedApiKeyAfterCredentialCheck(
             Long userId,
@@ -303,24 +264,16 @@ public class UserSettingsServiceImpl implements UserSettingsService {
             insertAudit(userId, auditActionType, apiKeyId, false, "用户不存在", clientIp);
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
         }
-        boolean hasPassword = StringUtils.hasText(user.getPasswordHash());
         try {
-            if (hasPassword) {
-                if (!StringUtils.hasText(request.getPassword())) {
-                    throw new BusinessException(ResultCode.PARAM_ERROR, "请输入登录密码以继续操作");
-                }
-                if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-                    throw new BusinessException(ResultCode.PASSWORD_ERROR);
-                }
-            } else {
-                if (!StringUtils.hasText(request.getSmsCode())) {
-                    throw new BusinessException(ResultCode.PARAM_ERROR, "账户未设置本地密码，请输入短信验证码");
-                }
-                if (!StringUtils.hasText(user.getMobile())) {
-                    throw new BusinessException(ResultCode.PARAM_ERROR,
-                            "未绑定手机号，无法校验；请先绑定手机或设置密码");
-                }
-                verifySmsForRevoke(user.getMobile().trim(), request.getSmsCode().trim());
+            if (!StringUtils.hasText(user.getPasswordHash())) {
+                throw new BusinessException(ResultCode.PARAM_ERROR,
+                        "账户未设置登录密码，请先在「个人设置」中修改密码后再执行此操作");
+            }
+            if (!StringUtils.hasText(request.getPassword())) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "请输入登录密码以继续操作");
+            }
+            if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+                throw new BusinessException(ResultCode.PASSWORD_ERROR);
             }
         } catch (BusinessException e) {
             String reason = StringUtils.hasText(e.getMessage()) ? e.getMessage() : ("code=" + e.getCode());
@@ -328,23 +281,6 @@ public class UserSettingsServiceImpl implements UserSettingsService {
             throw e;
         }
         return key;
-    }
-
-    private void verifySmsForRevoke(String phone, String code) {
-        SmsVerifyCode row = smsVerifyCodeMapper.selectOne(
-                new LambdaQueryWrapper<SmsVerifyCode>()
-                        .eq(SmsVerifyCode::getPhone, phone)
-                        .eq(SmsVerifyCode::getPurpose, SMS_PURPOSE_REVOKE_API_KEY)
-                        .eq(SmsVerifyCode::getStatus, "pending")
-                        .gt(SmsVerifyCode::getExpireTime, LocalDateTime.now())
-                        .orderByDesc(SmsVerifyCode::getCreateTime)
-                        .last("LIMIT 1"));
-        if (row == null || !code.equals(row.getCode())) {
-            throw new BusinessException(ResultCode.SMS_CODE_ERROR);
-        }
-        row.setStatus("verified");
-        row.setVerifyTime(LocalDateTime.now());
-        smsVerifyCodeMapper.updateById(row);
     }
 
     private void insertAudit(Long userId, String actionType, String targetId, boolean success, String failReason, String clientIp) {

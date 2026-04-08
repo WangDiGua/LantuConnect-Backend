@@ -86,15 +86,6 @@ public class SystemNotificationFacade {
                 userId == null ? null : String.valueOf(userId));
     }
 
-    public void notifyPhoneBound(Long userId, String phone) {
-        notifyToUser(userId,
-                NotificationEventCodes.PHONE_BOUND,
-                "手机号绑定成功",
-                buildBody("账号安全", "成功", "绑定手机号: " + fallbackText(phone, "-"), "可在个人设置中继续维护账号安全信息。"),
-                "user",
-                userId == null ? null : String.valueOf(userId));
-    }
-
     public void notifySessionKilled(Long userId, String sessionId) {
         notifyToUser(userId,
                 NotificationEventCodes.SESSION_KILLED,

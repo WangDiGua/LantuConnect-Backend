@@ -109,7 +109,6 @@ lantu:
       login-per-username-per-minute: 25
       register-per-ip-per-hour: 40
       captcha-per-ip-per-minute: 45
-      send-sms-per-ip-per-hour: 30
     encryption-key: ${LANTU_SECURITY_ENCRYPTION_KEY}
   gateway:
     invoke-http-status-reflects-upstream: true
@@ -134,8 +133,8 @@ lantu:
   integration:
     network-api-url: ''
     acl-api-url: ''
-    mcp-allow-http: false
-    mcp-allow-local-targets: false
+    mcp-allow-http: true
+    mcp-allow-local-targets: true
     mcp-http-accept: application/json, text/event-stream
     app-launch-token-ttl-seconds: 300
     mcp-session-ttl-minutes: 45
@@ -143,7 +142,6 @@ lantu:
     oauth2:
       connect-timeout-sec: 15
   notification:
-    sms-enabled: false
     email-enabled: false
   realtime:
     push-health: true
@@ -311,10 +309,6 @@ resilience4j:
         base-config: default
         limit-for-period: 120
         limit-refresh-period: 1m
-      authSendSms:
-        base-config: default
-        limit-for-period: 20
-        limit-refresh-period: 1h
       captchaGenerate:
         base-config: default
         limit-for-period: 60
