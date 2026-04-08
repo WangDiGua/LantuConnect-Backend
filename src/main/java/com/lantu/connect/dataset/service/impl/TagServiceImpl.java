@@ -57,6 +57,17 @@ public class TagServiceImpl implements TagService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void deleteBatch(List<Long> ids) {
+        if (CollectionUtils.isEmpty(ids)) {
+            return;
+        }
+        for (Long id : ids) {
+            delete(id);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public List<Long> batchCreate(List<TagCreateRequest> requests) {
         if (CollectionUtils.isEmpty(requests)) {
             return List.of();

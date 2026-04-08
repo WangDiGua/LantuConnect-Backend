@@ -1,6 +1,8 @@
 package com.lantu.connect.gateway.controller;
 
 import com.lantu.connect.common.annotation.AuditLog;
+import com.lantu.connect.common.dto.IdsWithReasonRequest;
+import com.lantu.connect.common.dto.LongIdsRequest;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.gateway.dto.GrantApplicationRequest;
@@ -79,6 +81,33 @@ public class GrantApplicationController {
     @AuditLog(action = "grant_application_revoke_grant", resource = "grant-applications")
     public R<Void> revokeEffectiveGrant(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
         grantApplicationService.revokeEffectiveGrant(userId, id);
+        return R.ok();
+    }
+
+    @PostMapping("/batch-approve")
+    @AuditLog(action = "grant_application_batch_approve", resource = "grant-applications")
+    public R<Void> batchApprove(@RequestHeader("X-User-Id") Long userId, @Valid @RequestBody LongIdsRequest body) {
+        for (Long id : body.getIds()) {
+            grantApplicationService.approve(userId, id);
+        }
+        return R.ok();
+    }
+
+    @PostMapping("/batch-reject")
+    @AuditLog(action = "grant_application_batch_reject", resource = "grant-applications")
+    public R<Void> batchReject(@RequestHeader("X-User-Id") Long userId, @Valid @RequestBody IdsWithReasonRequest body) {
+        for (Long id : body.getIds()) {
+            grantApplicationService.reject(userId, id, body.getReason());
+        }
+        return R.ok();
+    }
+
+    @PostMapping("/batch-revoke-grant")
+    @AuditLog(action = "grant_application_batch_revoke_grant", resource = "grant-applications")
+    public R<Void> batchRevokeEffectiveGrant(@RequestHeader("X-User-Id") Long userId, @Valid @RequestBody LongIdsRequest body) {
+        for (Long id : body.getIds()) {
+            grantApplicationService.revokeEffectiveGrant(userId, id);
+        }
         return R.ok();
     }
 }

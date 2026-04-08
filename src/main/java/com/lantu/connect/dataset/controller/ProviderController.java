@@ -4,12 +4,14 @@ import com.lantu.connect.common.annotation.AuditLog;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.security.RequireRole;
+import com.lantu.connect.dataset.dto.ProviderBatchUpdateRequest;
 import com.lantu.connect.dataset.dto.ProviderCreateRequest;
 import com.lantu.connect.dataset.dto.ProviderUpdateRequest;
 import com.lantu.connect.dataset.entity.Provider;
 import com.lantu.connect.dataset.service.ProviderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -55,6 +57,17 @@ public class ProviderController {
     @AuditLog(action = "provider_update", resource = "dataset-provider")
     public R<Provider> update(@PathVariable long id, @Valid @RequestBody ProviderUpdateRequest body) {
         return R.ok(providerService.update(id, body));
+    }
+
+    @PutMapping("/batch")
+    @AuditLog(action = "provider_batch_update", resource = "dataset-provider")
+    public R<Void> batchUpdate(@Valid @RequestBody ProviderBatchUpdateRequest body) {
+        ProviderUpdateRequest patch = new ProviderUpdateRequest();
+        BeanUtils.copyProperties(body, patch, "ids");
+        for (Long id : body.getIds()) {
+            providerService.update(id, patch);
+        }
+        return R.ok();
     }
 
     @DeleteMapping("/{id}")

@@ -1,14 +1,17 @@
 package com.lantu.connect.sysconfig.controller;
 
+import com.lantu.connect.common.dto.LongIdsRequest;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.security.RequireRole;
+import com.lantu.connect.sysconfig.dto.AnnouncementBatchUpdateRequest;
 import com.lantu.connect.sysconfig.dto.AnnouncementCreateRequest;
 import com.lantu.connect.sysconfig.dto.AnnouncementUpdateRequest;
 import com.lantu.connect.sysconfig.entity.Announcement;
 import com.lantu.connect.sysconfig.service.AnnouncementService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -43,6 +46,24 @@ public class AnnouncementController {
     @DeleteMapping("/{id}")
     public R<Void> delete(@PathVariable Long id) {
         announcementService.delete(id);
+        return R.ok();
+    }
+
+    @PostMapping("/batch")
+    public R<Void> batchUpdate(@Valid @RequestBody AnnouncementBatchUpdateRequest body) {
+        AnnouncementUpdateRequest patch = new AnnouncementUpdateRequest();
+        BeanUtils.copyProperties(body, patch, "ids");
+        for (Long id : body.getIds()) {
+            announcementService.update(id, patch);
+        }
+        return R.ok();
+    }
+
+    @PostMapping("/batch-delete")
+    public R<Void> batchDelete(@Valid @RequestBody LongIdsRequest body) {
+        for (Long id : body.getIds()) {
+            announcementService.delete(id);
+        }
         return R.ok();
     }
 }

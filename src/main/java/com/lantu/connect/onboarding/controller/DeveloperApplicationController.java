@@ -3,6 +3,8 @@ package com.lantu.connect.onboarding.controller;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.security.RequireRole;
+import com.lantu.connect.onboarding.dto.DeveloperApplicationBatchApproveRequest;
+import com.lantu.connect.onboarding.dto.DeveloperApplicationBatchRejectRequest;
 import com.lantu.connect.onboarding.dto.DeveloperApplicationCreateRequest;
 import com.lantu.connect.onboarding.dto.DeveloperApplicationQueryRequest;
 import com.lantu.connect.onboarding.dto.DeveloperApplicationReviewRequest;
@@ -64,6 +66,26 @@ public class DeveloperApplicationController {
                           @RequestHeader("X-User-Id") Long reviewerId,
                           @Valid @RequestBody DeveloperApplicationReviewRequest request) {
         developerApplicationService.reject(id, reviewerId, request.getReviewComment());
+        return R.ok();
+    }
+
+    @PostMapping("/batch-approve")
+    @RequireRole({"platform_admin", "admin", "reviewer"})
+    public R<Void> batchApprove(@RequestHeader("X-User-Id") Long reviewerId,
+                                @Valid @RequestBody DeveloperApplicationBatchApproveRequest body) {
+        for (Long id : body.getIds()) {
+            developerApplicationService.approve(id, reviewerId, body.getReviewComment());
+        }
+        return R.ok();
+    }
+
+    @PostMapping("/batch-reject")
+    @RequireRole({"platform_admin", "admin", "reviewer"})
+    public R<Void> batchReject(@RequestHeader("X-User-Id") Long reviewerId,
+                              @Valid @RequestBody DeveloperApplicationBatchRejectRequest body) {
+        for (Long id : body.getIds()) {
+            developerApplicationService.reject(id, reviewerId, body.getReviewComment());
+        }
         return R.ok();
     }
 }

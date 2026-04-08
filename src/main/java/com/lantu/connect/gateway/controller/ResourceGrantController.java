@@ -1,5 +1,6 @@
 package com.lantu.connect.gateway.controller;
 
+import com.lantu.connect.common.dto.LongIdsRequest;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.annotation.AuditLog;
 import com.lantu.connect.gateway.dto.ResourceGrantCreateRequest;
@@ -43,6 +44,15 @@ public class ResourceGrantController {
     public R<Void> revoke(@RequestHeader("X-User-Id") Long userId,
                           @PathVariable Long grantId) {
         resourceInvokeGrantService.revoke(userId, grantId);
+        return R.ok();
+    }
+
+    @PostMapping("/batch-delete")
+    @AuditLog(action = "resource_grant_batch_revoke", resource = "resource-grants")
+    public R<Void> batchRevoke(@RequestHeader("X-User-Id") Long userId, @Valid @RequestBody LongIdsRequest body) {
+        for (Long grantId : body.getIds()) {
+            resourceInvokeGrantService.revoke(userId, grantId);
+        }
         return R.ok();
     }
 

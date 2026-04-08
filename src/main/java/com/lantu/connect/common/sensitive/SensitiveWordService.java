@@ -412,6 +412,34 @@ public class SensitiveWordService {
         refreshWordBank();
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public void batchDelete(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        for (Long id : ids) {
+            sensitiveWordMapper.deleteById(id);
+        }
+        refreshWordBank();
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void batchSetEnabled(List<Long> ids, boolean enabled) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        for (Long id : ids) {
+            SensitiveWord entity = sensitiveWordMapper.selectById(id);
+            if (entity == null) {
+                throw new BusinessException(ResultCode.NOT_FOUND, "敏感词不存在: " + id);
+            }
+            entity.setEnabled(enabled);
+            entity.setUpdateTime(LocalDateTime.now());
+            sensitiveWordMapper.updateById(entity);
+        }
+        refreshWordBank();
+    }
+
     public int getWordCount() {
         return normalizedDbWords().size();
     }

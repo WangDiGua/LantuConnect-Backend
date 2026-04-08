@@ -2,6 +2,7 @@ package com.lantu.connect.usermgmt.controller;
 
 import com.lantu.connect.auth.entity.PlatformRole;
 import com.lantu.connect.auth.entity.User;
+import com.lantu.connect.common.dto.StringIdsRequest;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.security.RequirePermission;
@@ -12,6 +13,7 @@ import com.lantu.connect.usermgmt.entity.ApiKey;
 import com.lantu.connect.usermgmt.service.UserMgmtService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.BeanUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -48,6 +50,17 @@ public class UserMgmtController {
     @RequirePermission("user:update")
     public R<Void> updateUser(@PathVariable Long id, @RequestBody UpdateUserRequest request) {
         userMgmtService.updateUser(id, request);
+        return R.ok();
+    }
+
+    @PostMapping("/users/batch")
+    @RequirePermission("user:update")
+    public R<Void> batchUpdateUsers(@Valid @RequestBody UserBatchUpdateRequest body) {
+        UpdateUserRequest patch = new UpdateUserRequest();
+        BeanUtils.copyProperties(body, patch, "ids");
+        for (Long id : body.getIds()) {
+            userMgmtService.updateUser(id, patch);
+        }
         return R.ok();
     }
 
@@ -113,6 +126,15 @@ public class UserMgmtController {
         return R.ok();
     }
 
+    @PostMapping("/api-keys/batch-revoke")
+    @RequirePermission("apikey:delete")
+    public R<Void> batchRevokeApiKeys(@Valid @RequestBody StringIdsRequest body) {
+        for (String id : body.getIds()) {
+            userMgmtService.revokeApiKey(id);
+        }
+        return R.ok();
+    }
+
     @GetMapping("/tokens")
     @RequirePermission("apikey:read")
     public R<PageResult<AccessToken>> listTokens(@RequestParam(defaultValue = "1") int page,
@@ -126,6 +148,15 @@ public class UserMgmtController {
     @RequirePermission("apikey:delete")
     public R<Void> revokeToken(@PathVariable String id) {
         userMgmtService.revokeToken(id);
+        return R.ok();
+    }
+
+    @PostMapping("/tokens/batch-revoke")
+    @RequirePermission("apikey:delete")
+    public R<Void> batchRevokeTokens(@Valid @RequestBody StringIdsRequest body) {
+        for (String id : body.getIds()) {
+            userMgmtService.revokeToken(id);
+        }
         return R.ok();
     }
 

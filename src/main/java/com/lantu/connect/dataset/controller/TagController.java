@@ -1,5 +1,6 @@
 package com.lantu.connect.dataset.controller;
 
+import com.lantu.connect.common.dto.LongIdsRequest;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.security.RequireRole;
 import com.lantu.connect.dataset.dto.TagCreateRequest;
@@ -53,6 +54,13 @@ public class TagController {
     @RequireRole({"platform_admin"})
     public R<Void> delete(@PathVariable Long id) {
         tagService.delete(id);
+        return R.ok();
+    }
+
+    @PostMapping("/batch-delete")
+    @RequireRole({"platform_admin"})
+    public R<Void> batchDelete(@Valid @RequestBody LongIdsRequest body) {
+        tagService.deleteBatch(body.getIds());
         return R.ok();
     }
 }

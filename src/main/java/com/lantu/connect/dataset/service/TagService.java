@@ -20,6 +20,8 @@ public interface TagService {
 
     void delete(Long id);
 
+    void deleteBatch(List<Long> ids);
+
     List<Long> batchCreate(List<TagCreateRequest> requests);
 
     void update(Long id, TagUpdateRequest request);

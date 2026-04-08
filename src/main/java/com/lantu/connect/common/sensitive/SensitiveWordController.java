@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.exception.BusinessException;
+import com.lantu.connect.common.dto.LongIdsRequest;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.security.RequireRole;
@@ -140,10 +141,24 @@ public class SensitiveWordController {
         return R.ok();
     }
 
+    @PutMapping("/batch")
+    @RequireRole({"platform_admin"})
+    public R<Void> batchSetEnabled(@Valid @RequestBody SensitiveWordBatchEnableRequest body) {
+        sensitiveWordService.batchSetEnabled(body.getIds(), Boolean.TRUE.equals(body.getEnabled()));
+        return R.ok();
+    }
+
     @DeleteMapping("/{id}")
     @RequireRole({"platform_admin"})
     public R<Void> delete(@PathVariable Long id) {
         sensitiveWordService.delete(id);
+        return R.ok();
+    }
+
+    @PostMapping("/batch-delete")
+    @RequireRole({"platform_admin"})
+    public R<Void> batchDelete(@Valid @RequestBody LongIdsRequest body) {
+        sensitiveWordService.batchDelete(body.getIds());
         return R.ok();
     }
 

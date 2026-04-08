@@ -3,10 +3,13 @@ package com.lantu.connect.audit.controller;
 import com.lantu.connect.audit.entity.AuditItem;
 import com.lantu.connect.audit.service.AuditService;
 import com.lantu.connect.common.annotation.AuditLog;
+import com.lantu.connect.common.dto.IdsWithReasonRequest;
+import com.lantu.connect.common.dto.LongIdsRequest;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.security.RequireRole;
 import com.lantu.connect.gateway.dto.ResourceRejectRequest;
+import jakarta.validation.Valid;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -126,6 +129,39 @@ public class AuditController {
     @AuditLog(action = "audit_publish_resource", resource = "audit")
     public R<Void> publishResource(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
         auditService.publishResource(id, userId);
+        return R.ok();
+    }
+
+    @PostMapping("/resources/batch-approve")
+    @RequireRole({"platform_admin", "reviewer"})
+    @AuditLog(action = "audit_batch_approve_resource", resource = "audit")
+    public R<Void> batchApproveResource(@RequestHeader("X-User-Id") Long userId,
+                                        @Valid @RequestBody LongIdsRequest body) {
+        for (Long id : body.getIds()) {
+            auditService.approveResource(id, userId);
+        }
+        return R.ok();
+    }
+
+    @PostMapping("/resources/batch-reject")
+    @RequireRole({"platform_admin", "reviewer"})
+    @AuditLog(action = "audit_batch_reject_resource", resource = "audit")
+    public R<Void> batchRejectResource(@RequestHeader("X-User-Id") Long userId,
+                                       @Valid @RequestBody IdsWithReasonRequest body) {
+        for (Long id : body.getIds()) {
+            auditService.rejectResource(id, body.getReason(), userId);
+        }
+        return R.ok();
+    }
+
+    @PostMapping("/resources/batch-publish")
+    @RequireRole({"platform_admin", "admin", "reviewer", "developer"})
+    @AuditLog(action = "audit_batch_publish_resource", resource = "audit")
+    public R<Void> batchPublishResource(@RequestHeader("X-User-Id") Long userId,
+                                         @Valid @RequestBody LongIdsRequest body) {
+        for (Long id : body.getIds()) {
+            auditService.publishResource(id, userId);
+        }
         return R.ok();
     }
 

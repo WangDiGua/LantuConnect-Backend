@@ -1,6 +1,7 @@
 package com.lantu.connect.gateway.controller;
 
 import com.lantu.connect.common.annotation.AuditLog;
+import com.lantu.connect.common.dto.LongIdsRequest;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.gateway.dto.ResourceManageVO;
@@ -152,6 +153,15 @@ public class ResourceRegistryController {
     @AuditLog(action = "resource_withdraw", resource = "resource-center")
     public R<ResourceManageVO> withdraw(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
         return R.ok(resourceRegistryService.withdraw(userId, id));
+    }
+
+    @PostMapping("/batch-withdraw")
+    @AuditLog(action = "resource_batch_withdraw", resource = "resource-center")
+    public R<Void> batchWithdraw(@RequestHeader("X-User-Id") Long userId, @Valid @RequestBody LongIdsRequest body) {
+        for (Long id : body.getIds()) {
+            resourceRegistryService.withdraw(userId, id);
+        }
+        return R.ok();
     }
 
     @GetMapping("/{id}/lifecycle-timeline")
