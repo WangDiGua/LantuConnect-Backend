@@ -22,7 +22,9 @@ public class UserDisplayNameResolver {
     public Map<Long, String> resolveDisplayNames(Collection<Long> userIds) {
         Set<Long> ids = normalizeIds(userIds);
         if (ids.isEmpty()) {
-            return Map.of();
+            // Must not return Map.of() / immutable empty map: callers may still call get(null)
+            // (e.g. SensitiveWord rows with created_by NULL).
+            return new LinkedHashMap<>();
         }
         Map<Long, String> names = new LinkedHashMap<>();
         userMapper.selectList(new LambdaQueryWrapper<User>()

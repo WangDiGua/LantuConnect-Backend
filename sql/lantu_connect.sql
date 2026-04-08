@@ -547,7 +547,7 @@ CREATE TABLE `t_resource`  (
   `status` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'draft',
   `source_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
   `provider_id` bigint NULL DEFAULT NULL,
-  `access_policy` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'grant_required',
+  `access_policy` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'open_platform',
   `created_by` bigint NULL DEFAULT NULL,
   `deleted` smallint NULL DEFAULT 0,
   `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
@@ -728,58 +728,6 @@ CREATE TABLE `t_resource_health_config`  (
 INSERT INTO `t_resource_health_config` VALUES (1, 1, 'agent', 'web-search', '联网搜索', 'http', 'https://api.search.com/health', 30, 3, 10, 'degraded', '2026-03-25 17:48:10', '2026-03-22 10:58:54', '2026-03-25 17:48:10');
 INSERT INTO `t_resource_health_config` VALUES (2, 2, 'agent', 'smart-tutor', '智能备课助手', 'http', 'http://ai.lzu.edu.cn/tutor/health', 30, 3, 10, 'degraded', '2026-03-25 17:48:15', '2026-03-22 10:58:54', '2026-03-25 17:48:14');
 INSERT INTO `t_resource_health_config` VALUES (3, 4, 'agent', 'campus-qa', '校园问答', 'http', 'http://ai.lzu.edu.cn/qa/health', 30, 3, 10, 'degraded', '2026-03-25 17:48:20', '2026-03-22 10:58:54', '2026-03-25 17:48:19');
-
--- ----------------------------
--- Table structure for t_resource_invoke_grant
--- ----------------------------
-DROP TABLE IF EXISTS `t_resource_invoke_grant`;
-CREATE TABLE `t_resource_invoke_grant`  (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `resource_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `resource_id` bigint NOT NULL,
-  `grantee_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT 'api_key only',
-  `grantee_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `actions` json NOT NULL COMMENT 'catalog/resolve/invoke/*',
-  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'active',
-  `granted_by_user_id` bigint NOT NULL,
-  `expires_at` datetime NULL DEFAULT NULL,
-  `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
-  `update_time` datetime NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`) USING BTREE,
-  UNIQUE INDEX `uk_resource_grantee_active`(`resource_type` ASC, `resource_id` ASC, `grantee_type` ASC, `grantee_id` ASC, `status` ASC) USING BTREE,
-  INDEX `idx_grantee`(`grantee_type` ASC, `grantee_id` ASC) USING BTREE,
-  INDEX `idx_resource`(`resource_type` ASC, `resource_id` ASC) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源调用授权表' ROW_FORMAT = DYNAMIC;
-
--- ----------------------------
--- Records of t_resource_invoke_grant
--- ----------------------------
-
--- ----------------------------
--- Table structure for t_resource_grant_application
--- ----------------------------
-DROP TABLE IF EXISTS `t_resource_grant_application`;
-CREATE TABLE `t_resource_grant_application` (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `applicant_id` bigint NOT NULL COMMENT '申请人 user_id',
-  `resource_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '资源类型: agent/skill/mcp/app/dataset',
-  `resource_id` bigint NOT NULL COMMENT '目标资源 ID',
-  `api_key_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '申请绑定的 API Key ID',
-  `actions` json NOT NULL COMMENT '申请的操作权限: catalog/resolve/invoke JSON 数组',
-  `use_case` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '使用场景说明',
-  `call_frequency` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '预估调用频次',
-  `status` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'pending' COMMENT 'pending/approved/rejected',
-  `reviewer_id` bigint NULL DEFAULT NULL COMMENT '审批人 user_id',
-  `reject_reason` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '驳回原因',
-  `review_time` datetime NULL DEFAULT NULL COMMENT '审批时间',
-  `expires_at` datetime NULL DEFAULT NULL COMMENT '申请的授权过期时间（可选）',
-  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`) USING BTREE,
-  INDEX `idx_applicant`(`applicant_id` ASC) USING BTREE,
-  INDEX `idx_resource`(`resource_type` ASC, `resource_id` ASC) USING BTREE,
-  INDEX `idx_status`(`status` ASC) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源授权申请工单' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Table structure for t_resource_mcp_ext

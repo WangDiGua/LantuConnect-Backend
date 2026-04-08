@@ -28,7 +28,8 @@ public class ResourceUpsertRequest {
 
     private Long providerId;
 
-    private Long categoryId;
+    /** 目录标签（t_tag.id），写入 t_resource_tag_rel；须与资源类型桶位匹配或为 general。 */
+    private List<Long> tagIds;
 
     /**
      * 消费策略（主表 {@code t_resource.access_policy}）：{@code grant_required}（默认）、{@code open_org}、{@code open_platform}。

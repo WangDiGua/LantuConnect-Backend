@@ -131,10 +131,6 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             args.add(like);
             args.add(like);
         }
-        if (request.getCategoryId() != null) {
-            sql.append(" AND r.category_id = ? ");
-            args.add(request.getCategoryId());
-        }
         if (request.getTags() != null && !request.getTags().isEmpty()) {
             sql.append(" AND r.id IN (SELECT rt.resource_id FROM t_resource_tag_rel rt "
                     + "INNER JOIN t_tag t ON t.id = rt.tag_id WHERE t.name IN (");
@@ -205,9 +201,6 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                     if (!apiKeyScopeService.canCatalog(apiKey, rType, rId)) {
                         continue;
                     }
-                    if (!resourceInvokeGrantService.canCatalog(apiKey, rType, parseId(rId), null)) {
-                        continue;
-                    }
                 }
                 if (Boolean.TRUE.equals(request.getCallableOnly())) {
                     Long rid = parseId(rId);
@@ -217,10 +210,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 }
                 if (filteredCount >= from && filteredCount < to) {
                     Long ridForGrant = parseId(rId);
-                    Boolean grantFlag = null;
-                    if (apiKey != null && ridForGrant != null) {
-                        grantFlag = resourceInvokeGrantService.isInvokeGrantSatisfied(apiKey, rType, ridForGrant, userId);
-                    }
+                    Boolean grantFlag = (apiKey != null && ridForGrant != null) ? Boolean.TRUE : null;
                     paged.add(ResourceCatalogItemVO.builder()
                             .resourceType(rType)
                             .resourceId(rId)

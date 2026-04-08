@@ -24,7 +24,6 @@ public class ResourceCatalogQueryRequest {
 
     private String sortOrder;
 
-    private Long categoryId;
 
     private java.util.List<String> tags;
 

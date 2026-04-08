@@ -13,7 +13,6 @@ import com.lantu.connect.gateway.dto.ResourceStatsVO;
 import com.lantu.connect.gateway.dto.SearchSuggestion;
 import com.lantu.connect.gateway.security.AppLaunchTokenService;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
-import com.lantu.connect.gateway.security.ResourceInvokeGrantService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
 import com.lantu.connect.gateway.support.GatewayCallerResolver;
 import com.lantu.connect.gateway.support.GatewayInvokeResponseSupport;
@@ -57,7 +56,6 @@ public class ResourceCatalogController {
     private final GatewayCallerResolver gatewayCallerResolver;
     private final AppLaunchTokenService appLaunchTokenService;
     private final ApiKeyMapper apiKeyMapper;
-    private final ResourceInvokeGrantService resourceInvokeGrantService;
     private final RuntimeAppConfigService runtimeAppConfigService;
 
     @Operation(summary = "资源目录分页", description = "需登录态和/或有效 X-Api-Key；`include` 可为 observability、quality、tags（逗号分隔）。")
@@ -182,12 +180,6 @@ public class ResourceCatalogController {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "launch token 绑定的 API Key 不可用");
         }
         apiKeyScopeService.ensureResolveAllowed(apiKey, "app", String.valueOf(claims.resourceId()));
-        resourceInvokeGrantService.ensureApiKeyGranted(
-                apiKey,
-                "resolve",
-                "app",
-                claims.resourceId(),
-                claims.userId());
         response.sendRedirect(appUrl.trim());
     }
 }

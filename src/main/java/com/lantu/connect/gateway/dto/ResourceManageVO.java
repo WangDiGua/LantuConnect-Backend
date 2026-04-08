@@ -19,7 +19,9 @@ public class ResourceManageVO {
     private String status;
     private String sourceType;
     private Long providerId;
-    private Long categoryId;
+
+    /** 目录标签 id（t_resource_tag_rel → t_tag），与 catalogTagNames 顺序一致（按标签名排序）。 */
+    private List<Long> tagIds;
 
     /** {@code grant_required} | {@code open_org} | {@code open_platform} */
     private String accessPolicy;
@@ -85,7 +87,7 @@ public class ResourceManageVO {
     /** 数据集扩展表中的自由文本标签（JSON 数组） */
     private List<String> tags;
 
-    /** 目录侧标签名（t_resource_tag_rel）；全类型通用，与 categoryId 对应关系同步 */
+    /** 目录侧标签名（t_resource_tag_rel）；全类型通用 */
     private List<String> catalogTagNames;
 
     // --- lifecycle / audit context ---

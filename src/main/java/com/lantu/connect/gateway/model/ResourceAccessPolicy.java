@@ -7,21 +7,17 @@ import org.springframework.util.StringUtils;
 import java.util.Locale;
 
 /**
- * 统一资源消费策略：主表 {@code t_resource.access_policy}。
- * 网关 Grant 短路由 {@link com.lantu.connect.gateway.security.ResourceInvokeGrantService} 实现（仍校验 API Key 与 scope）。
+ * 历史字段：主表 {@code t_resource.access_policy}。新产品线统一为 {@link #OPEN_PLATFORM}，网关不再校验资源级 Grant。
  */
 public enum ResourceAccessPolicy {
 
-    /** 与当前行为一致：非 owner 须具备有效 Grant（及 Key scope）。 */
+    /** 历史枚举值；兼容旧库数据，新写入不再使用。 */
     GRANT_REQUIRED("grant_required"),
 
-    /** 同部门（与 owner 的 menuId 一致）内用户所持 Key 可免 Grant（仍须 scope）；具体校验在网关阶段实现。 */
+    /** 历史枚举值。 */
     OPEN_ORG("open_org"),
 
-    /**
-     * 租户内任意已认证 API Key 在满足 scope 的前提下可免 Grant。
-     * 非匿名公开；平台级「完全开放」需单独产品与风控策略。
-     */
+    /** 当前唯一策略：已通过审核上架的资源，在 API Key scope 满足时对所有调用方开放。 */
     OPEN_PLATFORM("open_platform");
 
     private final String wireValue;
@@ -57,17 +53,17 @@ public enum ResourceAccessPolicy {
      */
     public static ResourceAccessPolicy fromStored(Object column) {
         if (column == null) {
-            return GRANT_REQUIRED;
+            return OPEN_PLATFORM;
         }
         String n = String.valueOf(column).trim().toLowerCase(Locale.ROOT);
         if (!StringUtils.hasText(n)) {
-            return GRANT_REQUIRED;
+            return OPEN_PLATFORM;
         }
         for (ResourceAccessPolicy p : values()) {
             if (p.wireValue.equals(n)) {
                 return p;
             }
         }
-        return GRANT_REQUIRED;
+        return OPEN_PLATFORM;
     }
 }

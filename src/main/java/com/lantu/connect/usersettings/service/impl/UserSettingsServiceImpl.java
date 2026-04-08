@@ -12,7 +12,6 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.security.RedisAuthRateLimiter;
 import com.lantu.connect.gateway.dto.ResourceGrantVO;
-import com.lantu.connect.gateway.security.ResourceInvokeGrantService;
 import com.lantu.connect.usermgmt.ApiKeyScopes;
 import com.lantu.connect.usermgmt.dto.ApiKeyCreateRequest;
 import com.lantu.connect.usermgmt.dto.ApiKeyResponse;
@@ -70,7 +69,6 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     private final UsageRecordMapper usageRecordMapper;
     private final SessionTrackerService sessionTrackerService;
     private final SystemNotificationFacade systemNotificationFacade;
-    private final ResourceInvokeGrantService resourceInvokeGrantService;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final SensitiveActionAuditMapper sensitiveActionAuditMapper;
@@ -165,7 +163,18 @@ public class UserSettingsServiceImpl implements UserSettingsService {
 
     @Override
     public List<ResourceGrantVO> listResourceGrantsForApiKey(Long userId, String apiKeyId, String resourceType) {
-        return resourceInvokeGrantService.listActiveGrantsForGranteeApiKey(userId, apiKeyId, resourceType);
+        if (userId == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证用户无法查询");
+        }
+        if (!StringUtils.hasText(apiKeyId)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "API Key id 不能为空");
+        }
+        ApiKey key = apiKeyMapper.selectById(apiKeyId.trim());
+        if (key == null || !OWNER_USER.equalsIgnoreCase(key.getOwnerType())
+                || !String.valueOf(userId).equals(String.valueOf(key.getOwnerId()).trim())) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不存在");
+        }
+        return List.of();
     }
 
     @Override
@@ -198,8 +207,11 @@ public class UserSettingsServiceImpl implements UserSettingsService {
                 out.put(trimmed, false);
                 continue;
             }
-            boolean ok = resourceInvokeGrantService.isInvokeGrantSatisfied(key, rt, rid, userId);
-            out.put(String.valueOf(rid), ok);
+            Integer cnt = jdbcTemplate.queryForObject("""
+                    SELECT COUNT(1) FROM t_resource
+                    WHERE deleted = 0 AND resource_type = ? AND id = ? AND status = 'published'
+                    """, Integer.class, rt, rid);
+            out.put(String.valueOf(rid), cnt != null && cnt > 0);
         }
         return InvokeEligibilityResponse.builder().byResourceId(out).build();
     }

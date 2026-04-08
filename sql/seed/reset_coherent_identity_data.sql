@@ -12,7 +12,6 @@
 --
 -- 口令：与 sql/lantu_connect.sql 示例相同 BCrypt；不可用请在应用内替换 password_hash。
 --
--- 若无 t_resource_grant_application 表，请注释掉脚本中对应两行 UPDATE。
 -- =============================================================================
 
 SET NAMES utf8mb4;
@@ -65,12 +64,6 @@ SET downloader_user_id = NULL
 WHERE downloader_user_id = 6;
 
 UPDATE t_resource SET created_by = 3 WHERE created_by = 6;
-UPDATE t_resource_invoke_grant SET granted_by_user_id = 1 WHERE granted_by_user_id = 6;
-
--- 库中无此表时请注释掉下行两行：
-UPDATE t_resource_grant_application SET applicant_id = 3 WHERE applicant_id = 6;
-UPDATE t_resource_grant_application SET reviewer_id  = 1 WHERE reviewer_id = 6;
-
 DELETE FROM t_user WHERE user_id = 6;
 
 -- ---------------------------------------------------------------------------

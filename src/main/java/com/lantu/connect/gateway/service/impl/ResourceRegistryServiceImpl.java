@@ -92,7 +92,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         String type = normalizeType(request.getResourceType());
         validateByType(type, request);
         ensureUniqueCode(type, request.getResourceCode(), null);
-        ResourceAccessPolicy accessPolicy = ResourceAccessPolicy.parseRequestValue(request.getAccessPolicy());
+        ResourceAccessPolicy accessPolicy = ResourceAccessPolicy.OPEN_PLATFORM;
 
         LocalDateTime now = LocalDateTime.now();
         KeyHolder keyHolder = new GeneratedKeyHolder();
@@ -422,28 +422,17 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     }
 
     /**
-     * @param forCreate true：缺省 accessPolicy 视为 grant_required；false：更新时未传字段则保留库中值
+     * 消费策略统一为 {@link ResourceAccessPolicy#OPEN_PLATFORM}（不再提供 per-resource 授权策略）。
      */
     private Map<String, Object> snapshotForVersion(String type, Long resourceId, ResourceUpsertRequest request, boolean forCreate) {
         if ("skill".equals(type)) {
             return buildSnapshotFromDb(type, resourceId);
         }
-        ResourceAccessPolicy ap = forCreate
-                ? ResourceAccessPolicy.parseRequestValue(request.getAccessPolicy())
-                : resolveAccessPolicyForUpdate(resourceId, request);
-        return buildSnapshot(type, request, ap);
+        return buildSnapshot(type, request, resolveAccessPolicyForUpdate(resourceId, request));
     }
 
     private ResourceAccessPolicy resolveAccessPolicyForUpdate(Long resourceId, ResourceUpsertRequest request) {
-        if (StringUtils.hasText(request.getAccessPolicy())) {
-            return ResourceAccessPolicy.parseRequestValue(request.getAccessPolicy());
-        }
-        List<Map<String, Object>> cur = jdbcTemplate.queryForList(
-                "SELECT access_policy FROM t_resource WHERE id = ? AND deleted = 0 LIMIT 1", resourceId);
-        if (cur.isEmpty()) {
-            return ResourceAccessPolicy.GRANT_REQUIRED;
-        }
-        return ResourceAccessPolicy.fromStored(cur.get(0).get("access_policy"));
+        return ResourceAccessPolicy.OPEN_PLATFORM;
     }
 
     private static Timestamp toSqlTimestamp(Object raw) {
