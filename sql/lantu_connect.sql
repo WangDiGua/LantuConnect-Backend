@@ -1107,7 +1107,6 @@ CREATE TABLE `t_security_setting`  (
 -- ----------------------------
 INSERT INTO `t_security_setting` VALUES ('audit_log_retention', '90', '审计日志保留', '审计日志保留天数', 'input', NULL, '数据安全');
 INSERT INTO `t_security_setting` VALUES ('data_encryption', 'true', '数据加密', '是否启用敏感数据加密存储', 'toggle', NULL, '数据安全');
-INSERT INTO `t_security_setting` VALUES ('ip_whitelist', '', 'IP 白名单', '允许访问的 IP 地址列表', 'input', NULL, '访问控制');
 INSERT INTO `t_security_setting` VALUES ('password_complexity', 'medium', '密码复杂度', '密码复杂度要求', 'select', '[\"low\", \"medium\", \"high\"]', '认证');
 INSERT INTO `t_security_setting` VALUES ('session_binding', 'none', '会话绑定', '会话绑定方式', 'select', '[\"none\", \"ip\", \"device\"]', '认证');
 INSERT INTO `t_security_setting` VALUES ('two_factor_auth', 'false', '双因素认证', '是否启用双因素认证', 'toggle', NULL, '认证');
