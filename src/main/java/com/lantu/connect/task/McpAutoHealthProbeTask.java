@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.gateway.dto.McpConnectivityProbeRequest;
 import com.lantu.connect.gateway.dto.McpConnectivityProbeResult;
 import com.lantu.connect.gateway.service.McpConnectivityProbeService;
+import com.lantu.connect.monitoring.ResourceCircuitHealthBridge;
 import com.lantu.connect.realtime.RealtimePushService;
 import com.lantu.connect.task.support.TaskDistributedLock;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +47,7 @@ public class McpAutoHealthProbeTask {
     private final McpConnectivityProbeService mcpConnectivityProbeService;
     private final ObjectMapper objectMapper;
     private final RealtimePushService realtimePushService;
+    private final ResourceCircuitHealthBridge resourceCircuitHealthBridge;
 
     @Scheduled(cron = "0 */5 * * * ?")
     public void run() {
@@ -154,6 +156,9 @@ public class McpAutoHealthProbeTask {
                             "UPDATE t_resource_health_config SET health_status = ?, last_check_time = ?, check_url = ?, "
                                     + "check_type = ?, healthy_threshold = ? WHERE id = ?",
                             status, now, endpoint.trim(), CHECK_TYPE_MCP, failThreshold, hid);
+                }
+                if ("healthy".equalsIgnoreCase(status)) {
+                    resourceCircuitHealthBridge.resetOpenOrHalfOpenAfterHealthyProbe(TYPE_MCP, resourceId);
                 }
                 String typeCol = valueOf(row.get("resource_type"));
                 if (!normHealthStatus(prevProbeStatus).equals(normHealthStatus(status))) {

@@ -1045,7 +1045,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         if (!normalizedType.equals(detail.getResourceType())) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "resource type 与 id 不匹配");
         }
-        Map<String, Object> quality = computeQuality(resourceId);
+        Map<String, Object> quality = computeQuality(resourceId, normalizedType);
         DegradationHintVO hint = buildDegradationHint(
                 stringValue(quality.get("healthStatus")),
                 stringValue(quality.get("circuitState")));
@@ -1420,7 +1420,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         if (vo == null || vo.getId() == null) {
             return;
         }
-        Map<String, Object> quality = computeQuality(vo.getId());
+        Map<String, Object> quality = computeQuality(vo.getId(), vo.getResourceType());
         vo.setHealthStatus(stringValue(quality.get("healthStatus")));
         vo.setCircuitState(stringValue(quality.get("circuitState")));
         vo.setQualityScore(intObject(quality.get("qualityScore")));
@@ -1438,7 +1438,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     }
 
     /**
-     * 熔断优先；否则若最近一次网关调用失败（t_call_log），用真实错误摘要覆盖「仅健康检查表」带来的误判。
+     * 熔断优先；最近一次网关调用若失败，写入 degradation 提示（供运营视图）。
+     * 注意：不在此处把 {@code healthStatus} 打成 down——否则会与 {@link #computeQuality} 中
+     * 「仅记录 lastInvokeFailureHint、不篡改健康探针结果」的策略冲突，导致广场列表长期「暂不可调用」。
      */
     private void applyObservabilityDegradationHints(ResourceManageVO vo, Map<String, Object> quality) {
         if (vo == null || quality == null) {
@@ -1463,7 +1465,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
     }
 
-    private Map<String, Object> computeQuality(Long resourceId) {
+    private Map<String, Object> computeQuality(Long resourceId, String resourceType) {
         List<Map<String, Object>> callRows = jdbcTemplate.queryForList("""
                 SELECT
                     COUNT(1) AS totalCalls,
@@ -1491,10 +1493,19 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 "SELECT health_status FROM t_resource_health_config WHERE resource_id = ? LIMIT 1",
                 resourceId);
         String health = hc.isEmpty() ? "unknown" : stringValue(hc.get(0).get("health_status"));
-        List<Map<String, Object>> cb = jdbcTemplate.queryForList(
-                "SELECT current_state FROM t_resource_circuit_breaker WHERE resource_id = ? LIMIT 1",
-                resourceId);
-        String circuitState = cb.isEmpty() ? "unknown" : stringValue(cb.get(0).get("current_state"));
+        String circuitState;
+        if (StringUtils.hasText(resourceType)) {
+            String rt = resourceType.trim().toLowerCase(Locale.ROOT);
+            List<Map<String, Object>> cb = jdbcTemplate.queryForList(
+                    "SELECT current_state FROM t_resource_circuit_breaker WHERE resource_id = ? AND resource_type = ? LIMIT 1",
+                    resourceId, rt);
+            circuitState = cb.isEmpty() ? "unknown" : stringValue(cb.get(0).get("current_state"));
+        } else {
+            List<Map<String, Object>> cb = jdbcTemplate.queryForList(
+                    "SELECT current_state FROM t_resource_circuit_breaker WHERE resource_id = ? LIMIT 1",
+                    resourceId);
+            circuitState = cb.isEmpty() ? "unknown" : stringValue(cb.get(0).get("current_state"));
+        }
 
         Map<String, Object> factors = new LinkedHashMap<>();
         factors.put("successRate", successRate);
@@ -1514,7 +1525,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             Map<String, Object> li = lastInvokeRows.get(0);
             String st = stringValue(li.get("status"));
             if (StringUtils.hasText(st) && !"success".equalsIgnoreCase(st.trim())) {
-                health = "down";
+                // 不因单次历史失败覆盖 t_resource_health_config：否则 MCP 已恢复仍会一直显示「暂不可调用」
+                // （前端 isCatalogMcpCallable 视 healthStatus=down 为禁入）。提示见 lastInvokeFailureHint。
                 String em = stringValue(li.get("error_message"));
                 if (StringUtils.hasText(em)) {
                     String clip = em.length() > 220 ? em.substring(0, 217) + "..." : em;

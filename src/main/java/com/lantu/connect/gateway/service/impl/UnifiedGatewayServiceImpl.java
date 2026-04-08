@@ -573,6 +573,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         String status;
         long latencyMs;
         String errMsg = null;
+        Exception invokeCaught = null;
         GatewayGovernanceService.InvokeGovernanceLease governanceLease = null;
         try {
             governanceLease = gatewayGovernanceService.applyPreInvoke(userId, apiKey, type, id, 1);
@@ -590,6 +591,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             latencyMs = resp.latencyMs();
             status = statusCode >= 200 && statusCode < 300 ? "success" : "error";
         } catch (Exception e) {
+            invokeCaught = e;
             statusCode = 500;
             respBody = "";
             latencyMs = 0L;
@@ -602,7 +604,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             errMsg = abbreviateForCallLog(respBody, 4000);
         }
 
-        boolean invokeOk = "success".equals(status);
+        Boolean circuitOutcome = classifyGatewayInvokeCircuitOutcome(status, statusCode, invokeCaught);
         CallLog log = new CallLog();
         log.setId(reqId);
         log.setTraceId(traceId);
@@ -633,7 +635,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         final String finalStatus = status;
         final long finalLatencyMs = latencyMs;
         transactionTemplate.executeWithoutResult(tx -> {
-            recordCircuitResult(type, resolved.getResourceCode(), invokeOk);
+            recordCircuitResult(type, resolved.getResourceCode(), circuitOutcome);
             callLogMapper.insert(log);
             traceSpanMapper.insert(span);
             UsageRecord usageRecord = buildUsageRecord(userId, type, resolved, request, finalStatus, finalLatencyMs);
@@ -737,7 +739,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             gatewayGovernanceService.release(governanceLease);
         }
         long latencyMs = Math.max(0L, (System.nanoTime() - t0) / 1_000_000L);
-        boolean invokeOk = "success".equals(status[0]);
+        Boolean circuitOutcome = classifyGatewayInvokeCircuitOutcome(status[0], statusCode[0], toRethrow);
         CallLog log = new CallLog();
         log.setId(reqId);
         log.setTraceId(traceId);
@@ -768,7 +770,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         String finalStatus = status[0];
         long finalLatencyMs = latencyMs;
         transactionTemplate.executeWithoutResult(tx -> {
-            recordCircuitResult(type, resolved.getResourceCode(), invokeOk);
+            recordCircuitResult(type, resolved.getResourceCode(), circuitOutcome);
             callLogMapper.insert(log);
             traceSpanMapper.insert(span);
             UsageRecord usageRecord = buildUsageRecord(userId, type, resolved, request, finalStatus, finalLatencyMs);
@@ -1111,7 +1113,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
     /**
      * 目录 {@code callableOnly=true}：与前端 {@code isCatalogMcpCallable} 对齐，避免「广场已标不可调用仍出现在 MCP 对外集成」。
-     * 比 {@link #ensureResourceHealthNotDown} 更严：含 unhealthy/offline/degraded、熔断 HALF_OPEN / FORCED_OPEN 等（invoke 仍走原校验）。
+     * <p>
+     * 健康侧与 {@link #ensureResourceHealthNotDown} 对齐：仅 {@code down} / {@code disabled} 视为不可调用；
+     * {@code degraded} 仍可调（与网关 invoke 一致），由观测/降级提示传达风险。
+     * 熔断侧：{@code OPEN}/{@code FORCED_OPEN} 不可入目录；{@code HALF_OPEN} 允许入目录以便完成半开探测恢复。
      */
     private boolean isResourcePhysicallyCallable(Long resourceId, String resourceType) {
         if (resourceId == null) {
@@ -1134,15 +1139,12 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             return false;
         }
         String h = raw.trim().toLowerCase(Locale.ROOT).replace('-', '_');
-        return "down".equals(h)
-                || "disabled".equals(h)
-                || "unhealthy".equals(h)
-                || "offline".equals(h)
-                || "out_of_service".equals(h)
-                || "degraded".equals(h);
+        return "down".equals(h) || "disabled".equals(h);
     }
 
-    /** 与前端目录「不可调用」一致：OPEN / FORCED_OPEN / HALF_OPEN 均不纳入 callableOnly（invoke 对 HALF_OPEN 在达次限时才拒）。 */
+    /**
+     * 与前端目录「不可调用」一致：仅 FULL_OPEN 态拒入；HALF_OPEN 仍展示为可尝试（与 {@link #ensureNotCircuitOpen} 限流探测一致）。
+     */
     private boolean isCircuitExcludedFromCallableCatalog(Long resourceId, String resourceType) {
         if (resourceId == null || !StringUtils.hasText(resourceType)) {
             return false;
@@ -1155,7 +1157,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             return false;
         }
         String state = valueOf(row.get("current_state")).trim().toUpperCase(Locale.ROOT);
-        return "OPEN".equals(state) || "FORCED_OPEN".equals(state) || "HALF_OPEN".equals(state);
+        return "OPEN".equals(state) || "FORCED_OPEN".equals(state);
     }
 
     private void ensureNotCircuitOpen(String resourceType, String resourceCode) {
@@ -1185,7 +1187,49 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         }
     }
 
-    private void recordCircuitResult(String resourceType, String resourceCode, boolean success) {
+    /**
+     * 将网关调用结果映射为资源级熔断计数：
+     * <ul>
+     *   <li>{@code true}：计为成功（清零失败计数、半开恢复等，沿用原逻辑）</li>
+     *   <li>{@code false}：计为失败（累加 failure_count，可能触发 OPEN）</li>
+     *   <li>{@code null}：不计入熔断（调用方错误、上游 4xx 等，不应当把资源算作宕机）</li>
+     * </ul>
+     */
+    private static Boolean classifyGatewayInvokeCircuitOutcome(String status, int statusCode, Throwable invokeError) {
+        if ("success".equals(status)) {
+            return true;
+        }
+        if (invokeError instanceof BusinessException be && isCircuitNeutralBusinessCode(be.getCode())) {
+            return null;
+        }
+        if (statusCode >= 400 && statusCode < 500) {
+            return null;
+        }
+        return false;
+    }
+
+    /**
+     * 本端校验/策略类错误：不代表上游 MCP/HTTP 服务不可用，不参与资源熔断统计。
+     */
+    private static boolean isCircuitNeutralBusinessCode(int code) {
+        return code == ResultCode.PARAM_ERROR.getCode()
+                || code == ResultCode.UNAUTHORIZED.getCode()
+                || code == ResultCode.FORBIDDEN.getCode()
+                || code == ResultCode.NOT_FOUND.getCode()
+                || code == ResultCode.GATEWAY_API_KEY_REQUIRED.getCode()
+                || code == ResultCode.RATE_LIMITED.getCode()
+                || code == ResultCode.DAILY_QUOTA_EXHAUSTED.getCode()
+                || code == ResultCode.MONTHLY_QUOTA_EXHAUSTED.getCode()
+                || code == ResultCode.QUOTA_EXCEEDED.getCode()
+                || code == ResultCode.RESOURCE_HEALTH_DOWN.getCode()
+                || code == ResultCode.CIRCUIT_OPEN.getCode();
+    }
+
+    private void recordCircuitResult(String resourceType, String resourceCode, Boolean success) {
+        if (success == null) {
+            return;
+        }
+        boolean successBool = success;
         Long resourceId = resolveCanonicalResourceId(resourceType, resourceCode);
         if (resourceId == null) {
             return;
@@ -1207,16 +1251,16 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                     resourceType,
                     valueOf(base.get("resource_code")),
                     valueOf(base.get("display_name")),
-                    success ? 1L : 0L,
-                    success ? 0L : 1L);
-            if (!success) {
+                    successBool ? 1L : 0L,
+                    successBool ? 0L : 1L);
+            if (!successBool) {
                 applyAutoOpen(resourceType, resourceId);
             }
             return;
         }
 
         String currentState = valueOf(current.get("current_state"));
-        if (success) {
+        if (successBool) {
             if ("HALF_OPEN".equalsIgnoreCase(currentState)) {
                 long successCount = longValue(current.get("success_count")) + 1L;
                 long allowed = Math.max(1L, longValue(current.get("half_open_max_calls")));
@@ -1254,6 +1298,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 resourceType, resourceId);
         applyAutoOpen(resourceType, resourceId);
     }
+
 
     private void applyAutoOpen(String resourceType, Long resourceId) {
         Map<String, Object> row = queryOne(

@@ -84,9 +84,10 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
         }
         String accept = StringUtils.hasText(i().getMcpHttpAccept()) ? i().getMcpHttpAccept().trim() : "application/json, text/event-stream";
 
+        boolean attachSession = shouldAttachCachedMcpSession(payload, spec);
         HttpResponse<InputStream> resp;
         try {
-            resp = sendWithRedirectGuard(endpoint, to, traceId, bodyJson, accept, spec, ctx, true);
+            resp = sendWithRedirectGuard(endpoint, to, traceId, bodyJson, accept, spec, ctx, attachSession);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("MCP 流式请求被中断", e);
@@ -188,7 +189,8 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
         String accept = StringUtils.hasText(i().getMcpHttpAccept()) ? i().getMcpHttpAccept().trim() : "application/json, text/event-stream";
 
         long t0 = System.nanoTime();
-        HttpResponse<InputStream> resp = sendWithRedirectGuard(endpoint, to, traceId, bodyJson, accept, spec, ctx, true);
+        boolean attachSession = shouldAttachCachedMcpSession(payload, spec);
+        HttpResponse<InputStream> resp = sendWithRedirectGuard(endpoint, to, traceId, bodyJson, accept, spec, ctx, attachSession);
         if (resp.statusCode() == 401 && ctx != null && StringUtils.hasText(ctx.apiKeyId())) {
             String errBody;
             try (InputStream in = resp.body()) {
@@ -342,6 +344,25 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * {@code initialize} 用于在 Streamable HTTP 上开启新 MCP 会话；若携带 Redis 缓存的 {@code Mcp-Session-Id}，
+     * 多数上游会对已初始化会话再次执行 initialize 并返回 {@code Server already initialized}（JSON-RPC -32600）。
+     */
+    private static boolean shouldAttachCachedMcpSession(Map<String, Object> payload, Map<String, Object> spec) {
+        String method = null;
+        if (payload != null && payload.get("method") != null
+                && StringUtils.hasText(String.valueOf(payload.get("method")))) {
+            method = String.valueOf(payload.get("method")).trim();
+        } else if (spec != null && spec.get("method") != null
+                && StringUtils.hasText(String.valueOf(spec.get("method")))) {
+            method = String.valueOf(spec.get("method")).trim();
+        }
+        if (!StringUtils.hasText(method)) {
+            return true;
+        }
+        return !"initialize".equalsIgnoreCase(method);
     }
 
     private static String readHttpBody(HttpResponse<InputStream> resp, String traceId) throws IOException {

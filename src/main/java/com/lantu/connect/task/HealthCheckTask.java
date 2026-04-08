@@ -1,5 +1,6 @@
 package com.lantu.connect.task;
 
+import com.lantu.connect.monitoring.ResourceCircuitHealthBridge;
 import com.lantu.connect.realtime.RealtimePushService;
 import com.lantu.connect.task.support.TaskDistributedLock;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import org.springframework.util.StringUtils;
+
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,6 +33,7 @@ public class HealthCheckTask {
     private final TaskDistributedLock taskDistributedLock;
     private final JdbcTemplate jdbcTemplate;
     private final RealtimePushService realtimePushService;
+    private final ResourceCircuitHealthBridge resourceCircuitHealthBridge;
 
     @Scheduled(cron = "0 */1 * * * ?")
     public void run() {
@@ -83,6 +87,11 @@ public class HealthCheckTask {
                 jdbcTemplate.update(
                         "UPDATE t_resource_health_config SET health_status = ?, last_check_time = ? WHERE id = ?",
                         status, checkedAt, id);
+                if ("healthy".equalsIgnoreCase(status)
+                        && resourceId != null
+                        && StringUtils.hasText(resourceType)) {
+                    resourceCircuitHealthBridge.resetOpenOrHalfOpenAfterHealthyProbe(resourceType, resourceId);
+                }
                 if (resourceId != null
                         && !normHealthStatus(prevHealth).equals(normHealthStatus(status))) {
                     realtimePushService.pushHealthProbeStatusChanged(
