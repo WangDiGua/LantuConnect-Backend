@@ -98,8 +98,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(conn -> {
             PreparedStatement ps = conn.prepareStatement("""
-                    INSERT INTO t_resource(resource_type, resource_code, display_name, description, status, source_type, provider_id, category_id, access_policy, created_by, deleted, create_time, update_time)
-                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    INSERT INTO t_resource(resource_type, resource_code, display_name, description, status, source_type, provider_id, access_policy, created_by, deleted, create_time, update_time)
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                     """, Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, type);
             ps.setString(2, request.getResourceCode().trim());
@@ -108,11 +108,10 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             ps.setString(5, ResourceLifecycleStateMachine.STATUS_DRAFT);
             ps.setString(6, request.getSourceType());
             ps.setObject(7, request.getProviderId());
-            ps.setObject(8, request.getCategoryId());
-            ps.setString(9, accessPolicy.wireValue());
-            ps.setLong(10, operatorUserId);
+            ps.setString(8, accessPolicy.wireValue());
+            ps.setLong(9, operatorUserId);
+            ps.setTimestamp(10, Timestamp.valueOf(now));
             ps.setTimestamp(11, Timestamp.valueOf(now));
-            ps.setTimestamp(12, Timestamp.valueOf(now));
             return ps;
         }, keyHolder);
         Long resourceId = keyHolder.getKey() == null ? null : keyHolder.getKey().longValue();
@@ -524,7 +523,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 """
                         SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.source_type, \
-                        r.provider_id, r.category_id, r.access_policy, r.created_by, r.create_time, r.update_time, \
+                        r.provider_id, r.access_policy, r.created_by, r.create_time, r.update_time, \
                         (SELECT v.version FROM t_resource_version v WHERE v.resource_id = r.id AND v.is_current = 1 LIMIT 1) AS current_version \
                         FROM t_resource r \
                         """
@@ -686,7 +685,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         ResourceAccessPolicy accessPolicy = resolveAccessPolicyForUpdate(resourceId, request);
         jdbcTemplate.update("""
                         UPDATE t_resource
-                        SET resource_code = ?, display_name = ?, description = ?, source_type = ?, provider_id = ?, category_id = ?, access_policy = ?, update_time = NOW()
+                        SET resource_code = ?, display_name = ?, description = ?, source_type = ?, provider_id = ?, access_policy = ?, update_time = NOW()
                         WHERE id = ? AND deleted = 0
                         """,
                 request.getResourceCode().trim(),
@@ -694,7 +693,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 request.getDescription(),
                 request.getSourceType(),
                 request.getProviderId(),
-                request.getCategoryId(),
                 accessPolicy.wireValue(),
                 resourceId);
         upsertExtension(normalizedType, resourceId, request);
@@ -907,7 +905,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         vo.setDescription(r.getDescription());
         vo.setSourceType(r.getSourceType());
         vo.setProviderId(r.getProviderId());
-        vo.setCategoryId(r.getCategoryId());
+        vo.setTagIds(r.getTagIds() == null ? null : new ArrayList<>(r.getTagIds()));
         vo.setAccessPolicy(r.getAccessPolicy());
         vo.setRelatedResourceIds(r.getRelatedResourceIds() == null ? null : new ArrayList<>(r.getRelatedResourceIds()));
         vo.setAgentType(r.getAgentType());
@@ -1095,7 +1093,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     }
 
     /**
-     * 将当前 VO 转为更新请求体，供「快照写回」与 {@link #mergeSnapshotOntoCurrent} 叠加；目录标签依赖 categoryId，关联资源显式拷贝以免被 sync 误删语义依赖 null。
+     * 将当前 VO 转为更新请求体，供「快照写回」与 {@link #mergeSnapshotOntoCurrent} 叠加；目录标签依赖 tagIds（t_resource_tag_rel），关联资源显式拷贝以免被 sync 误删语义依赖 null。
      */
     private ResourceUpsertRequest voToUpsertRequest(ResourceManageVO vo) {
         ResourceUpsertRequest req = new ResourceUpsertRequest();
@@ -1105,7 +1103,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         req.setDescription(vo.getDescription());
         req.setSourceType(vo.getSourceType());
         req.setProviderId(vo.getProviderId());
-        req.setCategoryId(vo.getCategoryId());
+        if (vo.getTagIds() != null) {
+            req.setTagIds(new ArrayList<>(vo.getTagIds()));
+        }
         req.setAccessPolicy(vo.getAccessPolicy());
         if (vo.getRelatedResourceIds() != null) {
             req.setRelatedResourceIds(new ArrayList<>(vo.getRelatedResourceIds()));
@@ -1160,12 +1160,14 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     }
 
     /**
-     * 以当前主资源为基准合并版本快照；保留 {@code categoryId}、关联 ID、快照未给出的扩展字段。
+     * 以当前主资源为基准合并版本快照；保留 {@code tagIds}、关联 ID、快照未给出的扩展字段。
      */
     private ResourceUpsertRequest mergeSnapshotOntoCurrent(ResourceManageVO current, Map<String, Object> snap) {
         ResourceUpsertRequest req = voToUpsertRequest(current);
         req.setResourceType(current.getResourceType());
-        req.setCategoryId(current.getCategoryId());
+        if (current.getTagIds() != null) {
+            req.setTagIds(new ArrayList<>(current.getTagIds()));
+        }
         if (current.getRelatedResourceIds() != null) {
             req.setRelatedResourceIds(new ArrayList<>(current.getRelatedResourceIds()));
         }
@@ -1310,7 +1312,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private ResourceManageVO findResource(Long id) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT id, resource_type, resource_code, display_name, description, status, source_type, provider_id, category_id, access_policy, created_by, create_time, update_time
+                SELECT id, resource_type, resource_code, display_name, description, status, source_type, provider_id, access_policy, created_by, create_time, update_time
                 FROM t_resource
                 WHERE id = ? AND deleted = 0
                 LIMIT 1
@@ -1323,6 +1325,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         enrichExtensionFields(vo, id);
         enrichCurrentVersionLabel(vo, id);
         enrichCatalogTagNames(vo, id);
+        enrichCatalogTagIds(vo, id);
         enrichWorkingDraftFields(vo, id);
         enrichLifecycleContext(vo, null);
         enrichObservabilityFields(vo);
@@ -2532,7 +2535,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 .status(stringValue(row.get("status")))
                 .sourceType(stringValue(row.get("source_type")))
                 .providerId(longValue(row.get("provider_id")))
-                .categoryId(longValue(row.get("category_id")))
                 .accessPolicy(ResourceAccessPolicy.fromStored(row.get("access_policy")).wireValue())
                 .createdBy(longValue(row.get("created_by")))
                 .createTime(toDateTime(row.get("create_time")))
@@ -2607,17 +2609,21 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     }
 
     /**
-     * 与目录按标签名筛选一致：维护 t_resource_tag_rel。categoryId 为 t_tag.id；dataset 的 request.tags 仅当名称在 t_tag 中存在时写入（不自动建标签）。
+     * 维护 t_resource_tag_rel：{@code request.tagIds} 须经存在性校验且标签桶位为当前 resourceType 或 general；
+     * dataset 另可按 {@code request.tags} 名称解析已存在标签（不自动建标签）。
      */
     private void syncResourceTagRels(Long resourceId, String resourceType, ResourceUpsertRequest request) {
         jdbcTemplate.update("DELETE FROM t_resource_tag_rel WHERE resource_id = ? AND resource_type = ?",
                 resourceId, resourceType);
-        LinkedHashSet<Long> tagIds = new LinkedHashSet<>();
-        if (request.getCategoryId() != null) {
-            Integer cnt = jdbcTemplate.queryForObject("SELECT COUNT(1) FROM t_tag WHERE id = ?",
-                    Integer.class, request.getCategoryId());
-            if (cnt != null && cnt > 0) {
-                tagIds.add(request.getCategoryId());
+        LinkedHashSet<Long> collected = new LinkedHashSet<>();
+        if (request.getTagIds() != null) {
+            for (Long candidate : request.getTagIds()) {
+                if (candidate == null) {
+                    continue;
+                }
+                if (tagAllowedForResourceType(resourceType, candidate)) {
+                    collected.add(candidate);
+                }
             }
         }
         if ("dataset".equals(resourceType) && request.getTags() != null) {
@@ -2631,15 +2637,47 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                         (rs, i) -> rs.getLong(1),
                         label);
                 if (found.size() == 1) {
-                    tagIds.add(found.get(0));
+                    collected.add(found.get(0));
                 }
             }
         }
-        for (Long tagId : tagIds) {
+        for (Long tagId : collected) {
             jdbcTemplate.update(
                     "INSERT INTO t_resource_tag_rel(resource_type, resource_id, tag_id) VALUES(?, ?, ?)",
                     resourceType, resourceId, tagId);
         }
+    }
+
+    /** t_tag.category 为 general 或与资源类型一致时才写入 rel，避免跨桶误关联。 */
+    private boolean tagAllowedForResourceType(String resourceType, Long tagId) {
+        Integer cnt = jdbcTemplate.queryForObject("SELECT COUNT(1) FROM t_tag WHERE id = ?",
+                Integer.class, tagId);
+        if (cnt == null || cnt == 0) {
+            return false;
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT category FROM t_tag WHERE id = ? LIMIT 1", tagId);
+        if (rows.isEmpty()) {
+            return false;
+        }
+        String cat = stringValue(rows.get(0).get("category"));
+        if (!StringUtils.hasText(cat)) {
+            return false;
+        }
+        String c = cat.trim().toLowerCase(Locale.ROOT);
+        return "general".equals(c) || c.equals(normalizeType(resourceType));
+    }
+
+    private void enrichCatalogTagIds(ResourceManageVO vo, Long resourceId) {
+        if (vo == null || resourceId == null || !StringUtils.hasText(vo.getResourceType())) {
+            return;
+        }
+        List<Long> ids = jdbcTemplate.query(
+                "SELECT t.id FROM t_resource_tag_rel rt INNER JOIN t_tag t ON t.id = rt.tag_id "
+                        + "WHERE rt.resource_id = ? AND rt.resource_type = ? ORDER BY t.name",
+                (rs, i) -> rs.getLong(1),
+                resourceId, vo.getResourceType());
+        vo.setTagIds(ids.isEmpty() ? List.of() : ids);
     }
 
     private void enrichCatalogTagNames(ResourceManageVO vo, Long resourceId) {
