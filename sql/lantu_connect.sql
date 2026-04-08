@@ -1105,7 +1105,7 @@ CREATE TABLE `t_security_setting`  (
 -- ----------------------------
 -- Records of t_security_setting
 -- ----------------------------
-INSERT INTO `t_security_setting` VALUES ('audit_log_retention', '90', '审计日志保留', '审计日志保留天数', 'input', NULL, '数据安全');
+INSERT INTO `t_security_setting` VALUES ('audit_log_retention', '90', '审计日志保留', '审计日志保留天数', 'number', NULL, '数据安全');
 INSERT INTO `t_security_setting` VALUES ('data_encryption', 'true', '数据加密', '是否启用敏感数据加密存储', 'toggle', NULL, '数据安全');
 INSERT INTO `t_security_setting` VALUES ('password_complexity', 'medium', '密码复杂度', '密码复杂度要求', 'select', '[\"low\", \"medium\", \"high\"]', '认证');
 INSERT INTO `t_security_setting` VALUES ('session_binding', 'none', '会话绑定', '会话绑定方式', 'select', '[\"none\", \"ip\", \"device\"]', '认证');
