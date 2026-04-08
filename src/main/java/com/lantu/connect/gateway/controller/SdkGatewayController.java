@@ -5,6 +5,7 @@ import com.lantu.connect.common.security.GatewayAuthDetails;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.gateway.dto.AggregatedCapabilityToolsVO;
 import com.lantu.connect.gateway.dto.InvokeRequest;
 import com.lantu.connect.gateway.dto.InvokeResponse;
 import com.lantu.connect.gateway.dto.ResourceCatalogItemVO;
@@ -40,8 +41,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Tag(name = "SDK统一网关", description = """
         稳定 v1 路径，语义与同服务根路径目录/解析/invoke 一致；本组所有接口必须携带有效 X-Api-Key。
-        `include`（目录/详情/解析）为逗号分隔：observability、quality、tags。
-        资源 `access_policy`（grant_required / open_org / open_platform）影响 Grant 是否豁免，见 ResourceInvokeGrantService。""")
+        `include`（目录/详情/解析）为逗号分隔：observability、quality、tags、closure、bindings（单资源详情返回 bindingClosure）。
+        调用授权以 API Key scope 与 published 为主；资源级 Grant 表已下线。""")
 @SecurityRequirement(name = OpenApiConfiguration.API_KEY_SECURITY)
 public class SdkGatewayController {
 
@@ -64,12 +65,25 @@ public class SdkGatewayController {
     public R<ResourceResolveVO> getByTypeAndId(@PathVariable String type,
                                                @PathVariable String id,
                                                @RequestParam(value = "include", required = false)
-                                               @Parameter(description = "可选：observability、quality、tags，逗号分隔") String include,
+                                               @Parameter(description = "可选：observability、quality、tags、closure、bindings") String include,
                                                @Parameter(description = "应用API Key")
                                                @RequestHeader(value = "X-Api-Key") String apiKeyRaw) {
         Long userId = resolveTrustedUserId();
         ApiKey apiKey = requireSdkApiKey(apiKeyRaw);
         return R.ok(unifiedGatewayService.getByTypeAndId(type, id, include, apiKey, userId));
+    }
+
+    @Operation(summary = "绑定闭包 MCP 工具聚合", description = "等同 GET /catalog/capabilities/tools。")
+    @GetMapping("/capabilities/tools")
+    public R<AggregatedCapabilityToolsVO> aggregatedTools(
+            @RequestParam @Parameter(description = "入口资源类型") String entryResourceType,
+            @RequestParam @Parameter(description = "入口资源 ID") String entryResourceId,
+            @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
+            @Parameter(description = "应用API Key")
+            @RequestHeader(value = "X-Api-Key") String apiKeyRaw) {
+        Long userId = resolveTrustedUserId();
+        ApiKey apiKey = requireSdkApiKey(apiKeyRaw);
+        return R.ok(unifiedGatewayService.aggregatedCapabilityTools(userId, traceId, apiKey, entryResourceType, entryResourceId));
     }
 
     @Operation(summary = "资源解析", description = "等同 POST /catalog/resolve；请求体见 ResourceResolveRequest。")
@@ -82,7 +96,7 @@ public class SdkGatewayController {
         return R.ok(unifiedGatewayService.resolve(request, apiKey, userId));
     }
 
-    @Operation(summary = "统一调用入口", description = "等同 POST /invoke；skill 不可 invoke。")
+    @Operation(summary = "统一调用入口", description = "等同 POST /invoke；hosted skill 可 invoke，技能包不可。")
     @PostMapping("/invoke")
     public ResponseEntity<R<InvokeResponse>> invoke(
                                     @Parameter(description = "链路追踪ID，可为空")

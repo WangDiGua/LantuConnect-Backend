@@ -11,10 +11,10 @@
 
 - 后端已经打通五类资源的主链路：**注册 -> 提审 -> 审核 -> 发布 -> 目录可见 -> 使用/调用**。
 - 上架不是一步：**`approve` 不等于上架**，必须再执行 `publish` 才到 `published`。
-- 授权不是“授权链接”：当前是 **`API Key + Scope + Grant` 三层校验模型**。
+- 统一网关消费：**`API Key + Scope + published（及资源可见性）`** 为主；**每资源 Grant 表对 invoke/目录已不做拦截**（实现见 `ResourceInvokeGrantService` 注释）。
 - 五类资源都能注册，但“使用方式”不同（与 `PRODUCT_DEFINITION.md` §2–§3 一致）：
-  - `agent` / `mcp`：可走统一调用 `POST /invoke`（MCP 流式用 `invoke-stream`）。
-  - `skill`：**禁止**统一网关 `POST /invoke`；以 `resolve` + 技能制品下载为主，远程可执行工具请注册为 `mcp`。
+  - `agent` / `mcp`：可走统一调用 `POST /invoke`（MCP 流式用 `invoke-stream`）。`mcp` 可登记 **前置 Hosted Skill**，网关内在转发上游前按链归一化 JSON（见 `docs/改造计划/platform-transformation-spec-freeze.md`）。
+  - `skill`：**技能包（`execution_mode=pack`）** 仍禁止 `POST /invoke`；**托管技能（`execution_mode=hosted`）** 可走 `invoke`（平台代调 LLM）。远程工具请登记 `mcp`。
   - `app`：主要是 `resolve` 后拿 URL 跳转/嵌入；`invoke` 多为 redirect/票据语义。
   - `dataset`：主要是元数据消费（`invokeType=metadata` 等），**无**通用统一 `invoke` 执行模型。
 
@@ -56,7 +56,7 @@
 
 ## 3.1 注册中心（资源拥有者）
 
-- **消费策略 `accessPolicy`（可选）**：写入主表 `t_resource.access_policy`。取值 `grant_required`（默认）、`open_org`、`open_platform`。网关侧已由 `ResourceInvokeGrantService.ensureApiKeyGranted` 读取：**`open_platform`** 在满足 Key 与 scope 前提下 **免 per-resource Grant**；**`open_org`** 仅当 **X-Api-Key 为用户 Key** 且 Key 所属用户与资源 **owner 的 `menu_id`（部门）一致** 时免 Grant；否则仍须 Grant。创建缺省 `grant_required`；**更新省略字段则保留库值**。
+- **消费策略 `accessPolicy`（可选）**：写入主表 `t_resource.access_policy`（历史字段，产品文档可能仍列 `grant_required/open_org/open_platform`）。**网关 invoke 路径以 API Key scope 为准**，不再按 per-resource Grant 表裁决；创建缺省 `grant_required`；**更新省略字段则保留库值**。
 - `POST /resource-center/resources` 创建资源（初始 `draft`）
 - `PUT /resource-center/resources/{id}` 更新资源
 - `DELETE /resource-center/resources/{id}` 删除（受状态机限制）
@@ -84,8 +84,9 @@
 
 - **目录类型权限**：登录用户按 Casbin 权限过滤资源类型（`GatewayUserPermissionService`）：`agent` 需 `agent:read` 或 `skill:read`；`skill`/`mcp` 需 `skill:read`；`app` 需 `app:view`；`dataset` 需 `dataset:read`。系统预置 **`consumer`** 角色仅含上述只读权限，适合「只逛市场」账号。`/catalog/resources/trending` 与 `/catalog/resources/search-suggestions` 与主列表使用**同一**类型谓词。
 - `GET /catalog/resources` 目录列表
-- `GET /catalog/resources/{type}/{id}` 按类型详情解析
+- `GET /catalog/resources/{type}/{id}` 按类型详情解析；`include` 可含 **`closure` 或 `bindings`**，响应 `bindingClosure` 为绑定无向闭包资源摘要。
 - `POST /catalog/resolve` 统一解析
+- `GET /catalog/capabilities/tools?entryResourceType=&entryResourceId=` **（可选 BFF）** 对闭包内 MCP 聚合 `tools/list`，返回 OpenAI tools 形态与 `routes` 映射（须 `X-Api-Key`，入口 resolve scope + 各 MCP invoke scope）。
 - `POST /invoke` 统一调用（必须 `X-Api-Key`）
 
 **`X-Api-Key` 填什么（与列表里看到的不同）**
@@ -93,11 +94,16 @@
 - 创建接口 `POST /user-settings/api-keys` 或 `POST /user-mgmt/api-keys` 成功后，响应体 **`data.secretPlain`** 为完整可调用密钥（形如 `sk_` + 32 位十六进制），**仅在此一次响应中返回**，前端须提示用户立即复制保存。
 - 列表/详情里常见的 **`maskedKey`（如 `sk_3****`）、`prefix`、`id`（表主键）都不能**当作 `X-Api-Key` 传入：网关会对请求头**整串**做 SHA-256，与库中 `key_hash` 比对；遗失明文只能删除该 Key 后重建。
 
-## 3.4 授权（Grant）
+## 3.4 资源级 Grant（管理接口保留；网关 invoke 不依赖）
 
-- `POST /resource-grants` 授权给某个 API Key
-- `GET /resource-grants?resourceType=&resourceId=` 查看某资源授权列表
-- `DELETE /resource-grants/{grantId}` 撤销授权
+- **真值**：`ResourceInvokeGrantService.ensureApiKeyGranted` 对 **已存在资源** 仅做 owner/Key 归属等基础校验，**不再查询** `t_resource_invoke_grant` 来决定可否 `invoke`/`catalog_read`。
+- **管理 CRUD 仍存在**：`POST /resource-grants`、`GET /resource-grants`、`DELETE /resource-grants/{grantId}`（若前端已下线 Grant UI，可视为遗留或仅审计用途）。
+
+### 3.4.1 绑定字段（注册 JSON）
+
+- **Agent**：`relatedResourceIds`（`agent_depends_skill`，历史）、`relatedMcpResourceIds`（`agent_depends_mcp`）。
+- **MCP**：`relatedPreSkillResourceIds`（`mcp_depends_skill`，顺序为前置链）。
+- **Skill**：`executionMode`：`pack` | `hosted`；hosted 须 `hostedSystemPrompt` 等（见 `ResourceUpsertRequest` / Swagger）。
 
 ## 3.5 开发者 owner 维度统计
 

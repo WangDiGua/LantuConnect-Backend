@@ -37,6 +37,12 @@ public class ResourceManageVO {
     /** agent / skill 等：关联资源 ID（与入参 relatedResourceIds 一致）。 */
     private List<Long> relatedResourceIds;
 
+    /** agent：绑定的 MCP id */
+    private List<Long> relatedMcpResourceIds;
+
+    /** mcp：前置 skill id */
+    private List<Long> relatedPreSkillResourceIds;
+
     // --- agent (t_resource_agent_ext) ---
     private String agentType;
     private String mode;
@@ -65,6 +71,14 @@ public class ResourceManageVO {
     /** skill：已废弃，API 恒为 null。 */
     private String displayTemplate;
     private Map<String, Object> parametersSchema;
+
+    /** skill：pack | hosted */
+    private String executionMode;
+    private String hostedSystemPrompt;
+    private String hostedUserTemplate;
+    private String hostedDefaultModel;
+    private Map<String, Object> hostedOutputSchema;
+    private Double hostedTemperature;
 
     // --- mcp (t_resource_mcp_ext) ---
     private String endpoint;

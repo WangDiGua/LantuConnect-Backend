@@ -71,4 +71,10 @@ public class ResourceResolveVO {
      */
     @Schema(description = "请求 include 含 quality 时填充")
     private Map<String, Object> quality;
+
+    /**
+     * include=closure 或 include=bindings 时：与当前资源在无向绑定图上同连通的已发布资源（去重）。
+     */
+    @Schema(description = "绑定闭包内资源摘要")
+    private List<ResourceSummaryVO> bindingClosure;
 }

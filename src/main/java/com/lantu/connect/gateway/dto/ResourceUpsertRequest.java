@@ -32,8 +32,8 @@ public class ResourceUpsertRequest {
     private List<Long> tagIds;
 
     /**
-     * 消费策略（主表 {@code t_resource.access_policy}）：{@code grant_required}（默认）、{@code open_org}、{@code open_platform}。
-     * 网关是否按策略短路 Grant 见后续实现阶段。
+     * 消费策略（主表 {@code t_resource.access_policy}）：{@code grant_required}、{@code open_org}、{@code open_platform}。
+     * 统一网关 invoke/resolve 以 API Key scope、发布态与 {@link com.lantu.connect.gateway.security.ResourceInvokeGrantService} 为准（每资源 Grant 表已下线）。
      */
     private String accessPolicy;
 
@@ -108,5 +108,33 @@ public class ResourceUpsertRequest {
      * 关联资源 ID 列表（Agent 依赖的 Skills、App 依赖的 Agent/Skills 等）。
      */
     private List<Long> relatedResourceIds;
+
+    /**
+     * 仅 agent：绑定的 MCP 资源 ID。null 表示本次不修改该关系；空列表表示清空。
+     */
+    private List<Long> relatedMcpResourceIds;
+
+    /**
+     * 仅 mcp：前置 Hosted Skill 资源 ID（执行顺序按 ID 升序）。null 不修改；[] 清空。
+     */
+    private List<Long> relatedPreSkillResourceIds;
+
+    /**
+     * 仅 skill：{@code pack}（默认）或 {@code hosted}。
+     */
+    private String executionMode;
+
+    /** hosted：系统提示 */
+    private String hostedSystemPrompt;
+
+    /** hosted：用户模板，可含 {@code {{input}}} */
+    private String hostedUserTemplate;
+
+    /** hosted：默认模型，可空则走全局配置 */
+    private String hostedDefaultModel;
+
+    private Map<String, Object> hostedOutputSchema;
+
+    private Double hostedTemperature;
 }
 

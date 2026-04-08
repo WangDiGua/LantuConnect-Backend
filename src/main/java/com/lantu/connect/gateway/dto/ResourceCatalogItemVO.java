@@ -88,4 +88,10 @@ public class ResourceCatalogItemVO {
      */
     @Schema(description = "携带 X-Api-Key 时非空：当前 Key 是否满足 invoke 的 Grant/策略（与网关一致）")
     private Boolean hasGrantForKey;
+
+    /**
+     * 仅 {@code resourceType=skill} 时由目录列表批量填充：{@code pack}（默认）或 {@code hosted}。
+     */
+    @Schema(description = "技能：execution_mode（pack | hosted）；非技能类型为 null")
+    private String executionMode;
 }

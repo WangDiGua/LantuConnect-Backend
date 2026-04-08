@@ -30,7 +30,13 @@
 - 管理端口与上下文路径见 `application.yml`（如 `server.port`、`server.servlet.context-path`）。  
 - **Actuator 聚合健康**：若 MySQL、Redis 等依赖未就绪，`/regis/actuator/health`（视 `server.servlet.context-path`）可能整体为 **503**，属预期；排查时可看各 `HealthIndicator` 明细。
 
-## 6. 相关源码入口（便于检索）
+## 6. 绑定闭包与 Hosted Skill
+
+- `t_resource_relation`：`agent_depends_mcp`、`mcp_depends_skill`、`agent_depends_skill`；`GET/resolve` 的 `include=closure|bindings` → `bindingClosure`。
+- `t_resource_skill_ext`：`execution_mode` 区分 `pack` / `hosted`；hosted 走 `HostedSkillExecutionService`（`lantu.hosted-llm`）。
+- MCP `invoke` / `invoke-stream` 在转发前可执行前置 Skill 链（`UnifiedGatewayServiceImpl.applyMcpPreSkillChain`）。详见 `docs/改造计划/platform-transformation-spec-freeze.md`；总览见 [platform-transformation-master-plan.md](../../改造计划/platform-transformation-master-plan.md)。
+
+## 7. 相关源码入口（便于检索）
 
 | 主题 | 主要类 |
 |------|--------|
@@ -38,3 +44,4 @@
 | 资源注册/版本/标签同步 | `ResourceRegistryServiceImpl` |
 | 存储 | `FileStorageService`, `FileStorageSupport` |
 | 技能制品下载 | `SkillArtifactDownloadService` |
+| 绑定闭包 / Hosted LLM | `ResourceBindingClosureService`, `HostedSkillExecutionService` |

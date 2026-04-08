@@ -313,9 +313,10 @@
 | 方法 | 路径 | 请求要点 | 鉴权/权限 | 结论 |
 |---|---|---|---|---|
 | GET | `/catalog/resources` | query:`ResourceCatalogQueryRequest` | `X-User-Id?`,`X-Api-Key?` | 保留 |
-| GET | `/catalog/resources/{type}/{id}` | path:`type,id` | `X-User-Id?`,`X-Api-Key?` | 保留 |
+| GET | `/catalog/resources/{type}/{id}` | path:`type,id`；query:`include` 可含 `closure`/`bindings` | `X-User-Id?`,`X-Api-Key?` | 保留 |
+| GET | `/catalog/capabilities/tools` | query:`entryResourceType,entryResourceId` | `X-Api-Key` 必填 | 可选：闭包 MCP `tools/list` 聚合 |
 | POST | `/catalog/resolve` | body:`ResourceResolveRequest` | `X-User-Id?`,`X-Api-Key?` | 保留 |
-| POST | `/invoke` | body:`InvokeRequest` | `X-Api-Key` 必填，`X-User-Id?`,`X-Trace-Id?` | 保留 |
+| POST | `/invoke` | body:`InvokeRequest` | `X-Api-Key` 必填，`X-User-Id?`,`X-Trace-Id?` | 保留；hosted skill / MCP 前置 skill 见实现 |
 
 ## 4.2.1 资源调用授权管理（新增）
 
@@ -662,12 +663,16 @@ Controller 方法无类级 `@RequireRole`；**待办可见范围与通过/驳回
 | `description` | String | 否 | 描述 |
 | `sourceType/providerId/categoryId` | String/Long | 否 | 来源与归属 |
 | `agentType/spec` | String/Object | agent 必填 | Agent 扩展 |
-| `skillType` / `artifactUri` / `manifest` / `entryDoc` / `skillRootPath` / `spec` / `parametersSchema` / `serviceDetailMd` / `isPublic` | 各类 | skill | **技能包**扩展：`skillType` 须 `anthropic_v1` 或 `folder_v1`；制品上传走 `/resource-center/resources/skills/package-upload*`；远程可调用工具须注册 **`resourceType=mcp`** |
+| `skillType` / `artifactUri` / `manifest` / `entryDoc` / `skillRootPath` / `spec` / `parametersSchema` / `serviceDetailMd` / `isPublic` | 各类 | skill **pack** | `skillType` 常用 `anthropic_v1` / `folder_v1`；制品上传走 `/resource-center/resources/skills/package-upload*`；`executionMode` 省略或 `pack` |
+| `executionMode` / `hostedSystemPrompt` / `hostedUserTemplate` / `hostedDefaultModel` / `hostedOutputSchema` / `hostedTemperature` | 部分 | skill **hosted** | `executionMode=hosted`，建议 `skillType=hosted_v1`；走 `POST /invoke` |
+| `relatedResourceIds` | List&lt;Long&gt; | agent 可选 | `agent_depends_skill` |
+| `relatedMcpResourceIds` | List&lt;Long&gt; | agent 可选 | `agent_depends_mcp` |
+| `relatedPreSkillResourceIds` | List&lt;Long&gt; | mcp 可选 | `mcp_depends_skill`（有序前置链，`invoke(mcp)` 前归一化 JSON） |
 | （兼容入参，已废弃）`mode`、`parentResourceId`、`displayTemplate`、`maxConcurrency` | — | skill | **服务端忽略**，写入扩展表时统一清空；管理 VO **不返回**上述 skill 字段 |
 | `endpoint/protocol/authType/authConfig` | String/Object | mcp: endpoint 必填 | MCP 扩展；`protocol` 必须后端可调用 |
 | `appUrl/embedType` | String | app 必填 | App 扩展 |
 | `dataType/format` | String | dataset 必填 | Dataset 扩展 |
-| `accessPolicy` | String | 否 | `grant_required`（默认）/ `open_org` / `open_platform`；写入 `t_resource.access_policy`，更新时**未传则保留原值**；网关 Grant 短路规则见 `PRODUCT_DEFINITION.md` §4 |
+| `accessPolicy` | String | 否 | 写入 `t_resource.access_policy`；**网关 invoke 以 Key scope 为准**（Grant 表已不作为拦截），见 `PRODUCT_DEFINITION.md` §4 |
 
 版本请求体（`ResourceVersionCreateRequest`）：
 

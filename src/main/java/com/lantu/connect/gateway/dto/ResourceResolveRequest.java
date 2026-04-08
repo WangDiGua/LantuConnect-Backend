@@ -20,10 +20,10 @@ public class ResourceResolveRequest {
     private String version;
 
     /**
-     * 可选扩展块，逗号分隔：observability,quality,tags
+     * 可选扩展块，逗号分隔：与目录 GET 相同。
      */
     @Schema(
-            description = "与目录 `include` 语义一致：逗号分隔 `observability`、`quality`、`tags`。",
-            example = "tags,observability")
+            description = "逗号分隔：`observability`、`quality`、`tags`、`closure`、`bindings`（后两者填充 bindingClosure）。",
+            example = "tags,observability,closure")
     private String include;
 }

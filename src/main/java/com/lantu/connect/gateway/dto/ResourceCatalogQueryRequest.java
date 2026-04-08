@@ -28,11 +28,11 @@ public class ResourceCatalogQueryRequest {
     private java.util.List<String> tags;
 
     /**
-     * 可选扩展块，逗号分隔：observability,quality,tags
+     * 可选扩展块，逗号分隔：observability,quality,tags（目录列表）；单资源详情另支持 closure,bindings。
      */
     @Schema(
             description = "逗号分隔的附加块：`observability`（观测）、`quality`（质量）、`tags`（标签列表）。"
-                    + "仅请求的片段会在响应中填充对应字段。",
+                    + "目录列表仅支持前三项；单资源 GET/resolve 还可传 `closure` 或 `bindings` 填充 `bindingClosure`。",
             example = "observability,quality")
     private String include;
 

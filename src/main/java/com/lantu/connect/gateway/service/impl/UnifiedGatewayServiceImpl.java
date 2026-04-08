@@ -9,6 +9,7 @@ import com.lantu.connect.common.web.ServletContextPathUtil;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.dashboard.dto.ExploreHubData;
+import com.lantu.connect.gateway.dto.AggregatedCapabilityToolsVO;
 import com.lantu.connect.gateway.dto.InvokeRequest;
 import com.lantu.connect.gateway.dto.InvokeResponse;
 import com.lantu.connect.gateway.dto.ResourceCatalogItemVO;
@@ -17,7 +18,9 @@ import com.lantu.connect.gateway.dto.ResourceResolveRequest;
 import com.lantu.connect.gateway.dto.ResourceResolveSpecSanitizer;
 import com.lantu.connect.gateway.dto.ResourceResolveVO;
 import com.lantu.connect.gateway.dto.ResourceStatsVO;
+import com.lantu.connect.gateway.dto.ResourceSummaryVO;
 import com.lantu.connect.gateway.dto.SearchSuggestion;
+import com.lantu.connect.gateway.dto.ToolDispatchRouteVO;
 import com.lantu.connect.gateway.model.ResourceAccessPolicy;
 import com.lantu.connect.gateway.protocol.McpJsonRpcProtocolInvoker;
 import com.lantu.connect.gateway.protocol.McpOutboundHeaderBuilder;
@@ -29,6 +32,8 @@ import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.security.GatewayGovernanceService;
 import com.lantu.connect.gateway.security.GatewayUserPermissionService;
 import com.lantu.connect.gateway.security.ResourceInvokeGrantService;
+import com.lantu.connect.gateway.service.HostedSkillExecutionService;
+import com.lantu.connect.gateway.service.ResourceBindingClosureService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
 import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import com.lantu.connect.monitoring.entity.CallLog;
@@ -94,6 +99,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private final McpJsonRpcProtocolInvoker mcpJsonRpcProtocolInvoker;
     private final RuntimeAppConfigService runtimeAppConfigService;
     private final UserDisplayNameResolver userDisplayNameResolver;
+    private final ResourceBindingClosureService resourceBindingClosureService;
+    private final HostedSkillExecutionService hostedSkillExecutionService;
 
     /**
      * 统一资源目录查询：固定从新模型主表检索，再叠加用户权限和 API Key scope 裁剪。
@@ -238,6 +245,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         attachCatalogCreatorNames(paged);
         attachCatalogReviewAggregates(paged);
         attachCatalogEngagementMetrics(paged);
+        attachSkillExecutionModes(paged);
         attachIncludesToCatalogItems(paged, includes);
         return PageResult.of(paged, filteredCount, page, pageSize);
     }
@@ -537,7 +545,6 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     public InvokeResponse invoke(Long userId, String traceId, String ip, InvokeRequest request, ApiKey apiKey) {
         String reqId = UUID.randomUUID().toString();
         String type = requireType(request.getResourceType());
-        ensureSkillNotInvokable(type);
         Long id = parseId(request.getResourceId());
         if (apiKey == null) {
             if (userId == null) {
@@ -547,6 +554,12 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         }
         ResourceResolveVO resolved = getByTypeAndId(type, String.valueOf(id), request.getVersion(), null, apiKey, userId, "invoke");
         ensurePublishedForInvoke(resolved);
+        if (TYPE_SKILL.equals(type)
+                && HostedSkillExecutionService.INVOKETYPE_HOSTED_LLM.equalsIgnoreCase(
+                normalizeProtocol(resolved.getInvokeType(), HostedSkillExecutionService.INVOKETYPE_HOSTED_LLM))) {
+            return invokeHostedSkill(reqId, userId, traceId, ip, request, apiKey, id, resolved);
+        }
+        ensureSkillNotInvokable(type);
         ensureNotCircuitOpen(type, resolved.getResourceCode());
         ensureResourceHealthNotDown(id);
         if (!StringUtils.hasText(resolved.getEndpoint())) {
@@ -568,12 +581,16 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         try {
             governanceLease = gatewayGovernanceService.applyPreInvoke(userId, apiKey, type, id, 1);
             ProtocolInvokeContext protoCtx = ProtocolInvokeContext.of(apiKey.getId(), id, userId);
+            Map<String, Object> payloadForInvoke = request.getPayload();
+            if (TYPE_MCP.equals(type)) {
+                payloadForInvoke = applyMcpPreSkillChain(id, payloadForInvoke);
+            }
             ProtocolInvokeResult resp = protocolInvokerRegistry.invoke(
                     protocol,
                     resolved.getEndpoint(),
                     timeoutSec,
                     traceId,
-                    request.getPayload(),
+                    payloadForInvoke,
                     resolved.getSpec(),
                     protoCtx);
             statusCode = resp.statusCode();
@@ -707,11 +724,15 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         try {
             governanceLease = gatewayGovernanceService.applyPreInvoke(userId, apiKey, type, id, 1);
             ProtocolInvokeContext protoCtx = ProtocolInvokeContext.of(apiKey.getId(), id, userId);
+            Map<String, Object> payloadForStream = request.getPayload();
+            if (TYPE_MCP.equals(type)) {
+                payloadForStream = applyMcpPreSkillChain(id, payloadForStream);
+            }
             mcpJsonRpcProtocolInvoker.streamMcpHttpResponseTo(
                     resolved.getEndpoint(),
                     timeoutSec,
                     traceId,
-                    request.getPayload(),
+                    payloadForStream,
                     resolved.getSpec(),
                     protoCtx,
                     responseBody);
@@ -874,12 +895,43 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private ResourceResolveVO resolveSkill(Map<String, Object> base, String version) {
         Long id = longValue(base.get("id"));
         Map<String, Object> ext = queryOne("""
-                        SELECT skill_type, artifact_uri, artifact_sha256, manifest_json, entry_doc, spec_json, parameters_schema, is_public, pack_validation_status, skill_root_path, service_detail_md
+                        SELECT skill_type, execution_mode, artifact_uri, artifact_sha256, manifest_json, entry_doc, spec_json, parameters_schema, is_public, pack_validation_status, skill_root_path, service_detail_md,
+                        hosted_default_model, hosted_output_schema
                         FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
                         """,
                 id);
         if (ext == null) {
             ext = Map.of();
+        }
+        String execMode = valueOf(ext.get("execution_mode")).trim().toLowerCase(Locale.ROOT);
+        if (HostedSkillExecutionService.EXECUTION_HOSTED.equals(execMode)) {
+            Map<String, Object> spec = new LinkedHashMap<>();
+            spec.put("executionMode", HostedSkillExecutionService.EXECUTION_HOSTED);
+            if (StringUtils.hasText(valueOf(ext.get("hosted_default_model")))) {
+                spec.put("defaultModel", valueOf(ext.get("hosted_default_model")).trim());
+            }
+            Map<String, Object> outSchema = parseJsonMap(ext.get("hosted_output_schema"));
+            if (!outSchema.isEmpty()) {
+                spec.put("outputSchema", outSchema);
+            }
+            Map<String, Object> params = parseJsonMap(ext.get("parameters_schema"));
+            if (!params.isEmpty()) {
+                spec.put("parametersSchema", params);
+            }
+            String skillDetailMd = valueOf(ext.get("service_detail_md"));
+            return ResourceResolveVO.builder()
+                    .resourceType(TYPE_SKILL)
+                    .resourceId(String.valueOf(id))
+                    .version(version)
+                    .resourceCode(valueOf(base.get("resource_code")))
+                    .displayName(valueOf(base.get("display_name")))
+                    .status(valueOf(base.get("status")))
+                    .createdBy(longOrNull(base.get("created_by")))
+                    .invokeType(HostedSkillExecutionService.INVOKETYPE_HOSTED_LLM)
+                    .endpoint(null)
+                    .spec(spec)
+                    .serviceDetailMd(StringUtils.hasText(skillDetailMd) ? skillDetailMd : null)
+                    .build();
         }
         Map<String, Object> spec = new LinkedHashMap<>();
         Map<String, Object> manifest = parseJsonMap(ext.get("manifest_json"));
@@ -1815,6 +1867,293 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         return rows.stream().filter(s -> typeOk.allow(s.getResourceType())).limit(10).toList();
     }
 
+    @Override
+    public AggregatedCapabilityToolsVO aggregatedCapabilityTools(Long userId,
+                                                                 String traceId,
+                                                                 ApiKey apiKey,
+                                                                 String entryResourceType,
+                                                                 String entryResourceId) {
+        if (apiKey == null) {
+            throw new BusinessException(ResultCode.GATEWAY_API_KEY_REQUIRED, "聚合工具列表须提供有效的 X-Api-Key");
+        }
+        String type = requireType(entryResourceType);
+        Long startId = parseId(entryResourceId);
+        if (userId != null) {
+            gatewayUserPermissionService.ensureAccess(userId, type);
+        }
+        apiKeyScopeService.ensureResolveAllowed(apiKey, type, String.valueOf(startId));
+        resourceInvokeGrantService.ensureApiKeyGranted(apiKey, "catalog_read", type, startId, userId);
+
+        List<ResourceSummaryVO> closure = resourceBindingClosureService.closureForResourceId(startId);
+        List<Map<String, Object>> openAiTools = new ArrayList<>();
+        List<ToolDispatchRouteVO> routes = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        Set<String> usedFunctionNames = new HashSet<>();
+        String rpcTrace = StringUtils.hasText(traceId) ? traceId.trim() : UUID.randomUUID().toString();
+
+        for (ResourceSummaryVO node : closure) {
+            if (node == null || !TYPE_MCP.equalsIgnoreCase(node.getResourceType())) {
+                continue;
+            }
+            long mcpId;
+            try {
+                mcpId = Long.parseLong(node.getResourceId());
+            } catch (Exception ex) {
+                continue;
+            }
+            try {
+                apiKeyScopeService.ensureInvokeAllowed(apiKey, TYPE_MCP, String.valueOf(mcpId));
+            } catch (BusinessException ex) {
+                warnings.add("skip mcp " + mcpId + ": " + ex.getMessage());
+                continue;
+            }
+            ResourceResolveVO mcpResolved;
+            try {
+                mcpResolved = getByTypeAndId(TYPE_MCP, String.valueOf(mcpId), null, null, apiKey, userId, "invoke");
+            } catch (BusinessException ex) {
+                warnings.add("resolve mcp " + mcpId + ": " + ex.getMessage());
+                continue;
+            }
+            ensurePublishedForInvoke(mcpResolved);
+            if (!StringUtils.hasText(mcpResolved.getEndpoint())) {
+                warnings.add("skip mcp " + mcpId + ": missing endpoint");
+                continue;
+            }
+            String protocol = normalizeProtocol(mcpResolved.getInvokeType(), "http");
+            if (!"mcp".equalsIgnoreCase(protocol)) {
+                warnings.add("skip mcp " + mcpId + ": invokeType is not mcp");
+                continue;
+            }
+            try {
+                ProtocolInvokeContext protoCtx = ProtocolInvokeContext.of(apiKey.getId(), mcpId, userId);
+                Map<String, Object> listPayload = new LinkedHashMap<>();
+                listPayload.put("method", "tools/list");
+                ProtocolInvokeResult resp = protocolInvokerRegistry.invoke(
+                        protocol,
+                        mcpResolved.getEndpoint(),
+                        45,
+                        rpcTrace,
+                        listPayload,
+                        mcpResolved.getSpec(),
+                        protoCtx);
+                if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+                    warnings.add("mcp " + mcpId + " tools/list HTTP " + resp.statusCode());
+                    continue;
+                }
+                JsonNode root = objectMapper.readTree(resp.body() == null ? "{}" : resp.body());
+                JsonNode toolsNode = root.path("result").path("tools");
+                if (!toolsNode.isArray()) {
+                    warnings.add("mcp " + mcpId + " tools/list: unexpected result.tools");
+                    continue;
+                }
+                for (JsonNode tool : toolsNode) {
+                    String origName = tool.path("name").asText("");
+                    if (!StringUtils.hasText(origName)) {
+                        continue;
+                    }
+                    String unified = allocateUnifiedToolName(mcpId, origName, usedFunctionNames);
+                    String description = tool.path("description").asText("");
+                    JsonNode schemaNode = tool.get("inputSchema");
+                    if (schemaNode == null || schemaNode.isNull()) {
+                        schemaNode = objectMapper.readTree("{\"type\":\"object\",\"properties\":{}}");
+                    }
+                    Map<String, Object> parameters = objectMapper.convertValue(schemaNode, new TypeReference<>() { });
+                    Map<String, Object> fn = new LinkedHashMap<>();
+                    fn.put("name", unified);
+                    fn.put("description", description);
+                    fn.put("parameters", parameters);
+                    Map<String, Object> oai = new LinkedHashMap<>();
+                    oai.put("type", "function");
+                    oai.put("function", fn);
+                    openAiTools.add(oai);
+                    routes.add(ToolDispatchRouteVO.builder()
+                            .unifiedFunctionName(unified)
+                            .resourceType(TYPE_MCP)
+                            .resourceId(String.valueOf(mcpId))
+                            .upstreamToolName(origName)
+                            .build());
+                }
+            } catch (Exception ex) {
+                warnings.add("mcp " + mcpId + " tools/list failed: " + ex.getMessage());
+            }
+        }
+        return AggregatedCapabilityToolsVO.builder()
+                .openAiTools(openAiTools)
+                .routes(routes)
+                .warnings(warnings)
+                .build();
+    }
+
+    private static String allocateUnifiedToolName(long mcpId, String originalToolName, Set<String> used) {
+        String base = "lantu_mcp_" + mcpId + "_" + safeToolNameSegment(originalToolName);
+        if (used.add(base)) {
+            return base;
+        }
+        for (int i = 2; i < 10_000; i++) {
+            String candidate = base + "_" + i;
+            if (used.add(candidate)) {
+                return candidate;
+            }
+        }
+        return base + "_x" + System.nanoTime();
+    }
+
+    private static String safeToolNameSegment(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return "tool";
+        }
+        return raw.trim().replaceAll("[^a-zA-Z0-9_]", "_");
+    }
+
+    private InvokeResponse invokeHostedSkill(String reqId,
+                                            Long userId,
+                                            String traceId,
+                                            String ip,
+                                            InvokeRequest request,
+                                            ApiKey apiKey,
+                                            Long id,
+                                            ResourceResolveVO resolved) {
+        long latencyMs;
+        int statusCode;
+        String status;
+        String respBody;
+        String errMsg;
+        Exception invokeCaught = null;
+        GatewayGovernanceService.InvokeGovernanceLease governanceLease = null;
+        long t0 = System.nanoTime();
+        try {
+            governanceLease = gatewayGovernanceService.applyPreInvoke(userId, apiKey, TYPE_SKILL, id, 1);
+            respBody = hostedSkillExecutionService.invokeSkill(id, request.getPayload());
+            statusCode = 200;
+            status = "success";
+            errMsg = null;
+        } catch (Exception e) {
+            invokeCaught = e;
+            statusCode = 500;
+            status = "error";
+            respBody = "";
+            errMsg = e.getMessage();
+        } finally {
+            gatewayGovernanceService.release(governanceLease);
+        }
+        latencyMs = Math.max(0L, (System.nanoTime() - t0) / 1_000_000L);
+        if (errMsg == null && "error".equals(status) && StringUtils.hasText(respBody)) {
+            errMsg = abbreviateForCallLog(respBody, 4000);
+        }
+
+        Boolean circuitOutcome = classifyGatewayInvokeCircuitOutcome(status, statusCode, invokeCaught);
+        CallLog callLog = new CallLog();
+        callLog.setId(reqId);
+        callLog.setTraceId(traceId);
+        callLog.setAgentId(String.valueOf(id));
+        callLog.setAgentName(resolved.getResourceCode());
+        callLog.setResourceType(TYPE_SKILL);
+        callLog.setUserId(userId == null ? "0" : String.valueOf(userId));
+        callLog.setMethod("POST /invoke");
+        callLog.setStatus(status);
+        callLog.setStatusCode(statusCode);
+        callLog.setLatencyMs((int) Math.max(0L, latencyMs));
+        callLog.setErrorMessage(errMsg);
+        callLog.setIp(StringUtils.hasText(ip) ? ip : "0.0.0.0");
+        callLog.setCreateTime(LocalDateTime.now());
+        TraceSpan span = new TraceSpan();
+        span.setTraceId(traceId);
+        span.setOperationName("gateway.invoke");
+        span.setServiceName("unified-gateway");
+        span.setStartTime(LocalDateTime.now().minusNanos(Math.max(0L, latencyMs) * 1_000_000L));
+        span.setDuration((int) Math.max(0L, latencyMs));
+        span.setStatus(status);
+        span.setTags(Map.of(
+                "resourceType", TYPE_SKILL,
+                "resourceId", String.valueOf(id),
+                "statusCode", statusCode,
+                "requestId", reqId,
+                "invokeKind", HostedSkillExecutionService.INVOKETYPE_HOSTED_LLM
+        ));
+        final String finalStatus = status;
+        final long finalLatencyMs = latencyMs;
+        transactionTemplate.executeWithoutResult(tx -> {
+            recordCircuitResult(TYPE_SKILL, resolved.getResourceCode(), circuitOutcome);
+            callLogMapper.insert(callLog);
+            traceSpanMapper.insert(span);
+            UsageRecord usageRecord = buildUsageRecord(userId, TYPE_SKILL, resolved, request, finalStatus, finalLatencyMs);
+            if (usageRecord != null) {
+                usageRecordMapper.insert(usageRecord);
+            }
+            apiKeyScopeService.markUsed(apiKey);
+        });
+
+        logGatewayInvokeOutcome(
+                "POST /invoke",
+                traceId,
+                reqId,
+                TYPE_SKILL,
+                id,
+                resolved.getResourceCode(),
+                userId,
+                status,
+                statusCode,
+                latencyMs,
+                errMsg,
+                respBody,
+                request.getPayload());
+
+        return InvokeResponse.builder()
+                .requestId(reqId)
+                .traceId(traceId)
+                .resourceType(TYPE_SKILL)
+                .resourceId(String.valueOf(id))
+                .statusCode(statusCode)
+                .status(status)
+                .latencyMs(Math.max(0L, latencyMs))
+                .body(respBody)
+                .build();
+    }
+
+    /**
+     * MCP 前置 Hosted Skill 链：依次输出合法 JSON，最后一跳须为 JSON 对象以作为 tools/call 顶层 payload。
+     */
+    private Map<String, Object> applyMcpPreSkillChain(Long mcpId, Map<String, Object> payload) {
+        List<Long> skillIds = jdbcTemplate.query(
+                """
+                        SELECT to_resource_id FROM t_resource_relation
+                        WHERE from_resource_id = ? AND relation_type = 'mcp_depends_skill'
+                        ORDER BY id ASC
+                        """,
+                (rs, i) -> rs.getLong(1),
+                mcpId);
+        if (skillIds == null || skillIds.isEmpty()) {
+            return payload;
+        }
+        String chainInput;
+        try {
+            chainInput = payload == null || payload.isEmpty() ? "{}" : objectMapper.writeValueAsString(payload);
+        } catch (Exception e) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "MCP 入参序列化失败: " + e.getMessage());
+        }
+        String current = chainInput;
+        int step = 0;
+        for (Long skillId : skillIds) {
+            step++;
+            long stepStart = System.nanoTime();
+            current = hostedSkillExecutionService.normalizeJsonWithHostedSkill(skillId, current);
+            long stepMs = Math.max(0L, (System.nanoTime() - stepStart) / 1_000_000L);
+            log.info("gateway.mcp.pre_skill skill_normalize mcpId={} step={}/{} skillResourceId={} latencyMs={}",
+                    mcpId, step, skillIds.size(), skillId, stepMs);
+        }
+        try {
+            JsonNode root = objectMapper.readTree(current);
+            if (!root.isObject()) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "前置 Skill 链输出须为 JSON 对象");
+            }
+            return objectMapper.convertValue(root, new TypeReference<Map<String, Object>>() { });
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "前置 Skill 链输出无法解析为 JSON 对象: " + e.getMessage());
+        }
+    }
+
     private static void ensureSkillNotInvokable(String type) {
         if (TYPE_SKILL.equals(type)) {
             throw new BusinessException(ResultCode.PARAM_ERROR,
@@ -1834,6 +2173,55 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             includes.add(part.trim().toLowerCase(Locale.ROOT));
         }
         return includes;
+    }
+
+    /**
+     * 技能市场卡片：批量附 {@code execution_mode}，避免仅靠 spec 推断。
+     */
+    private void attachSkillExecutionModes(List<ResourceCatalogItemVO> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        List<Long> skillIds = new ArrayList<>();
+        for (ResourceCatalogItemVO vo : items) {
+            String rt = vo.getResourceType() == null ? "" : vo.getResourceType().trim().toLowerCase(Locale.ROOT);
+            if (!TYPE_SKILL.equals(rt)) {
+                continue;
+            }
+            Long rid = longOrNull(vo.getResourceId());
+            if (rid != null) {
+                skillIds.add(rid);
+            }
+        }
+        if (skillIds.isEmpty()) {
+            return;
+        }
+        String placeholders = skillIds.stream().map(i -> "?").collect(Collectors.joining(","));
+        Object[] idArgs = skillIds.toArray();
+        Map<Long, String> modeById = new HashMap<>();
+        for (Map<String, Object> row : jdbcTemplate.queryForList(
+                "SELECT resource_id, COALESCE(NULLIF(TRIM(execution_mode), ''), 'pack') AS em FROM t_resource_skill_ext WHERE resource_id IN ("
+                        + placeholders
+                        + ")",
+                idArgs)) {
+            Long rid = longOrNull(row.get("resource_id"));
+            if (rid == null) {
+                continue;
+            }
+            String em = valueOf(row.get("em")).trim().toLowerCase(Locale.ROOT);
+            modeById.put(rid, StringUtils.hasText(em) ? em : "pack");
+        }
+        for (ResourceCatalogItemVO vo : items) {
+            String rt = vo.getResourceType() == null ? "" : vo.getResourceType().trim().toLowerCase(Locale.ROOT);
+            if (!TYPE_SKILL.equals(rt)) {
+                continue;
+            }
+            Long rid = longOrNull(vo.getResourceId());
+            if (rid == null) {
+                continue;
+            }
+            vo.setExecutionMode(modeById.getOrDefault(rid, "pack"));
+        }
     }
 
     private void attachIncludesToCatalogItems(List<ResourceCatalogItemVO> items, Set<String> includes) {
@@ -1892,6 +2280,9 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             if (includes.contains("quality")) {
                 resolved.setQuality(qualityView(quality));
             }
+        }
+        if (includes.contains("closure") || includes.contains("bindings")) {
+            resolved.setBindingClosure(resourceBindingClosureService.closureForResourceId(rid));
         }
         return resolved;
     }

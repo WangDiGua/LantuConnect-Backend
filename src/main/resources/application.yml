@@ -112,6 +112,14 @@ lantu:
     encryption-key: ${LANTU_SECURITY_ENCRYPTION_KEY}
   gateway:
     invoke-http-status-reflects-upstream: true
+  # Hosted Skill：OpenAI 兼容 Chat Completions（baseUrl 须含 /v1，如 https://api.openai.com/v1）
+  hosted-llm:
+    enabled: ${LANTU_HOSTED_LLM_ENABLED:true}
+    base-url: ${LANTU_HOSTED_LLM_BASE_URL:}
+    api-key: ${LANTU_HOSTED_LLM_API_KEY:}
+    default-model: ${LANTU_HOSTED_LLM_DEFAULT_MODEL:gpt-4o-mini}
+    connect-timeout-seconds: ${LANTU_HOSTED_LLM_CONNECT_TIMEOUT_SECONDS:30}
+    read-timeout-seconds: ${LANTU_HOSTED_LLM_READ_TIMEOUT_SECONDS:120}
   logging:
     gateway-invoke-log-success: false
     gateway-invoke-log-payload-preview: false

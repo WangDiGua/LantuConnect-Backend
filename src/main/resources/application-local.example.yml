@@ -43,6 +43,11 @@ lantu:
     key: local-dev-lantu-encryption-32b-key!!
   security:
     encryption-key: local-dev-security-encryption-key!!
+  hosted-llm:
+    enabled: false
+    base-url: ""
+    api-key: ""
+    default-model: gpt-4o-mini
   system:
     integration-mock: true
   skill-external-catalog:

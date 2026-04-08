@@ -3,6 +3,7 @@ package com.lantu.connect.gateway.service;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.gateway.dto.InvokeRequest;
 import com.lantu.connect.gateway.dto.InvokeResponse;
+import com.lantu.connect.gateway.dto.AggregatedCapabilityToolsVO;
 import com.lantu.connect.gateway.dto.ResourceCatalogItemVO;
 import com.lantu.connect.gateway.dto.ResourceCatalogQueryRequest;
 import com.lantu.connect.gateway.dto.ResourceResolveRequest;
@@ -35,4 +36,13 @@ public interface UnifiedGatewayService {
     List<ExploreHubData.ExploreResourceItem> trending(String resourceType, Integer limit, Long userId);
 
     List<SearchSuggestion> searchSuggestions(String query, Long userId);
+
+    /**
+     * 自入口资源绑定闭包内拉取各 MCP 的 {@code tools/list}，合并为 OpenAI function 列表并附路由表（可选 BFF）。
+     */
+    AggregatedCapabilityToolsVO aggregatedCapabilityTools(Long userId,
+                                                         String traceId,
+                                                         ApiKey apiKey,
+                                                         String entryResourceType,
+                                                         String entryResourceId);
 }

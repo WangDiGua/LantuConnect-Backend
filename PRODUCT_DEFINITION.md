@@ -20,7 +20,7 @@
 | 工具与集成 / 协议化远程服务 | `mcp`（及 agent 的 HTTP/REST 类） | 典型「工具」形态；网关代连上游 MCP 等，走 **`invoke` / `invoke-stream`**。 |
 | 应用资产 / 轻应用 | `app` | 打开或嵌入页面；**`resolve`** 侧重 `launchUrl` / `launchToken`；需要时 **`invoke`** 走 **redirect** 语义，非普通业务 JSON-RPC。 |
 | 数据资产 | `dataset` | **目录与元数据**（类型、格式、规模、标签等）；以 **`resolve`** 为主；**不是**通用远程执行资源（无统一 `invoke` endpoint）。 |
-| 规范与制品 / 开发赋能 | `skill` | **技能包**（如 Anthropic zip、目录规范）；**禁止**统一网关 `invoke`；通过 **`artifact_uri` 或 `…/skill-artifact` 下载**，由 **Agent/IDE/宿主**加载。远程可调用工具应注册为 **`mcp`**，勿与 `skill` 混用。 |
+| 规范与制品 / 开发赋能 | `skill` | **双形态**：**技能包（`execution_mode=pack`）** 通过 **`artifact_uri` / `…/skill-artifact` 下载**，**禁止**网关 `invoke`；**托管技能（`execution_mode=hosted`）** 由平台保存提示模板并 **允许** `invoke`（代调 LLM，见 `lantu.hosted-llm`）。远程可执行工具仍应注册 **`mcp`**。 |
 
 ---
 
@@ -29,8 +29,9 @@
 | 类型 | 统一网关 `invoke` | 其他典型消费方式 |
 |------|-------------------|------------------|
 | `agent` | 支持（需 `published`、合法 endpoint、协议受支持） | `resolve` 查看协议与端点 |
-| `skill` | **不支持**（代码显式拒绝） | `resolve` + **制品下载**；宿主侧加载 |
-| `mcp` | 支持；流式用 `invoke-stream`（MCP） | `resolve` 查看 endpoint 与鉴权 spec |
+| `skill`（pack） | **不支持** | `resolve` + **制品下载**；宿主侧加载 |
+| `skill`（hosted） | **支持**（`published`、Hosted LLM 已配置） | `resolve` 查看参数/schema；**无**上游 endpoint |
+| `mcp` | 支持；流式用 `invoke-stream`（MCP）；可配置 **前置 Hosted Skill** 洗参 | `resolve` 查看 endpoint 与鉴权 spec |
 | `app` | 支持，但为 **redirect/票据** 语义 | **`resolve` 获取 launch 信息**；浏览器打开/嵌入 |
 | `dataset` | **不支持**（无 invoke endpoint） | **`resolve` 读元数据**；若需申请/下载数据文件，由**独立能力或扩展**承载 |
 
@@ -38,14 +39,14 @@
 
 ## 4. 与「注册平台」的关系
 
-- **是**「注册 + 目录 + 授权 + 消费出口」一体化的平台：生命周期（登记 → 审核 → 发布）、目录、`resolve`、API Key / Grant、网关与审计等均围绕此展开。其中 **`testing → published` 的发布动作**由资源 **owner**、**与 owner 同部门的 dept_admin** 或 **platform_admin** 执行（与 Grant 代管范围一致）；**平台跨租户强制下架**为单独的 `platform-force-deprecate` 能力（详见 `docs/permission-flow-comparison-and-plan.md` 阶段 D241）。
+- **是**「注册 + 目录 + 授权 + 消费出口」一体化的平台：生命周期（登记 → 审核 → 发布）、目录、`resolve`、**API Key / scope**、网关与审计等均围绕此展开。其中 **`testing → published` 的发布动作**由资源 **owner**、**与 owner 同部门的 dept_admin** 或 **platform_admin** 执行；**平台跨租户强制下架**为单独的 `platform-force-deprecate` 能力（详见 `docs/permission-flow-comparison-and-plan.md` 阶段 D241）。
 - **系统四类角色（平台 RBAC）**：
   - **平台管理员**：管理平台全局事宜（用户、组织、角色、系统配置、全平台资源与审核等）。
   - **部门管理员**：管理对应部门的**开发者与消费者**，以及本部门范围内的资源协同与审核边界。
   - **开发者**：负责**五类资源的登记、维护、审核流中与「自己的资源」相关的发布与修订**；不包含把「全校师生默认」都当作开发者。
-  - **消费者**：有权**使用已上架的五类资源**（浏览目录、Grant 申请、个人 API Key、`resolve`/网关等约定消费路径）；**可申请开发者入驻**；**个人资料、改密、登录历史**等账号能力对其开放；Casbin 侧目录读权限与 `GatewayUserPermissionService` 一致（**`mcp` 与 `skill` 共用 `skill:read`**）。自助注册默认绑定 **consumer**（见 `AuthServiceImpl.register`）。
+  - **消费者**：有权**使用已上架的五类资源**（浏览目录、个人 API Key、`resolve`/网关等约定消费路径；**每资源 Grant 申请流若仍存在则为遗留管理能力**）；**可申请开发者入驻**；**个人资料、改密、登录历史**等账号能力对其开放；Casbin 侧目录读权限与 `GatewayUserPermissionService` 一致（**`mcp` 与 `skill` 共用 `skill:read`**）。自助注册默认绑定 **consumer**（见 `AuthServiceImpl.register`）。
 - **不是**「所有条目都同质可 RPC」的纯服务注册中心：`skill` 与 `dataset` 的分叉是**领域设计**，符合门户对**资产多样性**的预期。
-- **资源消费策略（`t_resource.access_policy`）**：开发者在注册/更新资源时可配置（默认 `grant_required`）。`grant_required`：须 per-resource Grant（及 Key scope）。`open_org`：用户归属的 API Key 且 Key 所属用户与资源 **owner 的部门（`menu_id`）一致** 时免 Grant。`open_platform`：租户内已认证 API Key 在满足 scope 前提下免 Grant。**仅 `published` 资源可被消费**的规则不变；开放策略不改变 skill/dataset 的 invoke 边界（见 §2–§3）。
+- **资源消费策略（`t_resource.access_policy`）**：库字段可能仍为 `grant_required` / `open_org` / `open_platform`。**统一网关 invoke/目录裁决以 API Key scope + `published` 与资源可见性为准**（`ResourceInvokeGrantService` 不再读取 `t_resource_invoke_grant`）。产品若仍需组织级开放语义，应在 **Key scope 产品规则** 上落实，而非 Grant 表。
 
 ---
 
@@ -64,7 +65,7 @@
 
 因此：**数字上的「调用量」≠ 门户内全部数字化资产的使用量**；技能包下载等需 **单独埋点**。当前实现：**技能包成功下载**写入 **`t_skill_pack_download_event`**（owner 维度）；网关 **invoke** 在 **`t_usage_record` 增加 `resource_id`** 便于按资源归属聚合；**`GET /dashboard/owner-resource-stats`** 汇总 call_log / usage_record(invoke) / 技能下载（详见 `docs/permission-flow-comparison-and-plan.md` 阶段 F）。
 
-部分界面用 `UsageRecord.type=skill` 推断「最近使用」，在 **skill 禁止 invoke** 的现状下，**往往没有新增记录**，除非历史上存在其他写入路径或未来补上「下载/打开」类埋点。
+部分界面用 `UsageRecord.type=skill` 推断「最近使用」：**hosted skill** `invoke` 会产生记录；**pack** 仍以下载埋点为主。
 
 ---
 

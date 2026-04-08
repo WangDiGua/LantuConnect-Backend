@@ -2,6 +2,7 @@ package com.lantu.connect.gateway.controller;
 
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.R;
+import com.lantu.connect.gateway.dto.AggregatedCapabilityToolsVO;
 import com.lantu.connect.gateway.dto.InvokeRequest;
 import com.lantu.connect.gateway.dto.InvokeResponse;
 import com.lantu.connect.dashboard.dto.ExploreHubData;
@@ -48,7 +49,7 @@ import java.util.UUID;
 
 @RestController
 @RequiredArgsConstructor
-@Tag(name = "资源目录与网关", description = "市场目录、资源解析、统一调用与应用启动跳转；`include` 与 `access_policy` 语义见契约文档。")
+@Tag(name = "资源目录与网关", description = "市场目录、资源解析、统一调用与应用启动跳转；`include` 与 `access_policy` 语义见契约文档；鉴权以 API Key scope + published 为主（资源级 Grant 已下线）。")
 public class ResourceCatalogController {
 
     private final UnifiedGatewayService unifiedGatewayService;
@@ -58,10 +59,10 @@ public class ResourceCatalogController {
     private final ApiKeyMapper apiKeyMapper;
     private final RuntimeAppConfigService runtimeAppConfigService;
 
-    @Operation(summary = "资源目录分页", description = "需登录态和/或有效 X-Api-Key；`include` 可为 observability、quality、tags（逗号分隔）。")
+    @Operation(summary = "资源目录分页", description = "需登录态和/或有效 X-Api-Key；`include` 可为 observability、quality、tags（逗号分隔）。闭包见单资源详情 `include=closure|bindings`。")
     @GetMapping("/catalog/resources")
     public R<PageResult<ResourceCatalogItemVO>> catalog(ResourceCatalogQueryRequest request,
-                                                        @Parameter(description = "可选；与登录态二选一或并存，受 scope 与 Grant 约束")
+                                                        @Parameter(description = "可选；与登录态二选一或并存，受 API Key scope（及 published）约束")
                                                         @RequestHeader(value = "X-Api-Key", required = false) String apiKeyRaw) {
         Long userId = gatewayCallerResolver.resolveTrustedUserIdOrNull();
         ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
@@ -85,7 +86,7 @@ public class ResourceCatalogController {
         return R.ok(unifiedGatewayService.searchSuggestions(q, userId));
     }
 
-    @Operation(summary = "按类型与ID获取资源详情（GET）", description = "须登录或有效 X-Api-Key；`include` 逗号分隔：observability、quality、tags。"
+    @Operation(summary = "按类型与ID获取资源详情（GET）", description = "须登录或有效 X-Api-Key；`include` 逗号分隔：observability、quality、tags、closure、bindings（后两者返回 `bindingClosure`）。"
             + "浏览器仅 JWT 时可拉应用类展示字段，launch 票据须本人 Key。")
     @GetMapping("/catalog/resources/{type}/{id}")
     public R<ResourceResolveVO> getByTypeAndId(@PathVariable @Parameter(description = "agent|skill|mcp|app|dataset") String type,
@@ -97,6 +98,19 @@ public class ResourceCatalogController {
         Long userId = gatewayCallerResolver.resolveTrustedUserIdOrNull();
         ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
         return R.ok(unifiedGatewayService.getByTypeAndId(type, id, include, apiKey, userId));
+    }
+
+    @Operation(summary = "绑定闭包内 MCP 工具聚合（可选 BFF）", description = "自某入口资源（如 agent）沿绑定边展开闭包，对各 MCP 调用 tools/list，合并为 OpenAI tools 列表并返回 `routes` 映射；须 X-Api-Key，且对入口资源 resolve、对各 MCP invoke 均在 scope 内。")
+    @SecurityRequirement(name = OpenApiConfiguration.API_KEY_SECURITY)
+    @GetMapping("/catalog/capabilities/tools")
+    public R<AggregatedCapabilityToolsVO> aggregatedTools(
+            @RequestParam @Parameter(description = "入口资源类型，如 agent、mcp") String entryResourceType,
+            @RequestParam @Parameter(description = "入口资源数字 ID") String entryResourceId,
+            @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
+            @RequestHeader(value = "X-Api-Key", required = false) @Parameter(description = "必填") String apiKeyRaw) {
+        Long userId = gatewayCallerResolver.resolveTrustedUserIdOrNull();
+        ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
+        return R.ok(unifiedGatewayService.aggregatedCapabilityTools(userId, traceId, apiKey, entryResourceType, entryResourceId));
     }
 
     @Operation(summary = "资源统计（评分等）")
@@ -117,7 +131,7 @@ public class ResourceCatalogController {
         return R.ok(unifiedGatewayService.resolve(request, apiKey, userId));
     }
 
-    @Operation(summary = "统一调用入口", description = "须提供有效 X-Api-Key；skill 类型禁止远程 invoke。")
+    @Operation(summary = "统一调用入口", description = "须提供有效 X-Api-Key。`skill`：仅 `execution_mode=hosted` 且已发布可走本接口；技能包仍禁止。`mcp`：若登记了前置 Hosted Skill，网关内先归一化 JSON 再转发上游。")
     @SecurityRequirement(name = OpenApiConfiguration.API_KEY_SECURITY)
     @PostMapping("/invoke")
     public ResponseEntity<R<InvokeResponse>> invoke(@RequestHeader(value = "X-Trace-Id", required = false)

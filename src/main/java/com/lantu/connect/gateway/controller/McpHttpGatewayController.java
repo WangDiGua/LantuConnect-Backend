@@ -53,7 +53,7 @@ public class McpHttpGatewayController {
     private final RuntimeAppConfigService runtimeAppConfigService;
     private final ObjectMapper objectMapper;
 
-    @Operation(summary = "MCP JSON-RPC 消息", description = "与 POST /invoke 同款鉴权与 Grant；请求体为 JSON-RPC 单对象。")
+    @Operation(summary = "MCP JSON-RPC 消息", description = "与 POST /invoke 同款鉴权（API Key scope + published）；请求体为 JSON-RPC 单对象。")
     @SecurityRequirement(name = OpenApiConfiguration.API_KEY_SECURITY)
     @PostMapping(value = "/{resourceType}/{resourceId}/message", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> mcpMessage(

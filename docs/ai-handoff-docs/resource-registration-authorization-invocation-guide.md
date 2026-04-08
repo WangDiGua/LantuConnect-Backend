@@ -11,9 +11,10 @@
 
 - 后端已经打通五类资源的主链路：**注册 -> 提审 -> 审核 -> 发布 -> 目录可见 -> 使用/调用**。
 - 上架不是一步：**`approve` 不等于上架**，必须再执行 `publish` 才到 `published`。
-- 授权不是“授权链接”：当前是 **`API Key + Scope + Grant` 三层校验模型**。
+- 统一网关：**`API Key + Scope + published`**；**每资源 Grant 表对 invoke 已下线**（见 `ResourceInvokeGrantService`）。
 - 五类资源都能注册，但“使用方式”不同：
-  - `agent/skill/mcp`：可走统一调用 `POST /invoke`。
+  - `agent` / `mcp`：`POST /invoke`（MCP 可 `invoke-stream`）；`mcp` 支持前置 Hosted Skill 链。
+  - `skill`：**pack** 禁止 `invoke`；**hosted** 可 `invoke`。
   - `app`：主要是解析后拿 URL 跳转/嵌入（`invokeType=redirect`）。
   - `dataset`：主要是元数据消费（`invokeType=metadata`），不是 HTTP 远程执行型。
 
@@ -74,8 +75,9 @@
 ## 3.3 市场/解析/调用
 
 - `GET /catalog/resources` 目录列表
-- `GET /catalog/resources/{type}/{id}` 按类型详情解析
+- `GET /catalog/resources/{type}/{id}` 按类型详情解析（`include=closure|bindings` → `bindingClosure`）
 - `POST /catalog/resolve` 统一解析
+- `GET /catalog/capabilities/tools` 闭包 MCP `tools/list` 聚合（可选）
 - `POST /invoke` 统一调用（必须 `X-Api-Key`）
 
 **`X-Api-Key` 填什么（与列表里看到的不同）**
@@ -83,11 +85,9 @@
 - 创建接口 `POST /user-settings/api-keys` 或 `POST /user-mgmt/api-keys` 成功后，响应体 **`data.secretPlain`** 为完整可调用密钥（形如 `sk_` + 32 位十六进制），**仅在此一次响应中返回**，前端须提示用户立即复制保存。
 - 列表/详情里常见的 **`maskedKey`（如 `sk_3****`）、`prefix`、`id`（表主键）都不能**当作 `X-Api-Key` 传入：网关会对请求头**整串**做 SHA-256，与库中 `key_hash` 比对；遗失明文只能删除该 Key 后重建。
 
-## 3.4 授权（Grant）
+## 3.4 资源级 Grant（管理接口；网关 invoke 不依赖）
 
-- `POST /resource-grants` 授权给某个 API Key
-- `GET /resource-grants?resourceType=&resourceId=` 查看某资源授权列表
-- `DELETE /resource-grants/{grantId}` 撤销授权
+- 见主文档 `docs/resource-registration-authorization-invocation-guide.md` §3.4；绑定字段与闭包见 `docs/改造计划/platform-transformation-spec-freeze.md`。
 
 ---
 
