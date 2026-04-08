@@ -50,5 +50,4 @@ public class User extends BaseEntity {
     private String status;
     private LocalDateTime lastLoginTime;
     private String language;
-    private Boolean twoStep;
 }

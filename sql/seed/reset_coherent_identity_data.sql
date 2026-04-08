@@ -88,8 +88,7 @@ UPDATE t_user SET
     head_image  = NULL,
     status      = 'active',
     deleted     = 0,
-    language    = 'zh-CN',
-    two_step    = 1
+    language    = 'zh-CN'
 WHERE user_id = 1;
 
 UPDATE t_user SET
@@ -161,11 +160,11 @@ DELETE FROM t_user                 WHERE user_id = 5;
 
 INSERT INTO t_user (
     user_id, username, password_hash, real_name, sex, school_id, menu_id, major, class, role,
-    mobile, mail, status, deleted, language, two_step
+    mobile, mail, status, deleted, language
 ) VALUES (
     5, 'pending_dev', @demo_pwd, '张实习', 1, @dept_lzu, @dept_cs,
     '计算机科学与技术', NULL, 0,
-    '13800138005', 'zhang.pending@stu.lzu.edu.cn', 'active', 0, 'zh-CN', 0
+    '13800138005', 'zhang.pending@stu.lzu.edu.cn', 'active', 0, 'zh-CN'
 );
 
 INSERT INTO t_developer_application (

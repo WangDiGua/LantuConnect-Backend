@@ -355,9 +355,6 @@ public class AuthServiceImpl implements AuthService {
         if (request.getLanguage() != null) {
             user.setLanguage(request.getLanguage());
         }
-        if (request.getTwoStep() != null) {
-            user.setTwoStep(request.getTwoStep());
-        }
         userMapper.updateById(user);
     }
 
@@ -450,7 +447,6 @@ public class AuthServiceImpl implements AuthService {
                 .createdAt(user.getCreateTime())
                 .updatedAt(user.getUpdateTime())
                 .language(user.getLanguage() != null ? user.getLanguage() : "zh-CN")
-                .twoFactorEnabled(user.getTwoStep() != null ? user.getTwoStep() : false)
                 .permissions(casbinAuthorizationService.effectivePermissionStrings(user.getUserId()));
         return b.build();
     }

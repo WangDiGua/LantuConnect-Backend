@@ -13,5 +13,4 @@ public class ProfileUpdateRequest {
 
     private String avatar;
     private String language;
-    private Boolean twoStep;
 }
