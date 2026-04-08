@@ -73,9 +73,7 @@ public class DeveloperApplicationController {
     @RequireRole({"platform_admin", "admin", "reviewer"})
     public R<Void> batchApprove(@RequestHeader("X-User-Id") Long reviewerId,
                                 @Valid @RequestBody DeveloperApplicationBatchApproveRequest body) {
-        for (Long id : body.getIds()) {
-            developerApplicationService.approve(id, reviewerId, body.getReviewComment());
-        }
+        developerApplicationService.batchApprove(body.getIds(), reviewerId, body.getReviewComment());
         return R.ok();
     }
 
@@ -83,9 +81,7 @@ public class DeveloperApplicationController {
     @RequireRole({"platform_admin", "admin", "reviewer"})
     public R<Void> batchReject(@RequestHeader("X-User-Id") Long reviewerId,
                               @Valid @RequestBody DeveloperApplicationBatchRejectRequest body) {
-        for (Long id : body.getIds()) {
-            developerApplicationService.reject(id, reviewerId, body.getReviewComment());
-        }
+        developerApplicationService.batchReject(body.getIds(), reviewerId, body.getReviewComment());
         return R.ok();
     }
 }

@@ -137,9 +137,7 @@ public class AuditController {
     @AuditLog(action = "audit_batch_approve_resource", resource = "audit")
     public R<Void> batchApproveResource(@RequestHeader("X-User-Id") Long userId,
                                         @Valid @RequestBody LongIdsRequest body) {
-        for (Long id : body.getIds()) {
-            auditService.approveResource(id, userId);
-        }
+        auditService.batchApproveResources(body.getIds(), userId);
         return R.ok();
     }
 
@@ -148,9 +146,7 @@ public class AuditController {
     @AuditLog(action = "audit_batch_reject_resource", resource = "audit")
     public R<Void> batchRejectResource(@RequestHeader("X-User-Id") Long userId,
                                        @Valid @RequestBody IdsWithReasonRequest body) {
-        for (Long id : body.getIds()) {
-            auditService.rejectResource(id, body.getReason(), userId);
-        }
+        auditService.batchRejectResources(body.getIds(), body.getReason(), userId);
         return R.ok();
     }
 
@@ -159,9 +155,7 @@ public class AuditController {
     @AuditLog(action = "audit_batch_publish_resource", resource = "audit")
     public R<Void> batchPublishResource(@RequestHeader("X-User-Id") Long userId,
                                          @Valid @RequestBody LongIdsRequest body) {
-        for (Long id : body.getIds()) {
-            auditService.publishResource(id, userId);
-        }
+        auditService.batchPublishResources(body.getIds(), userId);
         return R.ok();
     }
 

@@ -11,7 +11,6 @@ import com.lantu.connect.sysconfig.entity.Announcement;
 import com.lantu.connect.sysconfig.service.AnnouncementService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -51,19 +50,13 @@ public class AnnouncementController {
 
     @PostMapping("/batch")
     public R<Void> batchUpdate(@Valid @RequestBody AnnouncementBatchUpdateRequest body) {
-        AnnouncementUpdateRequest patch = new AnnouncementUpdateRequest();
-        BeanUtils.copyProperties(body, patch, "ids");
-        for (Long id : body.getIds()) {
-            announcementService.update(id, patch);
-        }
+        announcementService.batchUpdate(body);
         return R.ok();
     }
 
     @PostMapping("/batch-delete")
     public R<Void> batchDelete(@Valid @RequestBody LongIdsRequest body) {
-        for (Long id : body.getIds()) {
-            announcementService.delete(id);
-        }
+        announcementService.batchDelete(body.getIds());
         return R.ok();
     }
 }

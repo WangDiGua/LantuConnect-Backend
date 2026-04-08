@@ -50,9 +50,7 @@ public class ResourceGrantController {
     @PostMapping("/batch-delete")
     @AuditLog(action = "resource_grant_batch_revoke", resource = "resource-grants")
     public R<Void> batchRevoke(@RequestHeader("X-User-Id") Long userId, @Valid @RequestBody LongIdsRequest body) {
-        for (Long grantId : body.getIds()) {
-            resourceInvokeGrantService.revoke(userId, grantId);
-        }
+        resourceInvokeGrantService.batchRevoke(userId, body.getIds());
         return R.ok();
     }
 

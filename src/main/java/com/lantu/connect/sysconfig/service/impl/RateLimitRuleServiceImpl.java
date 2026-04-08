@@ -6,6 +6,7 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.sysconfig.dto.RateLimitRuleBatchPatchRequest;
 import com.lantu.connect.sysconfig.dto.RateLimitRuleCreateRequest;
 import com.lantu.connect.sysconfig.dto.RateLimitRuleUpdateRequest;
 import com.lantu.connect.sysconfig.entity.RateLimitRule;
@@ -13,11 +14,13 @@ import com.lantu.connect.sysconfig.mapper.RateLimitRuleMapper;
 import com.lantu.connect.sysconfig.service.PathRateLimitRuleCache;
 import com.lantu.connect.sysconfig.service.RateLimitRuleService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -144,12 +147,37 @@ public class RateLimitRuleServiceImpl implements RateLimitRuleService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void batchPatch(RateLimitRuleBatchPatchRequest body) {
+        if (body.getIds() == null || body.getIds().isEmpty()) {
+            return;
+        }
+        for (String id : body.getIds()) {
+            RateLimitRuleUpdateRequest u = new RateLimitRuleUpdateRequest();
+            BeanUtils.copyProperties(body, u, "ids");
+            u.setId(id);
+            update(u);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void delete(String id) {
         if (rateLimitRuleMapper.selectById(id) == null) {
             throw new BusinessException(ResultCode.NOT_FOUND);
         }
         rateLimitRuleMapper.deleteById(id);
         pathRateLimitRuleCache.invalidate();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void batchDelete(List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        for (String id : ids) {
+            delete(id);
+        }
     }
 
     @Override

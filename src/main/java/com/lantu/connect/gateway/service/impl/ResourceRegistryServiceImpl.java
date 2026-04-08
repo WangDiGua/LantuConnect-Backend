@@ -378,6 +378,17 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void batchWithdraw(Long operatorUserId, List<Long> resourceIds) {
+        if (resourceIds == null || resourceIds.isEmpty()) {
+            return;
+        }
+        for (Long resourceId : resourceIds) {
+            withdraw(operatorUserId, resourceId);
+        }
+    }
+
+    @Override
     public ResourceManageVO getById(Long operatorUserId, Long resourceId) {
         ensureAuthenticated(operatorUserId);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(

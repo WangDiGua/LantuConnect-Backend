@@ -4,6 +4,8 @@ import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.gateway.dto.GrantApplicationRequest;
 import com.lantu.connect.gateway.dto.GrantApplicationVO;
 
+import java.util.List;
+
 public interface GrantApplicationService {
 
     Long apply(Long applicantUserId, GrantApplicationRequest request);
@@ -16,6 +18,12 @@ public interface GrantApplicationService {
      * 对已通过的申请撤销其建立的资源调用授权（与资源授权管理中的撤销一致）。
      */
     void revokeEffectiveGrant(Long operatorUserId, Long applicationId);
+
+    void batchApprove(Long reviewerUserId, List<Long> applicationIds);
+
+    void batchReject(Long reviewerUserId, List<Long> applicationIds, String reason);
+
+    void batchRevokeEffectiveGrant(Long operatorUserId, List<Long> applicationIds);
 
     PageResult<GrantApplicationVO> pageMyApplications(Long applicantUserId, String status, String keyword, int page, int pageSize);
 

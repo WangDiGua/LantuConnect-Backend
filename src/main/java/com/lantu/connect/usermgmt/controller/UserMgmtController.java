@@ -13,7 +13,6 @@ import com.lantu.connect.usermgmt.entity.ApiKey;
 import com.lantu.connect.usermgmt.service.UserMgmtService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.BeanUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -56,11 +55,7 @@ public class UserMgmtController {
     @PostMapping("/users/batch")
     @RequirePermission("user:update")
     public R<Void> batchUpdateUsers(@Valid @RequestBody UserBatchUpdateRequest body) {
-        UpdateUserRequest patch = new UpdateUserRequest();
-        BeanUtils.copyProperties(body, patch, "ids");
-        for (Long id : body.getIds()) {
-            userMgmtService.updateUser(id, patch);
-        }
+        userMgmtService.batchUpdateUsers(body);
         return R.ok();
     }
 
@@ -129,9 +124,7 @@ public class UserMgmtController {
     @PostMapping("/api-keys/batch-revoke")
     @RequirePermission("apikey:delete")
     public R<Void> batchRevokeApiKeys(@Valid @RequestBody StringIdsRequest body) {
-        for (String id : body.getIds()) {
-            userMgmtService.revokeApiKey(id);
-        }
+        userMgmtService.batchRevokeApiKeys(body.getIds());
         return R.ok();
     }
 
@@ -154,9 +147,7 @@ public class UserMgmtController {
     @PostMapping("/tokens/batch-revoke")
     @RequirePermission("apikey:delete")
     public R<Void> batchRevokeTokens(@Valid @RequestBody StringIdsRequest body) {
-        for (String id : body.getIds()) {
-            userMgmtService.revokeToken(id);
-        }
+        userMgmtService.batchRevokeTokens(body.getIds());
         return R.ok();
     }
 

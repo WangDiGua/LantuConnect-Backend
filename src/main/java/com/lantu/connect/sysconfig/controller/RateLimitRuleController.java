@@ -11,7 +11,6 @@ import com.lantu.connect.sysconfig.entity.RateLimitRule;
 import com.lantu.connect.sysconfig.service.RateLimitRuleService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.BeanUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -64,20 +63,13 @@ public class RateLimitRuleController {
 
     @PostMapping("/batch")
     public R<Void> batchPatch(@Valid @RequestBody RateLimitRuleBatchPatchRequest body) {
-        for (String id : body.getIds()) {
-            RateLimitRuleUpdateRequest u = new RateLimitRuleUpdateRequest();
-            BeanUtils.copyProperties(body, u, "ids");
-            u.setId(id);
-            rateLimitRuleService.update(u);
-        }
+        rateLimitRuleService.batchPatch(body);
         return R.ok();
     }
 
     @PostMapping("/batch-delete")
     public R<Void> batchDelete(@Valid @RequestBody StringIdsRequest body) {
-        for (String id : body.getIds()) {
-            rateLimitRuleService.delete(id);
-        }
+        rateLimitRuleService.batchDelete(body.getIds());
         return R.ok();
     }
 }

@@ -162,6 +162,17 @@ public class DeveloperApplicationServiceImpl implements DeveloperApplicationServ
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void batchApprove(List<Long> ids, Long reviewerId, String reviewComment) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        for (Long id : ids) {
+            approve(id, reviewerId, reviewComment);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void reject(Long id, Long reviewerId, String reviewComment) {
         DeveloperApplication row = mustGet(id);
         if (!STATUS_PENDING.equals(row.getStatus())) {
@@ -182,6 +193,17 @@ public class DeveloperApplicationServiceImpl implements DeveloperApplicationServ
                 false,
                 reviewerId,
                 row.getReviewComment());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void batchReject(List<Long> ids, Long reviewerId, String reviewComment) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        for (Long id : ids) {
+            reject(id, reviewerId, reviewComment);
+        }
     }
 
     private DeveloperApplication mustGet(Long id) {

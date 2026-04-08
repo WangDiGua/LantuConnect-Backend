@@ -18,4 +18,8 @@ public interface DeveloperApplicationService {
     void approve(Long id, Long reviewerId, String reviewComment);
 
     void reject(Long id, Long reviewerId, String reviewComment);
+
+    void batchApprove(List<Long> ids, Long reviewerId, String reviewComment);
+
+    void batchReject(List<Long> ids, Long reviewerId, String reviewComment);
 }

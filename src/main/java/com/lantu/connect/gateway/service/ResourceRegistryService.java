@@ -46,6 +46,9 @@ public interface ResourceRegistryService {
 
     ResourceManageVO withdraw(Long operatorUserId, Long resourceId);
 
+    /** 单事务批量撤回（与 {@link #withdraw} 权限与状态机一致）。 */
+    void batchWithdraw(Long operatorUserId, List<Long> resourceIds);
+
     ResourceManageVO getById(Long operatorUserId, Long resourceId);
 
     /**

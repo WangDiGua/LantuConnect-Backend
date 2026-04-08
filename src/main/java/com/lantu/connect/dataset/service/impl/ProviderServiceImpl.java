@@ -14,7 +14,10 @@ import com.lantu.connect.dataset.mapper.ProviderMapper;
 import com.lantu.connect.dataset.service.ProviderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -106,6 +109,17 @@ public class ProviderServiceImpl implements ProviderService {
         }
         providerMapper.updateById(existing);
         return providerMapper.selectById(id);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void batchUpdate(List<Long> ids, ProviderUpdateRequest patch) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        for (Long id : ids) {
+            update(id, patch);
+        }
     }
 
     @Override

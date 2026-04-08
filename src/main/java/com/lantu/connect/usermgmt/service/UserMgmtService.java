@@ -17,6 +17,7 @@ import com.lantu.connect.usermgmt.dto.UserOrgVO;
 import com.lantu.connect.usermgmt.dto.UserRoleBindRequest;
 import com.lantu.connect.usermgmt.dto.UserRoleReplaceRequest;
 import com.lantu.connect.usermgmt.dto.UpdateUserRequest;
+import com.lantu.connect.usermgmt.dto.UserBatchUpdateRequest;
 import com.lantu.connect.usermgmt.dto.UserQueryRequest;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import com.lantu.connect.usermgmt.entity.AccessToken;
@@ -37,6 +38,8 @@ public interface UserMgmtService {
 
     void updateUser(Long id, UpdateUserRequest request);
 
+    void batchUpdateUsers(UserBatchUpdateRequest body);
+
     UserDetailVO getUserDetail(Long id);
 
     void deleteUser(Long id);
@@ -55,9 +58,13 @@ public interface UserMgmtService {
 
     void revokeApiKey(String id);
 
+    void batchRevokeApiKeys(List<String> ids);
+
     PageResult<AccessToken> pageTokens(int page, int pageSize, String keyword, String status);
 
     void revokeToken(String id);
+
+    void batchRevokeTokens(List<String> ids);
 
     List<OrgNodeVO> getOrgTree();
 

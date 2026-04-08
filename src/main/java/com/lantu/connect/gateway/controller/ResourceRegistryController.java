@@ -158,9 +158,7 @@ public class ResourceRegistryController {
     @PostMapping("/batch-withdraw")
     @AuditLog(action = "resource_batch_withdraw", resource = "resource-center")
     public R<Void> batchWithdraw(@RequestHeader("X-User-Id") Long userId, @Valid @RequestBody LongIdsRequest body) {
-        for (Long id : body.getIds()) {
-            resourceRegistryService.withdraw(userId, id);
-        }
+        resourceRegistryService.batchWithdraw(userId, body.getIds());
         return R.ok();
     }
 

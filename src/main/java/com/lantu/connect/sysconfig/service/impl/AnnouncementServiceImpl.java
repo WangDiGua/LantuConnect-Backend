@@ -8,17 +8,20 @@ import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
+import com.lantu.connect.sysconfig.dto.AnnouncementBatchUpdateRequest;
 import com.lantu.connect.sysconfig.dto.AnnouncementCreateRequest;
 import com.lantu.connect.sysconfig.dto.AnnouncementUpdateRequest;
 import com.lantu.connect.sysconfig.entity.Announcement;
 import com.lantu.connect.sysconfig.mapper.AnnouncementMapper;
 import com.lantu.connect.sysconfig.service.AnnouncementService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -99,11 +102,35 @@ public class AnnouncementServiceImpl implements AnnouncementService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void batchUpdate(AnnouncementBatchUpdateRequest body) {
+        if (body.getIds() == null || body.getIds().isEmpty()) {
+            return;
+        }
+        AnnouncementUpdateRequest patch = new AnnouncementUpdateRequest();
+        BeanUtils.copyProperties(body, patch, "ids");
+        for (Long id : body.getIds()) {
+            update(id, patch);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
         if (announcementMapper.selectById(id) == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "公告不存在");
         }
         announcementMapper.deleteById(id);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void batchDelete(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        for (Long id : ids) {
+            delete(id);
+        }
     }
 
     private void enrichNames(java.util.List<Announcement> records) {

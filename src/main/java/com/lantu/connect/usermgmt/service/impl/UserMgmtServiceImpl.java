@@ -26,6 +26,7 @@ import com.lantu.connect.usermgmt.mapper.AccessTokenMapper;
 import com.lantu.connect.usermgmt.mapper.ApiKeyMapper;
 import com.lantu.connect.usermgmt.service.UserMgmtService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.BeanUtils;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -105,6 +106,19 @@ public class UserMgmtServiceImpl implements UserMgmtService {
         userMapper.insert(user);
         replaceUserRolesInternal(user.getUserId(), roleIds);
         return userMapper.selectById(user.getUserId());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void batchUpdateUsers(UserBatchUpdateRequest body) {
+        if (body.getIds() == null || body.getIds().isEmpty()) {
+            return;
+        }
+        UpdateUserRequest patch = new UpdateUserRequest();
+        BeanUtils.copyProperties(body, patch, "ids");
+        for (Long id : body.getIds()) {
+            updateUser(id, patch);
+        }
     }
 
     @Override
@@ -280,6 +294,17 @@ public class UserMgmtServiceImpl implements UserMgmtService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void batchRevokeApiKeys(List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        for (String id : ids) {
+            revokeApiKey(id);
+        }
+    }
+
+    @Override
     public PageResult<AccessToken> pageTokens(int page, int pageSize, String keyword, String status) {
         Page<AccessToken> p = new Page<>(page, pageSize);
         LambdaQueryWrapper<AccessToken> w = new LambdaQueryWrapper<>();
@@ -320,6 +345,17 @@ public class UserMgmtServiceImpl implements UserMgmtService {
         }
         token.setStatus("revoked");
         accessTokenMapper.updateById(token);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void batchRevokeTokens(List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        for (String id : ids) {
+            revokeToken(id);
+        }
     }
 
     @Override

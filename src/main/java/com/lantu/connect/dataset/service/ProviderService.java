@@ -5,6 +5,8 @@ import com.lantu.connect.dataset.dto.ProviderCreateRequest;
 import com.lantu.connect.dataset.dto.ProviderUpdateRequest;
 import com.lantu.connect.dataset.entity.Provider;
 
+import java.util.List;
+
 /**
  * 服务提供商（管理端 CRUD + 分页）.
  */
@@ -17,6 +19,8 @@ public interface ProviderService {
     Provider create(ProviderCreateRequest request);
 
     Provider update(long id, ProviderUpdateRequest request);
+
+    void batchUpdate(List<Long> ids, ProviderUpdateRequest patch);
 
     void delete(long id);
 }

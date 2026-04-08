@@ -212,6 +212,39 @@ public class GrantApplicationServiceImpl implements GrantApplicationService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void batchApprove(Long reviewerUserId, List<Long> applicationIds) {
+        if (applicationIds == null || applicationIds.isEmpty()) {
+            return;
+        }
+        for (Long id : applicationIds) {
+            approve(reviewerUserId, id);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void batchReject(Long reviewerUserId, List<Long> applicationIds, String reason) {
+        if (applicationIds == null || applicationIds.isEmpty()) {
+            return;
+        }
+        for (Long id : applicationIds) {
+            reject(reviewerUserId, id, reason);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void batchRevokeEffectiveGrant(Long operatorUserId, List<Long> applicationIds) {
+        if (applicationIds == null || applicationIds.isEmpty()) {
+            return;
+        }
+        for (Long id : applicationIds) {
+            revokeEffectiveGrant(operatorUserId, id);
+        }
+    }
+
+    @Override
     public PageResult<GrantApplicationVO> pageMyApplications(Long applicantUserId, String status, String keyword, int page, int pageSize) {
         Page<ResourceGrantApplication> p = new Page<>(page, pageSize);
         LambdaQueryWrapper<ResourceGrantApplication> w = new LambdaQueryWrapper<ResourceGrantApplication>()

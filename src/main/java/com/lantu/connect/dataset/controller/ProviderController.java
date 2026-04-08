@@ -64,9 +64,7 @@ public class ProviderController {
     public R<Void> batchUpdate(@Valid @RequestBody ProviderBatchUpdateRequest body) {
         ProviderUpdateRequest patch = new ProviderUpdateRequest();
         BeanUtils.copyProperties(body, patch, "ids");
-        for (Long id : body.getIds()) {
-            providerService.update(id, patch);
-        }
+        providerService.batchUpdate(body.getIds(), patch);
         return R.ok();
     }
 

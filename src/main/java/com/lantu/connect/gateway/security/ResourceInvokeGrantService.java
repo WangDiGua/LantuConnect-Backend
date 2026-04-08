@@ -193,6 +193,16 @@ public class ResourceInvokeGrantService {
                 grant.getGranteeId());
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public void batchRevoke(Long operatorUserId, List<Long> grantIds) {
+        if (grantIds == null || grantIds.isEmpty()) {
+            return;
+        }
+        for (Long grantId : grantIds) {
+            revoke(operatorUserId, grantId);
+        }
+    }
+
     /**
      * 授权申请工单审批：资源 owner、全平台审核员(reviewer)、platform_admin/admin（与 Grant 管理一致）。
      */

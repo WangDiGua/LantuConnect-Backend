@@ -436,6 +436,39 @@ public class AuditServiceImpl implements AuditService {
         }
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void batchApproveResources(List<Long> ids, Long reviewerId) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        for (Long id : ids) {
+            approveResource(id, reviewerId);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void batchRejectResources(List<Long> ids, String reason, Long reviewerId) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        for (Long id : ids) {
+            rejectResource(id, reason, reviewerId);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void batchPublishResources(List<Long> ids, Long reviewerId) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+        for (Long id : ids) {
+            publishResource(id, reviewerId);
+        }
+    }
+
     private void ensureDefaultVersion(Long resourceId) {
         if (resourceId == null) {
             return;
