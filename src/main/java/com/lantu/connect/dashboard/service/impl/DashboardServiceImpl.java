@@ -485,6 +485,7 @@ public class DashboardServiceImpl implements DashboardService {
 
         List<ExploreHubData.AnnouncementItem> announcements = announcementMapper.selectList(
                         new LambdaQueryWrapper<Announcement>()
+                                .eq(Announcement::getEnabled, true)
                                 .orderByDesc(Announcement::getPinned)
                                 .orderByDesc(Announcement::getCreateTime)
                                 .last("LIMIT 5"))
@@ -495,6 +496,7 @@ public class DashboardServiceImpl implements DashboardService {
                         .summary(a.getSummary())
                         .type(a.getType())
                         .pinned(a.getPinned())
+                        .enabled(a.getEnabled())
                         .createdAt(a.getCreateTime())
                         .createTime(a.getCreateTime())
                         .content(a.getContent())

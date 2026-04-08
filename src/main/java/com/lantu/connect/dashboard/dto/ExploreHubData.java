@@ -61,6 +61,7 @@ public class ExploreHubData {
         private String summary;
         private String type;
         private Boolean pinned;
+        private Boolean enabled;
         private LocalDateTime createdAt;
         private LocalDateTime createTime;
         /** 正文（Markdown），详情弹窗使用；列表仍用 summary */

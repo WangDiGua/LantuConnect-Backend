@@ -17,4 +17,7 @@ public class AnnouncementCreateRequest {
     private String type;
 
     private Boolean pinned;
+
+    /** 是否对用户端展示；未传时默认 true */
+    private Boolean enabled;
 }

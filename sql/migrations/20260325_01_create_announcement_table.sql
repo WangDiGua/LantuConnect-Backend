@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS `t_announcement` (
     `content`     TEXT         NULL     COMMENT '公告正文',
     `type`        VARCHAR(50)  NOT NULL DEFAULT 'notice' COMMENT '类型：feature/maintenance/update/notice',
     `pinned`      TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '是否置顶',
+    `enabled`     TINYINT(1)   NOT NULL DEFAULT 1 COMMENT '是否对用户端展示',
     `created_by`  BIGINT       NULL     COMMENT '创建者用户ID',
     `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

@@ -58,6 +58,7 @@ public class AnnouncementServiceImpl implements AnnouncementService {
         entity.setContent(request.getContent());
         entity.setType(StringUtils.hasText(request.getType()) ? request.getType() : "notice");
         entity.setPinned(request.getPinned() != null ? request.getPinned() : false);
+        entity.setEnabled(request.getEnabled() != null ? request.getEnabled() : Boolean.TRUE);
         entity.setCreatedBy(operatorUserId);
         entity.setCreateTime(LocalDateTime.now());
         entity.setUpdateTime(LocalDateTime.now());
@@ -88,6 +89,9 @@ public class AnnouncementServiceImpl implements AnnouncementService {
         }
         if (request.getPinned() != null) {
             entity.setPinned(request.getPinned());
+        }
+        if (request.getEnabled() != null) {
+            entity.setEnabled(request.getEnabled());
         }
         entity.setUpdateTime(LocalDateTime.now());
         announcementMapper.updateById(entity);

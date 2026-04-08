@@ -10,4 +10,6 @@ public class AnnouncementUpdateRequest {
     private String content;
     private String type;
     private Boolean pinned;
+
+    private Boolean enabled;
 }

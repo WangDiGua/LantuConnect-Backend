@@ -103,6 +103,7 @@ CREATE TABLE `t_announcement`  (
   `content` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL COMMENT '公告正文',
   `type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'notice' COMMENT '类型：feature/maintenance/update/notice',
   `pinned` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否置顶',
+  `enabled` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否对用户端展示',
   `created_by` bigint NULL DEFAULT NULL COMMENT '创建者用户ID',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

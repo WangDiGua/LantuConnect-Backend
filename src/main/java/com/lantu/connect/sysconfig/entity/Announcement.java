@@ -21,6 +21,8 @@ public class Announcement {
     private String content;
     private String type;
     private Boolean pinned;
+    /** 是否对用户端（探索页等）展示 */
+    private Boolean enabled;
     private Long createdBy;
     @TableField(exist = false)
     private String createdByName;
