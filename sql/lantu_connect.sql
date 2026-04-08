@@ -18,29 +18,6 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- ----------------------------
--- Table structure for t_access_token
--- ----------------------------
-DROP TABLE IF EXISTS `t_access_token`;
-CREATE TABLE `t_access_token`  (
-  `id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `token_hash` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `masked_token` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `scopes` json NULL,
-  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT 'active',
-  `expires_at` datetime NOT NULL,
-  `last_used_at` datetime NULL DEFAULT NULL,
-  `created_by` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '访问令牌表' ROW_FORMAT = DYNAMIC;
-
--- ----------------------------
--- Records of t_access_token
--- ----------------------------
-
--- ----------------------------
 -- Table structure for t_alert_record
 -- ----------------------------
 DROP TABLE IF EXISTS `t_alert_record`;

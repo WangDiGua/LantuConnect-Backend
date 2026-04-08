@@ -40,7 +40,7 @@ if (-not $user -or -not $password) {
 # 与仓库 Java @TableName + sql 目录下 CREATE TABLE 保持一致的预期业务表（含 flyway 历史表排除项由下方 allowlist 处理）
 $expected = [System.Collections.Generic.HashSet[string]]::new(
   [string[]]@(
-    't_access_token','t_alert_record','t_alert_rule','t_announcement','t_api_key','t_audit_item','t_audit_log',
+    't_alert_record','t_alert_rule','t_announcement','t_api_key','t_audit_item','t_audit_log',
     't_call_log','t_category','t_developer_application','t_favorite','t_login_history','t_notification','t_org_menu',
     't_platform_role','t_provider','t_quota','t_quota_rate_limit','t_rate_limit_rule','t_resource','t_resource_agent_ext',
     't_resource_app_ext','t_resource_circuit_breaker','t_resource_dataset_ext','t_resource_draft','t_resource_grant_application',

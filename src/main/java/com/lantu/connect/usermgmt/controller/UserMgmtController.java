@@ -8,7 +8,6 @@ import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.security.RequirePermission;
 import com.lantu.connect.common.security.RequireRole;
 import com.lantu.connect.usermgmt.dto.*;
-import com.lantu.connect.usermgmt.entity.AccessToken;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import com.lantu.connect.usermgmt.service.UserMgmtService;
 import jakarta.validation.Valid;
@@ -125,29 +124,6 @@ public class UserMgmtController {
     @RequirePermission("apikey:delete")
     public R<Void> batchRevokeApiKeys(@Valid @RequestBody StringIdsRequest body) {
         userMgmtService.batchRevokeApiKeys(body.getIds());
-        return R.ok();
-    }
-
-    @GetMapping("/tokens")
-    @RequirePermission("apikey:read")
-    public R<PageResult<AccessToken>> listTokens(@RequestParam(defaultValue = "1") int page,
-                                                 @RequestParam(defaultValue = "20") int pageSize,
-                                                 @RequestParam(required = false) String keyword,
-                                                 @RequestParam(required = false) String status) {
-        return R.ok(userMgmtService.pageTokens(page, pageSize, keyword, status));
-    }
-
-    @PatchMapping("/tokens/{id}/revoke")
-    @RequirePermission("apikey:delete")
-    public R<Void> revokeToken(@PathVariable String id) {
-        userMgmtService.revokeToken(id);
-        return R.ok();
-    }
-
-    @PostMapping("/tokens/batch-revoke")
-    @RequirePermission("apikey:delete")
-    public R<Void> batchRevokeTokens(@Valid @RequestBody StringIdsRequest body) {
-        userMgmtService.batchRevokeTokens(body.getIds());
         return R.ok();
     }
 

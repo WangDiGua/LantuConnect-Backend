@@ -20,7 +20,6 @@ import com.lantu.connect.usermgmt.dto.UpdateUserRequest;
 import com.lantu.connect.usermgmt.dto.UserBatchUpdateRequest;
 import com.lantu.connect.usermgmt.dto.UserQueryRequest;
 import com.lantu.connect.usermgmt.entity.ApiKey;
-import com.lantu.connect.usermgmt.entity.AccessToken;
 
 import java.util.List;
 
@@ -59,12 +58,6 @@ public interface UserMgmtService {
     void revokeApiKey(String id);
 
     void batchRevokeApiKeys(List<String> ids);
-
-    PageResult<AccessToken> pageTokens(int page, int pageSize, String keyword, String status);
-
-    void revokeToken(String id);
-
-    void batchRevokeTokens(List<String> ids);
 
     List<OrgNodeVO> getOrgTree();
 
