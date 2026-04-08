@@ -1117,7 +1117,6 @@ CREATE TABLE `t_system_param`  (
 -- ----------------------------
 INSERT INTO `t_system_param` VALUES ('auto_lock_attempts', '5', 'number', '连续登录失败锁定次数', '安全', 1, '2026-03-22 00:32:55');
 INSERT INTO `t_system_param` VALUES ('enable_registration', 'true', 'boolean', '是否开放注册', '系统', 1, '2026-03-22 00:32:55');
-INSERT INTO `t_system_param` VALUES ('maintenance_mode', 'false', 'boolean', '维护模式', '系统', 0, '2026-03-22 00:32:55');
 INSERT INTO `t_system_param` VALUES ('max_concurrent_sessions', '5', 'number', '最大同时在线会话数', '用户', 1, '2026-03-22 00:32:55');
 INSERT INTO `t_system_param` VALUES ('max_upload_size_mb', '50', 'number', '单文件上传大小上限（MB）', '存储', 1, '2026-03-22 00:32:55');
 INSERT INTO `t_system_param` VALUES ('password_min_length', '8', 'number', '密码最小长度', '安全', 1, '2026-03-22 00:32:55');
