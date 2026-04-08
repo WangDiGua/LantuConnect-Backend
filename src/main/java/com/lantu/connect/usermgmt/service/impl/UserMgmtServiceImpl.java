@@ -38,6 +38,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 用户管理UserMgmt服务实现
@@ -82,7 +83,56 @@ public class UserMgmtServiceImpl implements UserMgmtService {
                     .apply("CAST(user_id AS CHAR) LIKE {0}", "%" + kw + "%"));
         }
         Page<User> result = userMapper.selectPage(page, w);
+        attachPlatformRoles(result.getRecords());
         return PageResults.from(result);
+    }
+
+    /**
+     * 为列表用户批量填充 {@link User#setPlatformRoles}，用于前端展示平台绑定角色（与 t_user.role 学校同步字段区分）。
+     */
+    private void attachPlatformRoles(List<User> users) {
+        if (users == null || users.isEmpty()) {
+            return;
+        }
+        List<Long> userIds = users.stream().map(User::getUserId).filter(Objects::nonNull).distinct().toList();
+        if (userIds.isEmpty()) {
+            return;
+        }
+        Map<Long, List<PlatformRole>> byUser = new HashMap<>();
+        for (Long uid : userIds) {
+            byUser.put(uid, new ArrayList<>());
+        }
+        List<UserRoleRel> rels = userRoleRelMapper.selectList(
+                new LambdaQueryWrapper<UserRoleRel>().in(UserRoleRel::getUserId, userIds));
+        if (!rels.isEmpty()) {
+            Set<Long> roleIds = rels.stream()
+                    .map(UserRoleRel::getRoleId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            if (!roleIds.isEmpty()) {
+                List<PlatformRole> roleRows = platformRoleMapper.selectBatchIds(roleIds);
+                Map<Long, PlatformRole> roleById = roleRows.stream()
+                        .filter(r -> r.getId() != null)
+                        .collect(Collectors.toMap(PlatformRole::getId, r -> r, (a, b) -> a));
+                rels.sort(Comparator.comparing(UserRoleRel::getRoleId, Comparator.nullsLast(Long::compareTo)));
+                for (UserRoleRel rel : rels) {
+                    if (rel.getUserId() == null || rel.getRoleId() == null) {
+                        continue;
+                    }
+                    PlatformRole pr = roleById.get(rel.getRoleId());
+                    if (pr != null) {
+                        byUser.computeIfAbsent(rel.getUserId(), k -> new ArrayList<>()).add(pr);
+                    }
+                }
+            }
+        }
+        for (User u : users) {
+            if (u.getUserId() == null) {
+                continue;
+            }
+            List<PlatformRole> list = byUser.get(u.getUserId());
+            u.setPlatformRoles(list == null ? List.of() : Collections.unmodifiableList(list));
+        }
     }
 
     @Override

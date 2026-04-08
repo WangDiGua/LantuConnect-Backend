@@ -11,6 +11,7 @@ import lombok.EqualsAndHashCode;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 用户实体
@@ -50,4 +51,10 @@ public class User extends BaseEntity {
     private String status;
     private LocalDateTime lastLoginTime;
     private String language;
+
+    /**
+     * 列表/详情扩展：平台角色绑定（非表字段），由 UserMgmt 等在查询后填充。
+     */
+    @TableField(exist = false)
+    private List<PlatformRole> platformRoles;
 }
