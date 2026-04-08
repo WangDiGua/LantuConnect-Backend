@@ -50,6 +50,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserMgmtServiceImpl implements UserMgmtService {
 
+    /** 与数据初始化约定一致：登录用户名为 admin 的内置超级管理员，禁止通过平台管理端修改或删除。 */
+    private static final String BOOTSTRAP_SUPER_ADMIN_USERNAME = "admin";
+
     private final UserMapper userMapper;
     private final PlatformRoleMapper platformRoleMapper;
     private final UserRoleRelMapper userRoleRelMapper;
@@ -164,6 +167,10 @@ public class UserMgmtServiceImpl implements UserMgmtService {
         if (body.getIds() == null || body.getIds().isEmpty()) {
             return;
         }
+        for (Long id : body.getIds()) {
+            User row = userMapper.selectById(id);
+            rejectBootstrapSuperAdminMutation(row, "批量修改");
+        }
         UpdateUserRequest patch = new UpdateUserRequest();
         BeanUtils.copyProperties(body, patch, "ids");
         for (Long id : body.getIds()) {
@@ -178,6 +185,7 @@ public class UserMgmtServiceImpl implements UserMgmtService {
         if (existing == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
         }
+        rejectBootstrapSuperAdminMutation(existing, "修改");
         String oldStatus = existing.getStatus();
         if (StringUtils.hasText(request.getPassword())) {
             existing.setPasswordHash(new BCryptPasswordEncoder(12).encode(request.getPassword()));
@@ -222,6 +230,7 @@ public class UserMgmtServiceImpl implements UserMgmtService {
         if (existing == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
         }
+        rejectBootstrapSuperAdminMutation(existing, "删除");
         userRoleRelMapper.delete(new LambdaQueryWrapper<UserRoleRel>().eq(UserRoleRel::getUserId, id));
         userMapper.deleteById(id);
         systemNotificationFacade.notifyUserDeleted(id, null, existing.getUsername());
@@ -544,6 +553,7 @@ public class UserMgmtServiceImpl implements UserMgmtService {
     @Transactional(rollbackFor = Exception.class)
     public void bindUserOrg(Long userId, UserOrgBindRequest request) {
         User user = ensureUserExists(userId);
+        rejectBootstrapSuperAdminMutation(user, "调整组织归属");
         OrgMenu org = orgMenuMapper.selectById(request.getOrgId());
         if (org == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "组织不存在");
@@ -556,6 +566,7 @@ public class UserMgmtServiceImpl implements UserMgmtService {
     @Transactional(rollbackFor = Exception.class)
     public void unbindUserOrg(Long userId) {
         User user = ensureUserExists(userId);
+        rejectBootstrapSuperAdminMutation(user, "调整组织归属");
         user.setMenuId(null);
         userMapper.updateById(user);
     }
@@ -569,7 +580,8 @@ public class UserMgmtServiceImpl implements UserMgmtService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void bindUserRoles(Long userId, UserRoleBindRequest request) {
-        ensureUserExists(userId);
+        User user = ensureUserExists(userId);
+        rejectBootstrapSuperAdminMutation(user, "调整平台角色绑定");
         List<Long> roleIds = normalizeRoleIds(request.getRoleIds());
         ensureRolesExist(roleIds);
         Set<Long> existingRoleIds = new HashSet<>(userRoleRelMapper.selectRoleIdsByUserId(userId));
@@ -587,14 +599,16 @@ public class UserMgmtServiceImpl implements UserMgmtService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void replaceUserRoles(Long userId, UserRoleReplaceRequest request) {
-        ensureUserExists(userId);
+        User user = ensureUserExists(userId);
+        rejectBootstrapSuperAdminMutation(user, "调整平台角色绑定");
         replaceUserRolesInternal(userId, request.getRoleIds());
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void unbindUserRole(Long userId, Long roleId) {
-        ensureUserExists(userId);
+        User user = ensureUserExists(userId);
+        rejectBootstrapSuperAdminMutation(user, "调整平台角色绑定");
         PlatformRole role = platformRoleMapper.selectById(roleId);
         if (role == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "角色不存在");
@@ -636,6 +650,18 @@ public class UserMgmtServiceImpl implements UserMgmtService {
             throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
         }
         return user;
+    }
+
+    private static boolean isBootstrapSuperAdmin(User user) {
+        return user != null
+                && user.getUsername() != null
+                && BOOTSTRAP_SUPER_ADMIN_USERNAME.equalsIgnoreCase(user.getUsername().trim());
+    }
+
+    private static void rejectBootstrapSuperAdminMutation(User user, String verb) {
+        if (isBootstrapSuperAdmin(user)) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "内置超级管理员账号不允许" + verb);
+        }
     }
 
     private UserOrgVO buildUserOrgVO(Long orgId) {
