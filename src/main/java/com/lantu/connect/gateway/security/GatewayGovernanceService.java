@@ -4,7 +4,6 @@ import com.lantu.connect.auth.entity.PlatformRole;
 import com.lantu.connect.auth.mapper.PlatformRoleMapper;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
-import com.lantu.connect.sysconfig.service.QuotaCheckService;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
@@ -24,17 +23,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class GatewayGovernanceService {
 
-    private final QuotaCheckService quotaCheckService;
     private final PlatformRoleMapper platformRoleMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final JdbcTemplate jdbcTemplate;
 
     public InvokeGovernanceLease applyPreInvoke(Long userId, ApiKey apiKey, String resourceType, Long resourceId, int tokens) {
-        Long quotaUserId = resolveQuotaUserId(userId, apiKey);
-        if (quotaUserId != null) {
-            quotaCheckService.checkAndConsume(quotaUserId, Math.max(1, tokens), resourceType);
-        }
-
         List<PlatformRole> roles = userId == null ? Collections.emptyList() : platformRoleMapper.selectRolesByUserId(userId);
         enforceRuleRateLimit(userId, roles, resourceType);
         enforceResourceRateLimit(resourceType, resourceId);
@@ -86,39 +79,12 @@ public class GatewayGovernanceService {
         }
     }
 
+    /** 已移除 t_quota_rate_limit 资源级限流，统一由 t_rate_limit_rule 与用户维度规则承接。 */
     private void enforceResourceRateLimit(String resourceType, Long resourceId) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT id, max_requests_per_min, max_requests_per_hour FROM t_quota_rate_limit WHERE enabled = 1 AND target_type = ? AND target_id = ? LIMIT 1",
-                resourceType, resourceId);
-        if (rows.isEmpty()) {
-            return;
-        }
-        Map<String, Object> row = rows.get(0);
-        String id = str(row.get("id"));
-        int maxPerMin = (int) Math.max(1L, num(row.get("max_requests_per_min")));
-        int maxPerHour = (int) Math.max(1L, num(row.get("max_requests_per_hour")));
-
-        checkWindow("gw:qrl:min:" + id, 60_000L, maxPerMin);
-        checkWindow("gw:qrl:hour:" + id, 3_600_000L, maxPerHour);
     }
 
     private String acquireConcurrentPermit(String resourceType, Long resourceId) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT id, max_concurrent FROM t_quota_rate_limit WHERE enabled = 1 AND target_type = ? AND target_id = ? LIMIT 1",
-                resourceType, resourceId);
-        if (rows.isEmpty()) {
-            return null;
-        }
-        Map<String, Object> row = rows.get(0);
-        int maxConcurrent = (int) Math.max(1L, num(row.get("max_concurrent")));
-        String key = "gw:qrl:concurrent:" + str(row.get("id"));
-        Long current = stringRedisTemplate.opsForValue().increment(key);
-        stringRedisTemplate.expire(key, Duration.ofMinutes(10));
-        if (current != null && current > maxConcurrent) {
-            stringRedisTemplate.opsForValue().decrement(key);
-            throw new BusinessException(ResultCode.RATE_LIMITED, "资源并发已达上限");
-        }
-        return key;
+        return null;
     }
 
     private void checkWindow(String keyPrefix, long windowMs, int limit) {
@@ -168,23 +134,6 @@ public class GatewayGovernanceService {
             return "r" + targetValue.trim();
         }
         return "global";
-    }
-
-    private static Long resolveQuotaUserId(Long userId, ApiKey apiKey) {
-        if (userId != null) {
-            return userId;
-        }
-        if (apiKey == null || !"user".equalsIgnoreCase(apiKey.getOwnerType())) {
-            return null;
-        }
-        if (!StringUtils.hasText(apiKey.getOwnerId())) {
-            return null;
-        }
-        try {
-            return Long.valueOf(apiKey.getOwnerId().trim());
-        } catch (NumberFormatException ex) {
-            return null;
-        }
     }
 
     private static long num(Object v) {

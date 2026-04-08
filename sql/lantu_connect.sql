@@ -472,7 +472,7 @@ CREATE TABLE `t_notification`  (
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_notification_user`(`user_id` ASC, `is_read` ASC) USING BTREE,
   INDEX `idx_notification_time`(`create_time` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 5 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '通知表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 4 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '通知表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_notification
@@ -480,7 +480,6 @@ CREATE TABLE `t_notification`  (
 INSERT INTO `t_notification` VALUES (1, 0, 'system', '系统维护公告', '兰智通平台将于2026年3月25日凌晨2:00-4:00进行系统维护升级，届时服务将暂停。', 'system_announce', NULL, 0, '2026-03-22 10:58:54');
 INSERT INTO `t_notification` VALUES (2, 3, 'notice', '您的 Agent「图像生成」已提交审核', '您提交的 Agent「图像生成」正在等待管理员审核，预计1-2个工作日内完成。', 'audit', '5', 0, '2026-03-22 10:58:54');
 INSERT INTO `t_notification` VALUES (3, 3, 'notice', '您的 Skill「OCR 文字识别」已提交审核', '您提交的 Skill「OCR 文字识别」正在等待审核。', 'audit', '8', 1, '2026-03-22 10:58:54');
-INSERT INTO `t_notification` VALUES (4, 4, 'notice', '本月调用配额已使用80%', '您的本月调用配额已使用80%，请注意合理使用。如需增加配额请联系管理员。', 'quota', NULL, 1, '2026-03-22 10:58:54');
 
 -- ----------------------------
 -- Table structure for t_org_menu
@@ -565,59 +564,6 @@ CREATE TABLE `t_provider`  (
 INSERT INTO `t_provider` VALUES (1, 'aliyun-dashscope', '阿里云灵积', 'cloud', '阿里云大模型服务平台', 'api_key', '{\"api_key\": \"sk-demo-key\"}', 'https://dashscope.aliyuncs.com', 'active', 3, 2, 0, '2026-03-22 10:58:54', '2026-03-22 13:30:20');
 INSERT INTO `t_provider` VALUES (2, 'baidu-qianfan', '百度千帆', 'cloud', '百度智能云千帆大模型平台', 'api_key', '{\"api_key\": \"bce-demo-key\"}', 'https://aip.baidubce.com', 'active', 1, 1, 0, '2026-03-22 10:58:54', '2026-03-22 13:30:20');
 INSERT INTO `t_provider` VALUES (3, 'local-service', '本地服务', 'internal', '校内自建 AI 服务', 'none', NULL, 'http://ai.lzu.edu.cn', 'active', 2, 5, 0, '2026-03-22 10:58:54', '2026-03-22 13:30:20');
-
--- ----------------------------
--- Table structure for t_quota
--- ----------------------------
-DROP TABLE IF EXISTS `t_quota`;
-CREATE TABLE `t_quota`  (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `target_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `target_id` bigint NULL DEFAULT NULL,
-  `target_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `resource_category` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'all',
-  `daily_limit` int NOT NULL,
-  `monthly_limit` int NOT NULL,
-  `daily_used` int NULL DEFAULT 0,
-  `monthly_used` int NULL DEFAULT 0,
-  `enabled` tinyint(1) NULL DEFAULT 1,
-  `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
-  `update_time` datetime NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 5 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '配额表' ROW_FORMAT = DYNAMIC;
-
--- ----------------------------
--- Records of t_quota
--- ----------------------------
-INSERT INTO `t_quota` VALUES (1, 'global', NULL, '全局配额', 'all', 100000, 2000000, 0, 428000, 1, '2026-03-22 10:58:54', '2026-03-23 00:00:19');
-INSERT INTO `t_quota` VALUES (2, 'department', 2, '计算机学院', 'all', 5000, 100000, 0, 28500, 1, '2026-03-22 10:58:54', '2026-03-23 00:00:19');
-INSERT INTO `t_quota` VALUES (3, 'department', 3, '信息技术中心', 'all', 10000, 200000, 0, 85000, 1, '2026-03-22 10:58:54', '2026-03-23 00:00:19');
-INSERT INTO `t_quota` VALUES (4, 'user', 3, '王开发', 'all', 500, 10000, 0, 1350, 1, '2026-03-22 10:58:54', '2026-03-23 00:00:19');
-
--- ----------------------------
--- Table structure for t_quota_rate_limit
--- ----------------------------
-DROP TABLE IF EXISTS `t_quota_rate_limit`;
-CREATE TABLE `t_quota_rate_limit`  (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `target_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `target_id` bigint NULL DEFAULT NULL,
-  `target_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `max_requests_per_min` int NOT NULL,
-  `max_requests_per_hour` int NOT NULL,
-  `max_concurrent` int NOT NULL,
-  `enabled` tinyint(1) NULL DEFAULT 1,
-  `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
-  `update_time` datetime NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 3 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源级限流表' ROW_FORMAT = DYNAMIC;
-
--- ----------------------------
--- Records of t_quota_rate_limit
--- ----------------------------
-INSERT INTO `t_quota_rate_limit` VALUES (1, '联网搜索限流', 'agent', 1, '联网搜索', 200, 5000, 50, 1, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_quota_rate_limit` VALUES (2, '代码助手限流', 'agent', 6, '代码助手', 100, 3000, 30, 1, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
 
 -- ----------------------------
 -- Table structure for t_rate_limit_rule

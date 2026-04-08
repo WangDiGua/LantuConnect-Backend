@@ -796,29 +796,11 @@ public class DashboardServiceImpl implements DashboardService {
 
     @Override
     public UserDashboardData userDashboard(Long userId) {
-        String uid = String.valueOf(userId);
-
         Map<String, Object> quotaUsage = new LinkedHashMap<>();
-        Map<String, Object> quotaRow = null;
-        try {
-            quotaRow = jdbcTemplate.queryForMap(
-                    "SELECT daily_limit, daily_used, monthly_limit, monthly_used FROM t_quota "
-                            + "WHERE target_type = 'user' AND target_id = ? AND enabled = 1 "
-                            + "AND resource_category = 'all' ORDER BY id LIMIT 1",
-                    userId);
-        } catch (Exception ignored) {
-        }
-        if (quotaRow != null) {
-            quotaUsage.put("dailyLimit", quotaRow.getOrDefault("daily_limit", -1));
-            quotaUsage.put("dailyUsed", quotaRow.getOrDefault("daily_used", 0));
-            quotaUsage.put("monthlyLimit", quotaRow.getOrDefault("monthly_limit", -1));
-            quotaUsage.put("monthlyUsed", quotaRow.getOrDefault("monthly_used", 0));
-        } else {
-            quotaUsage.put("dailyLimit", -1);
-            quotaUsage.put("dailyUsed", 0);
-            quotaUsage.put("monthlyLimit", -1);
-            quotaUsage.put("monthlyUsed", 0);
-        }
+        quotaUsage.put("dailyLimit", -1);
+        quotaUsage.put("dailyUsed", 0);
+        quotaUsage.put("monthlyLimit", -1);
+        quotaUsage.put("monthlyUsed", 0);
 
         Map<String, Object> myResources = new LinkedHashMap<>();
         List<Map<String, Object>> statusCounts = jdbcTemplate.queryForList(
