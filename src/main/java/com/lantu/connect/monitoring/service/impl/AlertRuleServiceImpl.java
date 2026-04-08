@@ -19,6 +19,8 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * 监控AlertRule服务实现
@@ -45,7 +47,7 @@ public class AlertRuleServiceImpl implements AlertRuleService {
         if (request.getThreshold() != null) {
             entity.setThreshold(BigDecimal.valueOf(request.getThreshold()));
         }
-        entity.setNotifyChannels(request.getNotifyChannels());
+        entity.setNotifyChannels(normalizeNotifyChannelsForStorage());
         entity.setEnabled(request.getEnabled() == null || request.getEnabled() != 0);
         LocalDateTime now = LocalDateTime.now();
         entity.setCreateTime(now);
@@ -73,9 +75,7 @@ public class AlertRuleServiceImpl implements AlertRuleService {
         if (request.getThreshold() != null) {
             existing.setThreshold(BigDecimal.valueOf(request.getThreshold()));
         }
-        if (request.getNotifyChannels() != null) {
-            existing.setNotifyChannels(request.getNotifyChannels());
-        }
+        existing.setNotifyChannels(normalizeNotifyChannelsForStorage());
         if (request.getEnabled() != null) {
             existing.setEnabled(request.getEnabled() != 0);
         }
@@ -170,6 +170,14 @@ public class AlertRuleServiceImpl implements AlertRuleService {
             return "5m";
         }
         return raw.trim();
+    }
+
+    /**
+     * 产品当前仅支持站内通知（见 {@link com.lantu.connect.task.AlertRuleEvaluateTask}）。
+     * 请求体中的 notifyChannels（钉钉/邮件/Webhook 等）一律忽略，落库为空 JSON 数组，避免误导。
+     */
+    private static List<String> normalizeNotifyChannelsForStorage() {
+        return Collections.emptyList();
     }
 
     private static boolean evaluate(BigDecimal value, BigDecimal threshold, String op) {

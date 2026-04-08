@@ -89,8 +89,8 @@ CREATE TABLE `t_alert_rule`  (
 -- ----------------------------
 -- Records of t_alert_rule
 -- ----------------------------
-INSERT INTO `t_alert_rule` VALUES ('ar-001', 'API延迟过高', 'P95延迟超过3秒时告警', 'api.latency.p95', 'gt', 3000.0000, '5m', 'warning', 1, '[\"email\", \"webhook\"]', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_alert_rule` VALUES ('ar-002', '错误率过高', '5分钟内错误率超过5%时告警', 'api.error_rate', 'gt', 5.0000, '5m', 'critical', 1, '[\"email\", \"sms\"]', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_alert_rule` VALUES ('ar-001', 'API延迟过高', 'P95延迟超过3秒时告警', 'api.latency.p95', 'gt', 3000.0000, '5m', 'warning', 1, '[]', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_alert_rule` VALUES ('ar-002', '错误率过高', '5分钟内错误率超过5%时告警', 'api.error_rate', 'gt', 5.0000, '5m', 'critical', 1, '[]', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
 
 -- ----------------------------
 -- Table structure for t_announcement

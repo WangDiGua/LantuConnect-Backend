@@ -29,6 +29,10 @@ public class AlertRuleCreateRequest {
     private String severity;
     /** 持续时间窗口，如 5m、1h */
     private String duration;
+    /**
+     * 已废弃：服务端忽略。告警仅通过站内消息与实时推送送达。
+     */
+    @Deprecated
     private List<String> notifyChannels;
     private Integer enabled;
 }

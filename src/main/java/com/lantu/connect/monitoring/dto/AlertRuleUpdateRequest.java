@@ -23,6 +23,10 @@ public class AlertRuleUpdateRequest {
     private String operator;
     private String severity;
     private String duration;
+    /**
+     * 已废弃：服务端忽略。告警仅通过站内消息与实时推送送达。
+     */
+    @Deprecated
     private List<String> notifyChannels;
     private Integer enabled;
 }

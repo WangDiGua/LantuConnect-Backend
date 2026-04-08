@@ -10,6 +10,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
@@ -44,6 +46,7 @@ class AlertRuleServiceImplTest {
         assertThat(saved.getOperator()).isEqualTo("gt");
         assertThat(saved.getSeverity()).isEqualTo("critical");
         assertThat(saved.getDuration()).isEqualTo("10m");
+        assertThat(saved.getNotifyChannels()).isEmpty();
     }
 
     @Test
@@ -57,6 +60,7 @@ class AlertRuleServiceImplTest {
         assertThat(cap.getValue().getOperator()).isEqualTo("gte");
         assertThat(cap.getValue().getSeverity()).isEqualTo("warning");
         assertThat(cap.getValue().getDuration()).isEqualTo("5m");
+        assertThat(cap.getValue().getNotifyChannels()).isEmpty();
     }
 
     @Test
@@ -69,5 +73,17 @@ class AlertRuleServiceImplTest {
         ArgumentCaptor<AlertRule> cap = ArgumentCaptor.forClass(AlertRule.class);
         verify(alertRuleMapper).insert(cap.capture());
         assertThat(cap.getValue().getSeverity()).isEqualTo("warning");
+    }
+
+    @Test
+    void createIgnoresLegacyNotifyChannelsInRequest() {
+        when(alertRuleMapper.insert(any())).thenReturn(1);
+        AlertRuleCreateRequest req = new AlertRuleCreateRequest();
+        req.setName("rule-d");
+        req.setNotifyChannels(List.of("email", "webhook", "ding"));
+        alertRuleService.create(req);
+        ArgumentCaptor<AlertRule> cap = ArgumentCaptor.forClass(AlertRule.class);
+        verify(alertRuleMapper).insert(cap.capture());
+        assertThat(cap.getValue().getNotifyChannels()).isEmpty();
     }
 }

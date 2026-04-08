@@ -33,6 +33,9 @@ public class AlertRule {
     private String severity;
     private Boolean enabled;
 
+    /**
+     * 历史列；当前仅站内通知，服务端创建/更新时始终写入空列表，前端不再展示外部渠道。
+     */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<String> notifyChannels;
 
