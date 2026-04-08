@@ -33,7 +33,7 @@ public class UserInfoVO {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
-    /** 界面语言偏好（Redis，未设置则为 null） */
+    /** 界面语言偏好（t_user.language，未设置时接口中可能为默认值） */
     private String language;
 
     /** 与 Casbin 一致的权限点列表（库表角色 permissions 合并），供控制台菜单与 JWT 主角色解耦 */
