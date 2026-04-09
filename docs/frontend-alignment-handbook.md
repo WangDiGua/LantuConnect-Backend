@@ -1,6 +1,6 @@
 # 前端对接后端标准说明书（后端全量执行版）
 
-> 更新时间：2026-04-03  
+> 更新时间：2026-04-09  
 > 适用范围：前端控制台与用户端全部页面改造。  
 > 权威顺序：后端代码（Controller/Filter/DTO/AOP）> 本文档 > `docs/frontend-full-spec.md`。  
 > 结论标记：`保留` / `迁移` / `下线`。
@@ -146,20 +146,19 @@
 4. `@RequirePermission`
 5. 前端菜单可见性（仅 UI 层，不等于后端授权）
 
-## 2.9 登录权限 vs 调用权限（新增双层模型）
+## 2.9 登录权限 vs 调用权限（网关双层模型）
 
 - 登录权限（RBAC）：决定用户是否可进入某页面与调用管理接口（`@RequireRole` / `@RequirePermission`）。
-- 调用权限（Scope + Grant）：决定某个 `X-Api-Key` 是否可访问某资源。
-  - Scope：`catalog:* / resolve:* / invoke:*` 或 type/id 级 scope。
-  - Grant：资源拥有者把某个资源授予第三方 `ApiKey`（`t_resource_invoke_grant`）。
-- 网关调用已升级为三层同时生效：
-  1) 用户 RBAC（有 `X-User-Id` 时）
-  2) API Key scope
-  3) 资源 grant（资源拥有者或平台管理员授予）；此外 **`t_resource.access_policy`**（`grant_required` / `open_org(同部门)` / `open_platform(租户内)`）可在网关侧短路 Grant 校验，细则见 `PRODUCT_DEFINITION.md` §4 与 `docs/resource-registration-authorization-invocation-guide.md` §3.1。**不改变** `skill` / `dataset` 等「禁止统一 invoke」的产品边界（见 `PRODUCT_DEFINITION.md` §2–§3）。
-- 新增授权管理接口（供前端授权页接入）：
-  - `POST /resource-grants`：授予/更新授权
-  - `GET /resource-grants?resourceType=&resourceId=`：查询授权列表
-  - `DELETE /resource-grants/{grantId}`：撤销授权
+- 调用权限：`X-Api-Key` 的 **scope** 与资源 **`t_resource.access_policy`**（如 `grant_required` / `open_org(同部门)` / `open_platform(租户内)`）共同决定在网关侧是否允许 `resolve` / `invoke`。细则见 `PRODUCT_DEFINITION.md` §4 与 `docs/resource-registration-authorization-invocation-guide.md` §3.1。**不改变** `skill` / `dataset` 等「禁止统一 invoke」的产品边界（见 `PRODUCT_DEFINITION.md` §2–§3）。
+- **已下线（2026-04-09，迁移 `sql/migrations/20260409_remove_resource_grants_and_open_catalog.sql`）**
+  - 数据表 **`t_resource_invoke_grant`**、**`t_resource_grant_application`** 已删除；**无**独立 `POST/GET/DELETE /resource-grants` CRUD，**无** `/grant-applications*` 工单链路与审批接口。
+  - 开放平台目录策略随迁移统一调整为以 `access_policy` / 开放目录为准（详见该 SQL 头注释与数据修复语句）。
+- **兼容占位（可选对接）**：`GET /user-settings/api-keys/{apiKeyId}/resource-grants` 仍存在于 `UserSettingsController`，当前服务实现 **恒返回空列表**（保留路径以免旧客户端硬编码报错）。
+
+### 2.9.1 审计日志保留天数（`audit_log_retention`）
+
+- 配置键写入 `t_security_setting.key = audit_log_retention`（通过 `PUT /system-config/security` 等既有能力维护）。
+- 定时任务 `AuditLogRetentionTask`：`value` 解析为整数后 **`<= 0`** 表示 **不执行** 自动清理（永久保留）；**`1..3650`** 为保留最近 N 天；**缺省或非法**回退 **90** 天。
 
 ---
 
@@ -221,7 +220,7 @@
 | `role-management` | 保留 | `/user-mgmt/roles*` |
 | `organization` | 保留 | `/user-mgmt/org-tree`,`/user-mgmt/orgs*` |
 | `api-key-management` | 保留 | `/user-mgmt/api-keys*` |
-| `resource-grant-management` | 保留（新增） | `/resource-grants*`（资源授权他人调用） |
+| `resource-grant-management` | **下线** | 独立 grant CRUD/工单已删；前端若仍有 slug 应移除或改为说明性占位 |
 | `monitoring-overview` | 保留 | `/monitoring/kpis` |
 | `call-logs` | 保留 | `/monitoring/call-logs` |
 | `performance-analysis` | 保留 | `/monitoring/performance` |
@@ -231,11 +230,13 @@
 | `circuit-breaker` | 保留 | `/health/circuit-breakers*` |
 | `category-management` | 下线 | 旧 `/v1/categories/**` 已删除 |
 | `tag-management` | 保留 | `/tags*` |
+| `system-params` | 保留 | `/system-config/params*` |
+| `network-config` | 保留 | `GET /system-config/network/allowlist`、`POST /system-config/network/apply` |
 | `model-config` | **已移除** | 产品与后端均不提供大模型配置页/API；数据库表 `t_model_config` 已删（Flyway V18） |
 | `security-settings` | 保留 | `/system-config/security` |
 | `quota-management` | 保留 | `/quotas*`,`/rate-limits*` |
 | `rate-limit-policy` | 保留 | `/system-config/rate-limits*` |
-| `access-control` | 保留 | `/system-config/acl/publish` + `/resource-grants*` |
+| `access-control` | 保留 | `/system-config/acl` + `POST /system-config/acl/publish`（**不再**绑定已删除的 `/resource-grants*`） |
 | `audit-log` | 保留 | `/system-config/audit-logs` |
 | `api-docs` | 保留 | 文档页，不直接绑定单一接口 |
 | `sdk-download` | 保留 | `/sdk/v1/*`（示例链路） |
@@ -318,25 +319,18 @@
 | POST | `/catalog/resolve` | body:`ResourceResolveRequest` | `X-User-Id?`,`X-Api-Key?` | 保留 |
 | POST | `/invoke` | body:`InvokeRequest` | `X-Api-Key` 必填，`X-User-Id?`,`X-Trace-Id?` | 保留；hosted skill / MCP 前置 skill 见实现 |
 
-## 4.2.1 资源调用授权管理（新增）
+## 4.2.1 ~~资源调用授权管理与工单~~（已整体下线）
 
-| 方法 | 路径 | 请求要点 | 鉴权/权限 | 结论 |
-|---|---|---|---|---|
-| POST | `/resource-grants` | body:`ResourceGrantCreateRequest` | `X-User-Id`；资源拥有者或平台管理员 | 保留（新增） |
-| GET | `/resource-grants` | query:`resourceType,resourceId` | `X-User-Id`；资源拥有者或平台管理员 | 保留（新增） |
-| DELETE | `/resource-grants/{grantId}` | path:`grantId` | `X-User-Id`；资源拥有者或平台管理员 | 保留（新增） |
+> **结论：`下线`**（2026-04-09）。表 `t_resource_invoke_grant`、`t_resource_grant_application` 已删除；下列路径 **不再提供**，前端与契约不得再引用。
 
-## 4.2.1a 资源授权申请（工单）
+| 方法 | 路径 | 结论 |
+|---|---|---|
+| POST/GET/DELETE | `/resource-grants*` | **下线** |
+| 全部 | `/grant-applications*`（含 `approve` / `reject` 等） | **下线** |
 
-Controller 方法无类级 `@RequireRole`；**待办可见范围与通过/驳回权**由 `GrantApplicationService` 与资源 owner / 部门一致性强校验（与 `resource-registration-authorization-invocation-guide.md` §3.2.1 一致）：`platform_admin` 全量；`dept_admin` 仅 **owner 属本部门** 的待办；`developer` 仅 **本人名下资源** 上的待办。审批人可为 **资源 owner**、**同部门 dept_admin** 或 **platform_admin/admin**。
+跨区域授权与可见性改由 **`access_policy`**、目录与网关校验承载；若需「谁可 invoke」调试，可走资源详情与网关日志，不再维护逐 ApiKey 的 grant 行。
 
-| 方法 | 路径 | 请求要点 | 鉴权/权限 | 结论 |
-|---|---|---|---|---|
-| POST | `/grant-applications` | body:`GrantApplicationRequest` | `X-User-Id` | 保留 |
-| GET | `/grant-applications/mine` | query:`status?,keyword?,q?,page,pageSize` | `X-User-Id` | 保留 |
-| GET | `/grant-applications/pending` | query: 同 mine；`keyword` 与 `q` 等价择一；服务端 OR 匹配资源字段、`actions`、申请人用户名/姓名及申请 `id`（纯数字） | `X-User-Id` + 服务层按角色过滤待办（见上文） | 保留 |
-| POST | `/grant-applications/{id}/approve` | path:`id` | `X-User-Id` + 服务层审批权校验 | 保留 |
-| POST | `/grant-applications/{id}/reject` | path:`id` + body:`ResourceRejectRequest` | 同 approve | 保留 |
+**占位只读（非 CRUD）**：`GET /user-settings/api-keys/{apiKeyId}/resource-grants` 仍返回 **空数组**（见 §2.9）。
 
 ## 4.2.2 统一资源注册中心（新增）
 
@@ -817,20 +811,18 @@ sandboxToken --> sandboxInvoke["POST /sandbox/invoke"]
 sandboxInvoke --> sandboxResp[SandboxInvokeResponse]
 ```
 
-### 5.6.4 MCP/Skill 授权他人调用流程（新增）
+### 5.6.4 租户内调用与 access_policy（grant 表已移除）
 
 ```mermaid
 flowchart LR
-owner[资源拥有者] --> listRes["GET /catalog/resources"]
-listRes --> createGrant["POST /resource-grants"]
-createGrant --> grantOk[授权生效]
-thirdParty[第三方API调用方] --> invoke["POST /invoke + X-Api-Key"]
-invoke --> grantCheck{"scope + grant 通过?"}
-grantCheck -->|yes| callSuccess[调用成功]
-grantCheck -->|no| callDenied[403 授权不足]
-owner --> revokeGrant["DELETE /resource-grants/{grantId}"]
-revokeGrant --> invoke
+consumer[调用方 X-Api-Key] --> resolve["POST /catalog/resolve"]
+resolve --> policyCheck{"access_policy / scope 允许?"}
+policyCheck -->|yes| invoke["POST /invoke"]
+policyCheck -->|no| denied[403 授权不足]
+invoke --> ok[调用成功]
 ```
+
+> 原「owner 维护 grant 行 / `/resource-grants`」流程已随表删除下线；产品与实现以 **`access_policy` + scope** 为准（见 §2.9）。
 
 ---
 
@@ -863,9 +855,9 @@ revokeGrant --> invoke
 | UserActivity | `/user/recent-use` | `useractivity/dto/RecentUseVO` |
 | Review | `/reviews` | `review/dto/ReviewCreateRequest`,`review/dto/ReviewSummaryVO` |
 | Notification | `/notifications` | `notification/entity/Notification` |
-| Grant | `/resource-grants*` | `gateway/dto/ResourceGrantCreateRequest`,`ResourceGrantVO` |
+| UserSettings | `GET /user-settings/api-keys/{apiKeyId}/resource-grants` | `gateway/dto/ResourceGrantVO`（列表接口占位，当前恒空） |
 | Tags | `/tags`,`/tags/batch` | `dataset/dto/TagCreateRequest`,`dataset/entity/Tag` |
-| SensitiveWord | `/sensitive-words*` | `common/sensitive/SensitiveWordController` 内部请求对象 `AddRequest/BatchAddRequest/UpdateRequest/CheckRequest` |
+| SensitiveWord | `/sensitive-words*` | `SensitiveWordController` 内部 `AddRequest/BatchAddRequest/UpdateRequest/CheckRequest`；**分类**为固定字典（`SensitiveWordFixedCategories`），导入/单条新增须落在允许类别；**UpdateRequest** 可带 **`source`** 字段（可选，标注来源/渠道） |
 | File | `/files/upload` | multipart 入参，无独立 DTO |
 
 ---
@@ -885,6 +877,7 @@ revokeGrant --> invoke
 | `/v1/datasets/**` | 控制器已删除 | 改走统一目录与调用 |
 | `/v1/providers/**` | 控制器已删除 | 改走系统配置/资源域 |
 | `/v1/categories/**` | 控制器已删除 | 改走标签与配置域 |
+| `/resource-grants*`、`/grant-applications*` | 表与控制器已删除（2026-04-09 迁移） | 调用可见性由 `access_policy` 与网关承担；仅保留 `GET .../api-keys/.../resource-grants` 空列表占位 |
 
 参考：`docs/backend/deprecation/removed-code-audit.md`。
 
