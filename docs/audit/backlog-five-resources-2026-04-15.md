@@ -23,7 +23,7 @@
 
 - **P0 缺口**：无（skill 不 invoke、dataset 无 endpoint 均为明确产品设计，非代码断链）。
 - **P1 提示**：dataset 若产品期望「可下载文件」，需单独 API（当前 resolve 仅有 data_type/format/record_count 等，无文件 URL 字段在本轮未扩查）。
-- **鉴权横切**：catalog / resolve / invoke 与 `access_policy`、Grant、API Key scope — [`ResourceInvokeGrantService`](../../src/main/java/com/lantu/connect/gateway/security/ResourceInvokeGrantService.java)、[`GatewayUserPermissionService`](../../src/main/java/com/lantu/connect/gateway/security/GatewayUserPermissionService.java)。
+- **鉴权横切**：catalog / resolve / invoke 与 **API Key、scope、`published`、RBAC** — [`ResourceInvokeGrantService`](../../src/main/java/com/lantu/connect/gateway/security/ResourceInvokeGrantService.java)、[`GatewayUserPermissionService`](../../src/main/java/com/lantu/connect/gateway/security/GatewayUserPermissionService.java)。`access_policy` 仅历史字段。
 
 ---
 

@@ -49,7 +49,7 @@ import java.util.UUID;
 
 @RestController
 @RequiredArgsConstructor
-@Tag(name = "资源目录与网关", description = "市场目录、资源解析、统一调用与应用启动跳转；`include` 与 `access_policy` 语义见契约文档；鉴权以 API Key scope + published 为主（资源级 Grant 已下线）。")
+@Tag(name = "资源目录与网关", description = "市场目录、资源解析、统一调用与应用启动跳转；`include` 与历史字段 `access_policy` 见 docs/api/public-catalog-contract.md。鉴权以有效 X-Api-Key、Key scope、资源 published（及网关 ResourceInvokeGrantService 规则）为准；逐资源授权表与工单已移除（2026-04-09 迁移）。")
 public class ResourceCatalogController {
 
     private final UnifiedGatewayService unifiedGatewayService;

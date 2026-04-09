@@ -91,10 +91,9 @@
 - 创建接口 `POST /user-settings/api-keys` 或 `POST /user-mgmt/api-keys` 成功后，响应体 **`data.secretPlain`** 为完整可调用密钥（形如 `sk_` + 32 位十六进制），**仅在此一次响应中返回**，前端须提示用户立即复制保存。
 - 列表/详情里常见的 **`maskedKey`（如 `sk_3****`）、`prefix`、`id`（表主键）都不能**当作 `X-Api-Key` 传入：网关会对请求头**整串**做 SHA-256，与库中 `key_hash` 比对；遗失明文只能删除该 Key 后重建。
 
-## 3.4 资源级 Grant（管理接口保留；网关 invoke 不依赖）
+## 3.4 ~~资源级逐 Key 授权~~（已下线，2026-04-09）
 
-- **真值**：`ResourceInvokeGrantService.ensureApiKeyGranted` 对 **已存在资源** 仅做 owner/Key 归属等基础校验，**不再查询** `t_resource_invoke_grant` 来决定可否 `invoke`/`catalog_read`。
-- **管理 CRUD 仍存在**：`POST /resource-grants`、`GET /resource-grants`、`DELETE /resource-grants/{grantId}`（若前端已下线 Grant UI，可视为遗留或仅审计用途）。
+- **真值**：`t_resource_invoke_grant` / `t_resource_grant_application` **已删除**；无 `POST/GET/DELETE /resource-grants*`、无 `/grant-applications*`。`ResourceInvokeGrantService.ensureApiKeyGranted` **不**再读 Grant 表，仅保留 owner/平台 Key 等与资源存在性相关规则；调用以 **API Key、scope、published** 为主。个人设置 `GET /user-settings/api-keys/{apiKeyId}/resource-grants` 仅占位返回 `[]`。
 
 ### 3.4.1 绑定字段（注册 JSON）
 
@@ -146,7 +145,7 @@ flowchart TD
   - 管理员可见：通过、驳回
   - 不应允许编辑/删除
 - `testing`
-  - **发布**：资源 owner、同部门 dept_admin（与 Grant 一致）或 platform_admin/admin；驳回仍可由审核管理员操作（按产品策略）
+  - **发布**：资源 owner、同部门 dept_admin 或 platform_admin/admin（`ensureMayPublishAuditedResource`）；驳回仍可由审核管理员操作（按产品策略）
   - 开发者可见：下线（若业务允许）
 - `published`
   - 可见：下线、查看、使用（按类型）
@@ -243,59 +242,42 @@ flowchart TD
 
 ---
 
-## 7. 授权模型（不是授权链接）
+## 7. 调用侧校验模型（不是授权链接；无逐资源 Grant）
 
-## 7.1 三层校验结构
+## 7.1 典型约束（按路径叠加）
 
-调用是否成功，至少过三层：
+对已发布资源的 **catalog / resolve / invoke**（具体以类型与实现为准），调用方通常需同时满足：
 
-1. 用户角色权限（RBAC，若带 `X-User-Id`）
-2. API Key scope（`catalog/resolve/invoke` 的范围）
-3. Grant（资源拥有者是否把该资源授权给该 API Key）
+1. **有效 `X-Api-Key`**（及 Key 状态为 active 等）
+2. **API Key scope** 覆盖当前动作（如 `catalog`、`resolve`、`invoke` 或 `*`）
+3. **资源生命周期**：常见要求资源为 **`published`** 且未被删除；部分路径还需 **RBAC**（带 `X-User-Id` 时由 `GatewayUserPermissionService` 等按资源类型过滤）
+4. **网关规则**：`ResourceInvokeGrantService` 中对 owner Key、平台 Key 等等价短路（**不**再查 Grant 表）
 
-## 7.2 授权流程图
+历史字段 **`access_policy`** 仍可出现在 JSON 中，**不要**按「须额外 Grant 行」理解。
+
+## 7.2 流程图（Grant 已下线后）
 
 ```mermaid
 flowchart LR
-    ownerUser[ResourceOwner] --> createGrant["POST /resource-grants"]
-    createGrant --> grantActive[GrantActive]
-    thirdCaller[ThirdPartyApiKey] --> resolveResource["POST /catalog/resolve"]
+    caller[调用方 X-Api-Key] --> resolveResource["POST /catalog/resolve"]
     resolveResource --> invokeResource["POST /invoke"]
-    invokeResource --> checkLayer{"RBAC+Scope+GrantPass"}
+    invokeResource --> checkLayer{"RBAC + scope + published + 网关规则?"}
     checkLayer -->|yes| invokeSuccess[Success]
-    checkLayer -->|no| forbidden403[Forbidden]
-    ownerUser --> revokeGrant["DELETE /resource-grants/{grantId}"]
-    revokeGrant --> forbidden403
+    checkLayer -->|no| forbidden403[403 / 404 等]
 ```
 
-## 7.3 授权接口（资源拥有者/平台管理员）
+## 7.3 ~~逐资源授权 CRUD~~
 
-`POST /resource-grants`
+**已删除**。请勿再对接 `POST /resource-grants` 等路径；第三方接入文案写 **平台发放的 API Key + 所需 scope**，不写「向资源 owner 申请 Grant」。
 
-```json
-{
-  "resourceType": "mcp",
-  "resourceId": 29,
-  "granteeApiKeyId": "api-key-id-xxx",
-  "actions": ["catalog", "resolve", "invoke"],
-  "expiresAt": "2026-12-31T23:59:59"
-}
-```
+## 7.4 常见误区
 
-字段说明：
-
-- `actions` 只支持：`catalog`、`resolve`、`invoke`、`*`
-- 不允许空 actions
-- 过期时间到了会自动失效（校验时拒绝）
-
-## 7.4 常见授权误区
-
-- 误区1：给了 scope 就能调  
-  - 错：跨 owner 的 API Key 还要有 Grant。
-- 误区2：给了 Grant 就能调  
-  - 错：scope 不覆盖 `invoke` 也会 403。
-- 误区3：授权链接可替代 API Key  
-  - 错：后端目前无“授权链接”协议，只有 API Key + Scope + Grant。
+- 误区1：只要有 scope 就一定 resolve/invoke 成功  
+  - 错：资源可能非 `published`、类型不允许调用、或 Key 与资源状态不满足网关规则。
+- 误区2：`accessPolicy=grant_required` 表示必须找 owner 开 Grant  
+  - 错：该值为历史枚举；迁移后库中多为 `open_platform`，且网关 **不**再按 Grant 表裁决。
+- 误区3：存在「授权链接」可免 Key  
+  - 错：调用链仍以 **API Key**（及 scope）为主；App 启动等若有 ticket，见 `AppLaunchTokenService` 等专门文档。
 
 ---
 
@@ -318,7 +300,7 @@ flowchart TD
 
 ## 8.2 接口头部规范（前端必须统一）
 
-- 管理类接口（资源注册、审核、grant 管理）：
+- 管理类接口（资源注册、审核等）：
   - `Authorization: Bearer <token>`
   - `X-User-Id`（由认证链路注入或透传）
 - 目录/解析：
@@ -468,13 +450,9 @@ flowchart TD
   - `app` -> URL 打开/嵌入
   - `dataset` -> 展示 metadata/spec
 
-## 11.6 授权管理页
+## 11.6 ~~授权管理页~~（已下线）
 
-- 资源拥有者进入后：
-  - 查询授权列表
-  - 新增授权（选择 API Key、actions、过期时间）
-  - 撤销授权
-- 第三方接入文案必须写清：需要平台发放 API Key + 对应资源 Grant
+逐资源「把某 Key 授权到某资源」的页面与接口 **已不存在**。第三方接入文案：**申请/配置具备所需 scope 的 API Key**；已发布资源在 scope 满足时按网关规则调用，**无需** Grant 工单。
 
 ---
 
@@ -485,7 +463,7 @@ flowchart TD
 - 403 无权限
   - 检查 RBAC 是否有类型访问权限
   - 检查 API Key scope 是否覆盖动作
-  - 检查是否存在有效 Grant
+  - 检查资源是否 `published` 及网关错误提示（**不再**排查 Grant 表）
 - 404 不存在
   - 资源 ID、类型、版本号是否匹配
 - 400 参数错误
@@ -506,9 +484,9 @@ flowchart TD
 5. 市场 `resourceType=mcp&status=published` 可见  
 6. resolve 返回 endpoint/spec 正确  
 7. invoke 可成功  
-8. 未授权第三方 API Key 调用返回 403  
-9. 授权后第三方调用成功  
-10. 撤销授权后再次 403
+8. **另一用户**的有效 Key：若 scope 不足或非 published，应拒绝；scope 正确且资源已发布则 **应允许**（无 Grant 行概念）  
+9. ~~授权 / 撤销 Grant~~：接口已删除，验收删除本步骤  
+10. 复核：403 原因应来自 **scope / 状态 / RBAC**，而非「无 Grant」
 
 ## 13.2 其余四类验收最小集
 
@@ -521,7 +499,7 @@ flowchart TD
 ## 14. 最后两条硬规则（防再跑偏）
 
 - 规则1：**任何“上架成功”文案必须以 `published` 为准**，不能以 `approve` 为准。  
-- 规则2：**任何“授权”文案必须按 Grant 模型描述**，不要再写“授权链接”。
+- 规则2：**对接集成文案以「API Key + scope + published」为准**；勿再写「逐资源 Grant / 授权工单」主路径。App 等若有 launch ticket，单独说明。
 
 ---
 
@@ -534,7 +512,6 @@ flowchart TD
 - `src/main/java/com/lantu/connect/audit/service/impl/AuditServiceImpl.java`
 - `src/main/java/com/lantu/connect/gateway/controller/ResourceCatalogController.java`
 - `src/main/java/com/lantu/connect/gateway/service/impl/UnifiedGatewayServiceImpl.java`
-- `src/main/java/com/lantu/connect/gateway/controller/ResourceGrantController.java`
 - `src/main/java/com/lantu/connect/gateway/security/ResourceInvokeGrantService.java`
 - `src/main/java/com/lantu/connect/gateway/security/ApiKeyScopeService.java`
 
