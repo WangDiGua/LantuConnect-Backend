@@ -101,13 +101,15 @@
 2. API：`ResourceUpsertRequest.accessPolicy`（可选，缺省/空=创建时 `grant_required`；**更新时未传则保留原值**）、`ResourceManageVO` / `ResourceCatalogItemVO` 回传。  
 3. 文档：`PRODUCT_DEFINITION.md` §4、本文；实施详情见 `docs/resource-registration-authorization-invocation-guide.md` §3.1。**网关按策略短路 Grant 属阶段 B**。
 
-### 阶段 B：网关与 Grant 核心逻辑 — **已完成（2026-04-03）**
+> **读档提示（2026-04-09）**：自 **`t_resource_invoke_grant` / 工单表删除** 起，下方 **阶段 B、C** 等仅为 **迁移前实施存档**；其中 **`grant_required` 表行校验、工单路由、`ensureMayReviewGrantApplication`** 等 **不再**对应线上可调 API。真值见文首 §真值变更 与 §2.3–2.4。
+
+### 阶段 B：网关与 Grant 核心逻辑 — **已完成（2026-04-03）**（历史存档）
 
 1. **`ResourceInvokeGrantService.ensureApiKeyGranted`**：`access_policy=open_platform` 时免 Grant（仍走上层 Key 与 scope）；`open_org` 时仅当 **API Key 为 user 归属**且 **Key 所属用户与资源 owner 的 `menuId` 相同**时免 Grant；`grant_required` 不变。技能包下载等走同一方法的路径一并生效。  
 2. **`catalog_read`**：与 grant 表中的 `catalog` 动作对齐（校验时视同为 `catalog`）。  
 3. **`ensureCanManageGrant`**：`dept_admin` 仅当 **资源 owner 与操作者 `menuId` 相同** 可管理 Grant；`platform_admin` / `admin` 仍全局；owner 本人不变。
 
-### 阶段 C：Grant 工单路由 — **已完成（2026-04-03）**
+### 阶段 C：Grant 工单路由 — **已完成（2026-04-03）**（历史存档；路由已删）
 
 1. `GET /grant-applications/pending`：凭 `X-User-Id` 过滤待办 — **platform_admin/admin** 全量；**dept_admin（且非平台）** 仅 **资源 owner 与本部门 `menu_id` 一致** 的申请；**其他用户** 仅 **自己名下资源**（`t_resource.created_by`）上的申请。  
 2. `POST .../approve`、`reject`：**不再限定 platform_admin**；由 `ResourceInvokeGrantService.ensureMayReviewGrantApplication` 校验（与 Grant 管理同款：owner / 同部门 dept_admin / 平台）。  

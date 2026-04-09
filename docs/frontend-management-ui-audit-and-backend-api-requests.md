@@ -12,7 +12,7 @@
 |------|------|
 | **MgmtPageShell 双标题** | `hasSecondarySidebar` 时壳内不再渲染可见粗体标题，仅图标 + 描述；`h1.sr-only` 承载完整标题与描述（见 `src/views/userMgmt/MgmtPageShell.tsx`）。 |
 | **行内操作样式** | `mgmtTableActionGhost` / `Positive` / `Danger` 为圆角胶囊、纯文字语义色（`src/utils/uiClasses.ts`）。 |
-| **列表工具栏单行** | `TOOLBAR_ROW_LIST`：`flex-nowrap` + `overflow-x-auto` + 隐藏滚动条（`src/utils/toolbarFieldClasses.ts`）。已用于公告、限流、模型配置、审计日志、授权申请、入驻审批、资源审核列表、健康检查工具栏等。 |
+| **列表工具栏单行** | `TOOLBAR_ROW_LIST`：`flex-nowrap` + `overflow-x-auto` + 隐藏滚动条（`src/utils/toolbarFieldClasses.ts`）。已用于公告、限流、模型配置、审计日志、入驻审批、资源审核列表、健康检查工具栏等。 |
 | **平台公告** | 关键词 + 类型下拉宽度已通过 `LantuSelect` 的 `className="!w-36 shrink-0"` 纠正「下拉占满剩余宽」问题（根因：`LantuSelect` 默认 `w-full`）。 |
 
 ### 1.2 仍与「胶囊纯文字行内操作」不一致的页面（控制台 / 审核台）
@@ -32,7 +32,7 @@
 
 以下页面工具栏或筛选区仍为 `flex-wrap`，多为字段较多或产品未要求强制单行；若需与公告页绝对一致，可再套 `TOOLBAR_ROW_LIST` 或局部 `flex-nowrap`：
 
-- `UserListPage`、`ResourceGrantManagementPage`、`ProviderManagementPage`、`ResourceCenterManagementPage`（卡片行内操作区）、`TagManagementPage`、`TokenListPage`、`CallLogPage`、`UsageRecordsPage`、`AlertMgmtPage` 等。
+- `UserListPage`、`ProviderManagementPage`、`ResourceCenterManagementPage`（卡片行内操作区）、`TagManagementPage`、`TokenListPage`、`CallLogPage`、`UsageRecordsPage`、`AlertMgmtPage` 等（若仍保留 `ResourceGrantManagementPage` 壳层，与后端 Grant 下线不对齐，宜移除）。
 
 ### 1.4 组件层面的注意点（`LantuSelect`）
 
@@ -63,21 +63,13 @@
 
 ---
 
-### 2.2 授权申请审批 `GET /grant-applications/pending`
+### ~~2.2 授权申请审批~~（接口已下线，2026-04-09）
 
-**现状（前端）**
-
-- `grantApplicationService.listPending` 仅传 `status`、`page`、`pageSize`。
-- 搜索框通过 `filteredRows` **仅在当前页** 上对 `id`、`resourceType`、`resourceId`、`apiKeyId`、`actions`、`useCase` 等拼接字符串做 `includes`。
-
-**建议后端**
-
-- 增加可选 `keyword`（或 `q`）：对上述字段及申请人相关字段做统一模糊/分词检索（具体字段与前表 `GrantApplicationVO` 对齐）。
-- 保证分页 `total` 为过滤后总数。
+`/grant-applications*` 与 Grant 表已删除，本节**仅作历史记录**。前端应移除 `GrantApplicationListPage` 主链路或改为指向 `PRODUCT_DEFINITION.md` / `public-catalog-contract.md` 的说明。
 
 ---
 
-### 2.3 开发者入驻申请 `GET /developer/applications`
+### 2.2 开发者入驻申请 `GET /developer/applications`
 
 **现状（前端）**
 
@@ -91,7 +83,7 @@
 
 ---
 
-### 2.4 审计日志 `GET /system-config/audit-logs`
+### 2.3 审计日志 `GET /system-config/audit-logs`
 
 **现状（前端）**
 
@@ -110,7 +102,7 @@
 
 ---
 
-### 2.5 敏感词列表 `GET /sensitive-words`
+### 2.4 敏感词列表 `GET /sensitive-words`
 
 **现状**
 
@@ -122,7 +114,7 @@
 
 ---
 
-### 2.6 已具备服务端检索的模块（供对照）
+### 2.5 已具备服务端检索的模块（供对照）
 
 以下模块列表已传 `keyword` 或等价参数至后端（无需在本节重复需求，除非后端尚未实现）：
 
@@ -139,12 +131,15 @@
 | 日期 | 说明 |
 |------|------|
 | 2026-03-30 | 初版：UI 巡检结果 + 公告 / 授权申请 / 入驻 / 审计 等后端检索建议；健康检查工具栏与 `TOOLBAR_ROW_LIST`、`LantuSelect` 宽度对齐。 |
+| 2026-03-30 | 敏感词页检索与 §2.4；整合 [frontend-completion-before-backend.md](./frontend-completion-before-backend.md)。 |
+| 2026-03-30 | 后端对齐：监控分页筛选；审计 `result`；`/user-mgmt/tokens` 与撤销等（Grant 相关 keyword 已于 04-09 整体下线）。 |
+| 2026-04-09 | `/grant-applications*`、`/resource-grants*` 删除；§2.2 改为历史说明；章节号 2.2→入驻、2.3→审计、2.4→敏感词、2.5→对照。 |
 
 ---
 
 ## 4. 小结
 
 - **管理配置壳层与多数 Mgmt 列表工具栏**已按规划收敛；**控制台 Agent/App/Dataset/Skill 列表与双审核台**仍为图标行内操作，属已知范围差异。
-- **公告、授权审批、入驻审批、审计日志**等处存在「服务端分页 + 客户端筛选」的语义缺口；后端补足 `keyword` / 类型 / 结果等参数后，前端可小改动对接，消除「搜不到全库」「total 与当前结果不符」类产品体验问题。
+- **公告、入驻审批、审计日志**等处可能存在「服务端分页 + 客户端筛选」的语义缺口；后端补足 `keyword` / 类型 / 结果等参数后，前端可小改动对接，消除「搜不到全库」「total 与当前结果不符」类产品体验问题。（授权审批接口已下线，见 §2.2。）
 
 如需后端按接口路径出 OpenAPI 片段或字段级约定，可在本文件后续追加章节对接。

@@ -1,5 +1,7 @@
 # 超管（platform_admin）页面 × HTTP × 后端能力矩阵（2026-04）
 
+> **2026-04-09**：**Grant / 授权申请** API 与表已删除。下列表格中 **`resource-grant-management` / `grant-applications`** 行视为历史；真值见 `PRODUCT_DEFINITION.md` §4。
+
 本文档与 Flyway [`V16__platform_admin_permissions_menu_alignment.sql`](../../sql/incremental/V16__platform_admin_permissions_menu_alignment.sql) 及前端侧栏/门禁同步，用于全量对照与环境验收。
 
 **角色前提**：平台角色 `platform_admin`（JWT 中历史别名 `admin` / `super_admin` 在前端 [`normalizeRole`](../../../LantuConnect-Frontend/src/context/UserRoleContext.tsx) 中归一为 `platform_admin`）。界面以 `/auth/me` 的 `permissions`（库表 `t_platform_role.permissions` 合并）为准；须同时满足后端 `RequireRole` / `RequirePermission`。
@@ -39,8 +41,8 @@
 | organization | OrgStructurePage | `org:*` + 写入仅超管 |
 | api-key-management | ApiKeyListPage | `apikey:*` |
 | token-management | TokenListPage（UserManagementModule） | `apikey:read` / `apikey:delete` 等 |
-| resource-grant-management | ResourceGrantManagementPage | Grant 相关服务 |
-| grant-applications | GrantApplicationListPage | `GrantApplicationController` + 服务层 |
+| ~~resource-grant-management~~ | ~~ResourceGrantManagementPage~~ | **已下线** |
+| ~~grant-applications~~ | ~~GrantApplicationListPage~~ | **已下线**；~~`GrantApplicationController`~~ **已删** |
 | developer-applications | DeveloperApplicationListPage | `DeveloperApplicationController` |
 | monitoring-overview…circuit-breaker | MonitoringModule | `MonitoringController` / `HealthController`；告警规则写操作为 `platform_admin` |
 | tag-management…announcements | SystemConfigModule | `TagController`、`SystemParamController`、`SensitiveWordController`、`AnnouncementController` 等多为 `platform_admin` |
@@ -48,7 +50,7 @@
 
 ## 3. 应用域 `/user/*`（超管常用）
 
-与 [`USER_SIDEBAR_PAGES`](../../../LantuConnect-Frontend/src/constants/consoleRoutes.ts) 一致：hub、workspace、resource-assets（含 market / grant / developer-applications）、developer-portal、settings。判权仍以 JWT + `permissions` + 各接口为准。
+与 [`USER_SIDEBAR_PAGES`](../../../LantuConnect-Frontend/src/constants/consoleRoutes.ts) 一致：hub、workspace、resource-assets（含 market、~~grant~~、developer-applications）、developer-portal、settings。判权仍以 JWT + `permissions` + 各接口为准。
 
 ## 4. 仅代码存在、曾经无导航的项（已 products 补齐）
 

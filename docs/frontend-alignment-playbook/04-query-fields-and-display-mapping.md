@@ -19,7 +19,7 @@
 - 市场页默认：`status=published`
 - 审核页默认：`status=pending_review`
 - 资源管理默认排序：`updateTime desc`
-- 授权列表默认：`expiresAt asc`（优先即将到期）
+- ~~授权列表~~ **已下线**：无 `/resource-grants` 列表真值
 
 ## 3) 返回字段到 UI 映射（最小可用集）
 
@@ -31,7 +31,8 @@
 | `POST /invoke`                        | 调用结果面板   | `traceId/statusCode/latencyMs`               | `body/requestId`                          |
 | `GET /resource-center/resources/mine` | `*-list` | `displayName/status/updateTime`              | `resourceCode/resourceType/version`       |
 | `GET /audit/resources`                | 审核页      | `displayName/resourceType/status/submitTime` | `submitter/reviewer`                      |
-| `GET /resource-grants`                | 授权中心     | `granteeApiKeyId/actions/expiresAt/status`   | `grantId/resourceType/resourceId`         |
+| ~~`GET /resource-grants`~~            | **已删**     | —                                            | —                                         |
+| `GET .../api-keys/{id}/resource-grants` | 个人设置（占位） | （恒空 `[]`）                              | —                                         |
 | `GET /monitoring/call-logs`           | 调用日志     | `traceId/statusCode/latencyMs/time`          | `resourceType/resourceId/caller`          |
 | `GET /notifications`                  | 消息中心     | `title/read/time`                            | `content/type`                            |
 | `GET /reviews`                        | 评价区      | `rating/content/helpfulCount`                | `author/createdAt`                        |

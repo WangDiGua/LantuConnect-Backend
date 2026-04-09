@@ -1,6 +1,6 @@
 # NexusAI 前端全项目全量对齐总册（L3）
 
-> 更新时间：2026-03-25
+> 更新时间：2026-04-09（已标注 `/resource-grants*`、`grant-applications` 下线真值）
 > 目标：输出"全项目能力总册 + 后端对齐真值"双层文档，覆盖全部路由、全部页面交互、全部接口与使用证据。
 > 代码基线：`src/App.tsx`、`src/layouts/MainLayout.tsx`、`src/constants/consoleRoutes.ts`、`src/constants/navigation.ts`、`src/context/UserRoleContext.tsx`、`src/lib/http.ts`、`src/api/services/**`、`src/views/**`。
 
@@ -13,7 +13,7 @@
   - 调用：`POST /invoke`
   - SDK：`/sdk/v1/*`
   - 沙箱：`/sandbox/*`
-  - 调用授权：`/resource-grants*`
+  - ~~逐资源调用授权~~：`/resource-grants*`、`/grant-applications*` **已下线**（2026-04-09）；消费以 Key + scope + `published` 为准
 - 资源注册中心：`/resource-center/resources*`
 - 资源审核闭环：`/audit/resources/*`
 - 旧路径（`/agents/**`、`/v1/skills/**`、`/v1/apps/**`、`/v1/datasets/**`、`/v1/providers/**`、`/v1/categories/**`）已下线，对应 service 内部为 stub（返回空或抛出 410 异常）。
@@ -80,7 +80,7 @@
 | user-management | `role-management` | `#/admin/role-management` | `UserManagementModule(role-management)` | reachable | 菜单级权限 |
 | user-management | `organization` | `#/admin/organization` | `UserManagementModule(organization)` | reachable | 菜单级权限 |
 | user-management | `api-key-management` | `#/admin/api-key-management` | `UserManagementModule(api-key-management)` | reachable | 菜单级权限 |
-| user-management | `resource-grant-management` | `#/admin/resource-grant-management` | `UserManagementModule` | reachable | 资源授权唯一入口 |
+| user-management | `resource-grant-management` | `#/admin/resource-grant-management` | `UserManagementModule` | direct-url-only / placeholder | **已下线**：后端无 CRUD；前端宜移除菜单或改为说明页 |
 | user-management | `developer-applications` | `#/admin/developer-applications` | `DeveloperApplicationListPage` | reachable | 入驻审批 |
 | monitoring | `monitoring-overview` | `#/admin/monitoring-overview` | `MonitoringModule` | reachable | 菜单级权限 |
 | monitoring | `call-logs` | `#/admin/call-logs` | `MonitoringModule` | reachable | 菜单级权限 |
@@ -183,7 +183,7 @@
 | `AgentDetail` | 测试、删除确认、返回 | 是 | 详情页 |
 | `AgentMonitoringPage` | 关键词筛选、排序、分页 | 否/部分是 | 页面内多为本地筛选 |
 | `AgentTracePage` | trace 查询、展开、选择明细 | 是 | trace 拉取 |
-| `ResourceGrantManagementPage` | 资源授权列表、新增授权、撤销授权 | 是 | 资源授权管理 |
+| `ResourceGrantManagementPage` | （历史）资源授权 UI | — | **后端接口已删除**；页面若仍存在需下线或改文案 |
 | `DeveloperApplicationListPage` | 分页、通过/驳回确认、驳回原因填写 | 是 | 开发者入驻审批 |
 | `UserListPage` | 搜索、状态筛选、分页、创建、编辑、删除 | 是 | 用户管理 |
 | `RoleListPage` | 搜索、分页、创建、编辑、删除、权限勾选 | 是 | 角色管理 |
@@ -281,7 +281,7 @@
 | `mcp-audit` | `resource:audit` |
 | `app-audit` | `resource:audit` |
 | `dataset-audit` | `resource:audit` |
-| `resource-grant-management` | `user:manage` |
+| `resource-grant-management` | `user:manage`（**建议移除菜单项**；与已删除后端不对齐） |
 | `developer-applications` | `user:manage` |
 | `alert-rules` | `system:config` |
 | `health-config` | `system:config` |
@@ -332,13 +332,11 @@
 | `resourceCenterService.switchVersion` | POST | `/resource-center/resources/{id}/versions/{v}/switch` | 在用(代码+页面) | 切换版本 |
 | `resourceCenterService.listVersions` | GET | `/resource-center/resources/{id}/versions` | 在用(代码+页面) | 版本列表 |
 
-### B3.4 资源授权
+### B3.4 ~~逐资源授权~~（已下线）
 
-| Service#method | Method | Path | 在用证据 | 触发场景 |
+| Service#method | Method | Path | 在用证据 | 说明 |
 |---|---|---|---|---|
-| `resourceGrantService.create` | POST | `/resource-grants` | 在用(代码+页面) | 授予授权 |
-| `resourceGrantService.list` | GET | `/resource-grants` | 在用(代码+页面) | 授权列表 |
-| `resourceGrantService.revoke` | DELETE | `/resource-grants/{grantId}` | 在用(代码+页面) | 撤销授权 |
+| `resourceGrantService.*` | — | `/resource-grants*` | **已下线(stub/将 410)** | 2026-04-09 起表与控制器已删；前端应移除调用。个人设置 `GET .../api-keys/.../resource-grants` 仅占位 `[]`。 |
 
 ### B3.5 SDK / 沙箱
 
@@ -620,7 +618,7 @@
 | `monitoringService.dryRunAlertRule` | AlertRulesPage | "试跑"按钮调用 API |
 | `reviewService.create/toggleHelpful` | SkillMarket / AppMarket | 评价提交和点赞 |
 | `resourceCenterService.withdraw` | MyAgentList / MySkillList | 撤回审核 |
-| `resourceGrantService.create` | DatasetMarket | 替代旧 applyAccess |
+| ~~`resourceGrantService.create`~~ | DatasetMarket | **已废弃**：Grant 下线；数据集访问按产品与 Key scope 另行设计 |
 | `fileUploadService.upload` | UserProfile | 头像上传 |
 | `healthService.createHealthConfig` | HealthConfigPage | 新增健康检查配置 |
 | `quotaService.deleteQuota` | QuotaManagementPage | 删除配额规则 |

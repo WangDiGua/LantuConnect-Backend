@@ -9,12 +9,12 @@
 | 探索与看板 | `hub/workspace/dashboard/*` | `GET /dashboard/explore-hub`、`GET /dashboard/user-workspace`、`GET /dashboard/admin-overview`、`GET /dashboard/health-summary`、`GET /dashboard/usage-stats`、`GET /dashboard/data-reports`、`GET /dashboard/admin-realtime`、`GET /dashboard/user-dashboard` | 角色 + 权限 | `range/startDate/endDate` | KPI、趋势、列表、健康摘要 |
 | 目录检索与详情 | 五市场/详情 | `GET /catalog/resources`、`GET /catalog/resources/trending`、`GET /catalog/resources/search-suggestions`、`GET /catalog/resources/{type}/{id}`、`GET /catalog/resources/{type}/{id}/stats` | 登录态或 API Key（看 scope） | `resourceType/status/keyword/page/pageSize/sortBy/sortOrder/categoryId/tags[]` | `list[].resourceId/displayName/status`、`total`、详情字段 |
 | 资源解析 | 详情使用前 | `POST /catalog/resolve` | 登录态或 API Key + scope | `resourceType/resourceId/version?` | `invokeType/endpoint/spec/status` |
-| 标准调用 | 立即使用/调试 | `POST /invoke` | API Key + scope + grant | body: `resourceType/resourceId/version?/timeoutSec?/payload` | `traceId/statusCode/latencyMs/body` |
-| SDK 通道 | SDK 页面/Playground | `GET /sdk/v1/resources`、`GET /sdk/v1/resources/{type}/{id}`、`POST /sdk/v1/resolve`、`POST /sdk/v1/invoke` | API Key + scope + grant | 同目录检索 | 同解析/调用 |
+| 标准调用 | 立即使用/调试 | `POST /invoke` | API Key + scope + `published`（及网关规则） | body: `resourceType/resourceId/version?/timeoutSec?/payload` | `traceId/statusCode/latencyMs/body` |
+| SDK 通道 | SDK 页面/Playground | `GET /sdk/v1/resources`、`GET /sdk/v1/resources/{type}/{id}`、`POST /sdk/v1/resolve`、`POST /sdk/v1/invoke` | API Key + scope + `published`（及网关规则） | 同目录检索 | 同解析/调用 |
 | 沙箱通道 | 沙箱调试页 | `POST /sandbox/sessions`、`GET /sandbox/sessions/mine`、`POST /sandbox/invoke` | 登录态 + `X-Sandbox-Token` | 会话：`page/pageSize/status?` | `sessionId/token/expiredAt`、调用结果 |
 | 统一资源中心 | `*-register/*-list/resource-center` | `GET /resource-center/resources/mine`、`GET /resource-center/resources/{id}`、`POST /resource-center/resources`、`PUT /resource-center/resources/{id}`、`DELETE /resource-center/resources/{id}`、`POST /resource-center/resources/{id}/submit`、`POST /resource-center/resources/{id}/withdraw`、`POST /resource-center/resources/{id}/deprecate`、`GET /resource-center/resources/{id}/versions`、`POST /resource-center/resources/{id}/versions`、`POST /resource-center/resources/{id}/versions/{version}/switch` | `developer/dept_admin/platform_admin`（按资源归属与策略） | `resourceType/status/keyword/page/pageSize` | `id/resourceCode/displayName/status/version/updateTime` |
 | 审核中心 | `audit-center/*` | `GET /audit/resources`、`POST /audit/resources/{id}/approve`、`POST /audit/resources/{id}/reject`、`POST /audit/resources/{id}/publish`、`GET /audit/agents`、`GET /audit/skills`、`POST /audit/agents/{id}/approve|reject|publish`、`POST /audit/skills/{id}/approve|reject|publish` | 审核角色/权限点 | `resourceType/status/keyword/page/pageSize` | `id/resourceType/displayName/status/submitter/submitTime` |
-| 授权中心 | `resource-grant-management` | `GET /resource-grants`、`POST /resource-grants`、`DELETE /resource-grants/{grantId}` | owner 或管理员 | `resourceType/resourceId/page/pageSize` | `grantId/granteeApiKeyId/actions/expiresAt/status` |
+| ~~授权中心~~ | ~~`resource-grant-management`~~ | ~~`/resource-grants*`~~ | **已下线**（2026-04-09） | — | 前端宜移除；调用以 Key + scope + `published` 为准 |
 | 入驻流程 | `DeveloperOnboardingPage/developer-applications` | `POST /developer/applications`、`GET /developer/applications/me`、`GET /developer/applications`、`POST /developer/applications/{id}/approve`、`POST /developer/applications/{id}/reject`、`GET /developer/my-statistics` | 无角色用户申请；管理员审批 | `status/page/pageSize` | 申请单状态字段、统计字段 |
 | 用户活动 | `my-favorites/recent-use/my-*` | `GET /user/usage-records`、`GET /user/favorites`、`POST /user/favorites`、`DELETE /user/favorites/{id}`、`GET /user/usage-stats`、`GET /user/my-agents`、`GET /user/my-skills`、`GET /user/authorized-skills`、`GET /user/recent-use` | 登录态用户 | `type/dateRange/page/pageSize` | 收藏、最近使用、统计字段 |
 | 用户与组织 | `user-list/role-management/organization/api-key-management` | `/user-mgmt/users*`、`/user-mgmt/roles*`、`/user-mgmt/api-keys*`、`/user-mgmt/org-tree`、`/user-mgmt/orgs*`、`/user-mgmt/users/{id}/org*`、`/user-mgmt/users/{id}/roles*` | `user:manage` 等权限点 | `keyword/status/page/pageSize/orgId/roleId` | 用户/角色/组织/API Key 字段 |
@@ -24,7 +24,7 @@
 
 ## 完整性检查清单
 
-- [x] 覆盖 `Auth/Captcha/Dashboard/Catalog/Invoke/SDK/Sandbox/Registry/Audit/Grant`
+- [x] 覆盖 `Auth/Captcha/Dashboard/Catalog/Invoke/SDK/Sandbox/Registry/Audit`（~~Grant~~ 已删）
 - [x] 覆盖 `DeveloperApplication/DeveloperStatistics/UserActivity/UserSettings`
 - [x] 覆盖 `UserMgmt/Monitoring/Health/SystemConfig/Quota/RateLimit/Tag/SensitiveWord/Announcement`
 - [x] 覆盖 `Notification/Review/File`
@@ -39,8 +39,8 @@
 | `提交审核` | `POST /resource-center/resources/{id}/submit` | 状态更新为 `pending_review` | 提示状态冲突或权限不足 |
 | `审核通过` | `POST /audit/resources/{id}/approve` | 状态更新为 `testing` | 保持当前列表并提示错误 |
 | `发布上架` | `POST /audit/resources/{id}/publish` | 状态更新为 `published` | 显示阻断文案或错误提示 |
-| `新增授权` | `POST /resource-grants` | 授权列表新增记录 | 弹窗不关闭并保留输入 |
-| `撤销授权` | `DELETE /resource-grants/{grantId}` | 列表状态更新为撤销 | 提示失败并允许重试 |
+| ~~`新增授权`~~ | ~~`POST /resource-grants`~~ | **接口已删除** | — |
+| ~~`撤销授权`~~ | ~~`DELETE /resource-grants/{grantId}`~~ | **接口已删除** | — |
 
 ## 3) 全页面到能力域映射（admin + user）
 
@@ -52,7 +52,7 @@
 | admin | `agent-list/skill-list/mcp-server-list/app-list/dataset-list/resource-center` | 资源中心列表 | `/resource-center/resources/mine`、`/resource-center/resources/{id}` |
 | admin | `agent-register/skill-register/mcp-register/app-register/dataset-register` | 资源注册与编辑 | `POST|PUT /resource-center/resources*` |
 | admin | `agent-audit/skill-audit/mcp-audit/app-audit/dataset-audit` | 审核中心 | `/audit/*` |
-| admin | `resource-grant-management` | 资源授权管理 | `/resource-grants*` |
+| admin | ~~`resource-grant-management`~~ | **已下线** | ~~`/resource-grants*`~~ **已删** |
 | admin | `user-list/role-management/organization/api-key-management` | 用户组织权限 | `/user-mgmt/*` |
 | admin | `developer-applications` | 开发者入驻审批 | `/developer/applications*` |
 | admin | `monitoring-overview/call-logs/performance-analysis/alert-management/alert-rules` | 监控告警 | `/monitoring/*` |
@@ -79,7 +79,8 @@
 | `ResourceCatalogController` | `GET /catalog/resources`、`GET /catalog/resources/trending`、`GET /catalog/resources/search-suggestions`、`GET /catalog/resources/{type}/{id}`、`GET /catalog/resources/{type}/{id}/stats`、`POST /catalog/resolve`、`POST /invoke` |
 | `ResourceRegistryController` | `POST /resource-center/resources`、`PUT /resource-center/resources/{id}`、`DELETE /resource-center/resources/{id}`、`POST /resource-center/resources/{id}/submit`、`POST /resource-center/resources/{id}/deprecate`、`GET /resource-center/resources/mine`、`GET /resource-center/resources/{id}`、`POST /resource-center/resources/{id}/versions`、`POST /resource-center/resources/{id}/versions/{version}/switch`、`GET /resource-center/resources/{id}/versions`、`POST /resource-center/resources/{id}/withdraw` |
 | `AuditController` | `GET /audit/resources`、`GET /audit/agents`、`GET /audit/skills`、`POST /audit/agents/{id}/approve`、`POST /audit/skills/{id}/approve`、`POST /audit/agents/{id}/reject`、`POST /audit/skills/{id}/reject`、`POST /audit/agents/{id}/publish`、`POST /audit/skills/{id}/publish`、`POST /audit/resources/{id}/approve`、`POST /audit/resources/{id}/reject`、`POST /audit/resources/{id}/publish` |
-| `ResourceGrantController` | `POST /resource-grants`、`DELETE /resource-grants/{grantId}`、`GET /resource-grants` |
+| ~~`ResourceGrantController`~~ | **已删除**（2026-04-09）；~~`POST/GET/DELETE /resource-grants*`~~ |
+| ~~`GrantApplicationController`~~ | **已删除**；~~`/grant-applications*`~~ |
 | `SdkGatewayController` | `GET /sdk/v1/resources`、`GET /sdk/v1/resources/{type}/{id}`、`POST /sdk/v1/resolve`、`POST /sdk/v1/invoke` |
 | `SandboxController` | `POST /sandbox/sessions`、`GET /sandbox/sessions/mine`、`POST /sandbox/invoke` |
 | `DeveloperApplicationController` | `POST /developer/applications`、`GET /developer/applications/me`、`GET /developer/applications`、`POST /developer/applications/{id}/approve`、`POST /developer/applications/{id}/reject` |

@@ -29,8 +29,8 @@
 | `usage-records` | 使用 | `UsageRecordsPage` | 否 | `/user/usage-records` |
 | `recent-use` | 未在主导航分组出现时可路由 | `UsageRecordsPage` initialView=recent | 否 | `/user/recent-use` |
 | `usage-stats` | 使用 | `UsageStatsPage` | 否 | `/user/usage-stats` |
-| `grant-applications` | 授权 | `GrantApplicationListPage` | 否 | `grantApplicationService` pending |
-| `my-grant-applications` | 授权 | `MyGrantApplicationsPage` | 否 | `grantApplicationService` mine |
+| ~~`grant-applications`~~ | 授权 | ~~`GrantApplicationListPage`~~ | — | **已下线**；`/grant-applications*` **已删**，宜移除侧栏 |
+| ~~`my-grant-applications`~~ | 授权 | ~~`MyGrantApplicationsPage`~~ | — | 同上 |
 | `api-docs` | 开发者中心 | `ApiDocsPage` | 否 | 以静态/内嵌文档为主 |
 | `sdk-download` | 开发者中心 | `SdkDownloadPage` | 否 | 静态为主 |
 | `api-playground` | 开发者中心 | `ApiPlaygroundPage` | 否 | 通用 `http.*` 调网关路径 |

@@ -4,6 +4,8 @@
 
 Current matrix for in-app notifications (`t_notification`) after full station-inbox enhancement.
 
+> **2026-04-09**：逐资源授权与工单表已删除。下列 **`grant_*` / `resource_grant_*` 事件码可能仍留在 `NotificationEventCodes` 等代码中作历史兼容，新部署通常不再写入**；产品文档以 Key + scope + `published` 为准。
+
 ## Events
 
 | Event Code | Trigger Operation | Receiver | Source Type | Source Id | Notes |
@@ -11,11 +13,11 @@ Current matrix for in-app notifications (`t_notification`) after full station-in
 | `onboarding_submitted` | Developer onboarding submit | `platform_admin` users | `developer_application` | application id | New applicant info + reason |
 | `onboarding_approved` | Developer onboarding approve | applicant user | `developer_application` | application id | Reviewer + comment |
 | `onboarding_rejected` | Developer onboarding reject | applicant user | `developer_application` | application id | Reviewer + reject reason |
-| `grant_application_new` | Grant application submit | `platform_admin` users | `grant_application` | application id | Resource + api key + use case |
-| `grant_approved` | Grant application approved | applicant user | `grant_application` | application id | Reviewer + resource |
-| `grant_rejected` | Grant application rejected | applicant user | `grant_application` | application id | Reject reason |
-| `resource_grant_updated` | Direct resource grant create/update | `platform_admin` users | `resource` | resource id | Operator + api key |
-| `resource_grant_revoked` | Direct resource grant revoke | `platform_admin` users | `resource` | resource id | Operator + api key |
+| `grant_application_new` | （历史）Grant application submit | — | `grant_application` | — | **表已删；通常不再触发** |
+| `grant_approved` | （历史）Grant application approved | — | `grant_application` | — | **表已删** |
+| `grant_rejected` | （历史）Grant application rejected | — | `grant_application` | — | **表已删** |
+| `resource_grant_updated` | （历史）Direct resource grant | — | `resource` | — | **表已删** |
+| `resource_grant_revoked` | （历史）Direct resource grant revoke | — | `resource` | — | **表已删** |
 | `resource_submitted` | Resource submit for audit | dept admins | `resource` | resource id | Existing path retained |
 | `resource_deprecated` | Resource deprecate | `platform_admin` users | `resource` | resource id | High-risk governance action |
 | `resource_withdrawn` | Resource withdraw | `platform_admin` users | `resource` | resource id | Back to draft |

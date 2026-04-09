@@ -43,27 +43,14 @@
 - 成功：状态 `deprecated`
 - 失败：提示并刷新
 
-## 3) 授权与调用按钮流程卡
+## 3) 调用与 Key 流程卡（Grant 已删，2026-04-09）
 
-### 申请 API 授权（前端引导）
-- 前置：非 owner
-- 接口：无后端申请单（仅前端引导）
-- 成功：引导 owner 到授权中心执行 `POST /resource-grants`
-
-### 新增授权
-- 前置：owner/管理员
-- 接口：`POST /resource-grants`
-- 请求：`resourceType/resourceId/granteeApiKeyId/actions/expiresAt?`
-- 成功：授权记录出现；调用方可 invoke
-
-### 撤销授权
-- 接口：`DELETE /resource-grants/{grantId}`
-- 成功：调用方再次 invoke 返回 403
+> ~~逐资源 `POST/DELETE /resource-grants`~~ **已不存在**。第三方接入以平台发放的 **API Key + scope** 及资源 **`published`** 为准（见 `PRODUCT_DEFINITION.md` §4）。
 
 ### 立即使用 / 调用
 - 流程：`POST /catalog/resolve` -> `POST /invoke`
 - 成功：展示 `traceId/statusCode/latencyMs/body`
-- 失败：区分“无页面权限”与“无调用授权”
+- 失败：区分无登录/无 Key、**scope 不足**、资源未发布等（**不再**有「 owner 授权 grant 行」路径）
 
 ## 3.1 评分评论专项脚本（Agent/Skill/MCP/App）
 
@@ -102,7 +89,7 @@
 ### 失败路径
 - `resolve` 失败：停留详情页，展示“解析失败”并提供 `重试解析`。
 - `invoke` 失败：
-  - `403`：提示“当前 API Key 未授权或 scope 不足”。
+  - `403`：提示“当前 API Key 无效、scope 不足或网关规则拒绝”（**非** Grant 撤销语义）。
   - `429`：提示“请求过于频繁，请稍后重试”。
   - `500`：显示“服务异常，可重试”，保留请求体。
 
@@ -115,17 +102,13 @@
 4. 状态变为 `testing` 后点击 `发布上架`。
 5. 在市场页检索到该资源（`published`）。
 
-### 授权 -> 调用 -> 撤销（成功路径）
-1. 在 `resource-grant-management` 点击 `新增授权`。
-2. 填写 `resourceType/resourceId/granteeApiKeyId/actions/expiresAt`。
-3. 保存后调用方 `invoke` 成功。
-4. 管理员点击 `撤销授权`。
-5. 调用方再次 `invoke` 返回 403。
+### ~~授权 -> 调用 -> 撤销~~（历史）
+
+1. ~~在 `resource-grant-management` 新增/撤销 grant~~ **接口已删**。
+2. 验收调用路径时改为：**有效 Key + 正确 scope + `published`** -> `resolve` -> `invoke`；并验证 Key 轮换/吊销后行为。
 
 ### 失败重试
 - 审核发布前置不满足：禁用发布按钮并提示。
-- 授权新增失败：弹窗不关闭，保留已填字段，允许重试。
-- 撤销失败：保留记录状态并提示重试。
 
 ## 4) 状态与按钮矩阵
 
@@ -134,13 +117,13 @@
 | `draft` | 保存、提交审核、删除 | 撤回、发布、下线 | 草稿不会在市场展示 |
 | `pending_review` | 撤回审核、查看进度 | 编辑、删除、发布、下线 | 审核中不可修改内容 |
 | `testing` | 发布、下线、版本管理 | 提交审核、编辑、删除 | 测试中不等于已上架 |
-| `published` | 下线、版本管理、授权管理 | 提交审核、撤回审核 | 已上架可检索可使用 |
+| `published` | 下线、版本管理 | 提交审核、撤回审核 | 已上架可检索可使用（~~授权管理~~ 已随 Grant 删） |
 | `deprecated` | 新建版本、查看历史 | 发布、提交审核 | 已下线不可调用 |
 
 ## 完整性检查清单
 
 - [x] 生命周期六大按钮流程完整（保存/提审/撤回/通过/发布/下线）
-- [x] 授权与调用按钮流程完整（申请/新增授权/撤销/调用）
+- [x] 调用按钮流程完整（~~grant 申请/新增/撤销~~ 已删；`resolve`/`invoke` 仍须覆盖）
 - [x] 状态机矩阵完整（`draft/pending_review/testing/published/deprecated`）
 - [x] 阻断文案已定义
 - [x] 评分评论成功/失败脚本完整

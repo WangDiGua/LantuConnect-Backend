@@ -4,6 +4,8 @@
 
 **符号**：`[DTO]` 来自 `src/types/dto`；`[UI]` 页面硬编码；`[API]` 选项由接口动态返回；`[仅前端]` 仅用于 UI 过滤、不要求写入业务表。
 
+> **2026-04-09**：授权申请 / 资源 Grant 工单与表已下线；§1.10「授权申请」、§2 中 `GrantApplicationListPage` / `ResourceGrantManagementPage` **仅作遗留 UI 参照**。
+
 ---
 
 ## 1. 核心契约（优先与 DTO 对齐）
@@ -99,7 +101,7 @@
 
 | 类型 | 允许 value | 定义位置 |
 |------|------------|----------|
-| 授权申请 `status` | `pending`、`approved`、`rejected` | `grant-application.ts` |
+| ~~授权申请~~ `status`（历史） | `pending`、`approved`、`rejected` | `grant-application.ts`（**工单已删**） |
 | 开发者入驻 `status` | `pending`、`approved`、`rejected`、`unknown` | `developer-application.ts` |
 
 ### 1.11 公告与探索
@@ -127,7 +129,7 @@
 | `AnnouncementPage` | 公告类型 | `feature`、`maintenance`、`update`、`notice` |
 | `AuditLogPage` | 操作类型 | `全部`、`CREATE`、`UPDATE`、`DELETE`、`LOGIN`、`LOGOUT`、`EXPORT`、`DEPLOY`…（**后端补充**：完整 action 字典） |
 | `SensitiveWordPage` | 启用筛选 | `''`、`true`、`false`（字符串传给 query） |
-| `GrantApplicationListPage` | 状态 | `all`、`pending`、`approved`、`rejected` |
+| ~~`GrantApplicationListPage`~~（历史） | 状态 | `all`、`pending`、`approved`、`rejected` |
 | `DeveloperApplicationListPage` | 同逻辑 | 与入驻状态一致 |
 | `UserListPage` | 用户状态筛选 | `all`、`active`、`disabled` |
 | `TokenListPage` | Token 状态 | `all`、`active`、`revoked`、`expired` |
@@ -143,7 +145,7 @@
 | `QuotaManagementPage` | 配额范围 / 限流目标 | 与 `quota.ts` 一致 |
 | `CircuitBreakerPage` | 状态筛选 | `all`、`CLOSED`、`OPEN`、`HALF_OPEN`（[仅前端] 内存过滤也可接受） |
 | `HealthConfigPage` | 健康状态筛选 + 检查方式 | `healthy`、`degraded`、`down`；`http`、`tcp`、`ping` |
-| `ResourceGrantManagementPage` | 资源类型 | `agent`、`skill`、`mcp`、`app`、`dataset` |
+| ~~`ResourceGrantManagementPage`~~（历史） | 资源类型 | `agent`、`skill`、`mcp`、`app`、`dataset` |
 | `OrgStructurePage` / `CategoryManagement` | 父节点 | `[API]` 自列表/树构造，非固定枚举 |
 | `TagManagementPage` | 标签分类 | `Agent`、`Skill`、`MCP`、`应用`、`数据集`、`通用`（**产品语义**；若入库为字符串，后端需统一） |
 | `ApiPlaygroundPage` | HTTP 方法 | `GET`、`POST`、`PUT`、`DELETE` |

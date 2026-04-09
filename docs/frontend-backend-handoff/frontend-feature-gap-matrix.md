@@ -34,9 +34,10 @@
 
 | 路由 page | 主要组件 | 列表/数据 API | 数据流 | 备注 |
 |-----------|----------|---------------|--------|------|
-| user-list / role-management / api-key-management / resource-grant-management | UserManagementModule | `userMgmtService` 等 | serverPaged | 资源授权：`GET /resource-grants` 已支持可选 `keyword`（granteeId/type 服务端过滤，仍需 resourceType+resourceId） |
+| user-list / role-management / api-key-management | UserManagementModule | `userMgmtService` 等 | serverPaged | — |
+| ~~resource-grant-management~~ | （宜移除） | — | — | **后端 `/resource-grants*` 已删**；勿再视作 serverPaged 真值 |
 | organization | OrgStructurePage | `getOrgTree` + `createOrg` / `updateOrg` / `deleteOrg` | 树 CRUD | 表单 Modal 改善父节点选择 |
-| grant-applications | GrantApplicationListPage | `grantApplicationService.listPending` + **`keyword`** | serverPaged | 应与后端 query 一致 |
+| ~~grant-applications~~ | （宜移除） | — | — | **`/grant-applications*` 已删** |
 | developer-applications | DeveloperApplicationListPage | `developerApplicationService.list` + **`keyword`** | serverPaged | 防抖请求 |
 
 ---
@@ -79,7 +80,7 @@
 |------|------------|------|
 | hub / workspace / market* | `catalog` / `explore` | 多为 serverPaged + 少量客户端 tag 过滤 |
 | resource-center | ResourceCenterManagementPage | serverPaged + keyword |
-| my-grant-applications | MyGrantApplicationsPage：`listMine` + **`keyword`/`q`** | 与 `GET /grant-applications/mine` 对齐 |
+| ~~my-grant-applications~~ | （宜移除） | **`GET /grant-applications/mine` 已删** |
 | api-key-management（子项） | ApiKeyListPage 等、`listApiKeys` | serverPaged |
 | token 管理（若侧栏可达） | TokenListPage：`GET /user-mgmt/tokens`、`PATCH /user-mgmt/tokens/{id}/revoke` | serverPaged；`keyword`、`status`（`all` / `expired` 等） |
 
@@ -102,6 +103,7 @@
 
 | 日期 | 说明 |
 |------|------|
-| 2026-03-30 | 已接线：公告/授权/入驻/审计关键词与筛选；监控调用日志与告警 query；Token 分页与撤销；ACL GET；性能指标 `service` 字段优先；组织架构 Modal 创建/编辑。 |
-| 2026-03-30 | 配额/限流工具栏与配额编辑、限流删除；熔断/分类/标签/告警规则检索与规则改删；资源授权 grantee 当前页筛选；健康检查/熔断行内「编辑」胶囊。 |
-| 2026-03-30 | 后端：`/monitoring` 分页 query 补 `status`/`severity`/`alertStatus`；`/grant-applications/mine` 补 `keyword`/`q`；审计 `result`；`/user-mgmt/tokens` 与撤销；`/resource-grants` 可选 `keyword`。 |
+| 2026-03-30 | 已接线：公告/入驻/审计关键词与筛选；监控调用日志与告警 query；Token 分页与撤销；ACL GET；性能指标 `service` 字段优先；组织架构 Modal 创建/编辑。 |
+| 2026-03-30 | 配额/限流工具栏与配额编辑、限流删除；熔断/分类/标签/告警规则检索与规则改删；健康检查/熔断行内「编辑」胶囊。 |
+| 2026-03-30 | 后端：`/monitoring` 分页 query 补 `status`/`severity`/`alertStatus`；审计 `result`；`/user-mgmt/tokens` 与撤销；等。 |
+| 2026-04-09 | Grant / grant-applications / `/resource-grants*` 删除；用户与权限矩阵中 grant 相关行标为下线。 |

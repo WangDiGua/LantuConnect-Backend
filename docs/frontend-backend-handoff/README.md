@@ -14,4 +14,4 @@
 
 **维护约定**：接线或枚举有变更时，优先更新 `01`、`02` 与 `frontend-feature-gap-matrix.md` 对应行，并在审计文档顶部「前端接线状态」补一行日期说明。
 
-**最近后端对齐（2026-03-30）**：监控列表 query、我的授权申请 keyword、审计 `result`、访问令牌分页与撤销、`/resource-grants` keyword；另含 **`GET /rate-limits` keyword**（name/targetName 等）、**敏感词 PUT `word`**、**ACL** 从 `t_platform_role` 返回规则快照、**Provider** `/providers` 与 `/dataset/providers`、**告警列表 `status` 作为 `alertStatus` 别名** — 见 `01`、`03-backend-enum-and-api-contract.md` 与 `frontend-feature-gap-matrix`。
+**最近后端对齐**：**2026-03-30** 起监控列表 query、审计 `result`、访问令牌分页与撤销等；**2026-04-09** 起 **Grant / grant-applications / `/resource-grants*` 已删除**（见 `PRODUCT_DEFINITION.md` §4）。另含 **`GET /rate-limits` keyword**、**敏感词 PUT `word`**、**ACL**、**Provider**、告警 query 等 — 见 `01`、`03-backend-enum-and-api-contract.md` 与 `frontend-feature-gap-matrix`。

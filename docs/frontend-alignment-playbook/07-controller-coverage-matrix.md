@@ -1,8 +1,8 @@
 # 07 Controller 覆盖矩阵（后端全量）
 
-> 用于审计“是否覆盖整个后端项目功能”。**与代码同步日期：2026-03-31** — 明细路径见 [docs/audit/controller-inventory.md](../audit/controller-inventory.md)。
+> 用于审计“是否覆盖整个后端项目功能”。**与代码同步日期：2026-04-09** — 明细路径见 [docs/audit/controller-inventory.md](../audit/controller-inventory.md)；**`ResourceGrantController` / `GrantApplicationController` 已物理删除**。
 
-## REST Controller 表（29）
+## REST Controller 表（**在役数量与枚举**以 [controller-inventory.md](../audit/controller-inventory.md) 为准；下表含 ~~Grant 系 2 行~~ 删除备忘，**非**完整枚举）
 
 | Controller | 路由前缀 | 对应文档 |
 | ---------- | -------- | -------- |
@@ -14,8 +14,8 @@
 | `DashboardController` | `/dashboard` | `02`、`01` |
 | `ResourceCatalogController` | 无类级前缀：`/catalog/*`、`/invoke`、`/invoke-stream`、`/catalog/apps/launch` | `02`、`03`、`04` |
 | `ResourceRegistryController` | `/resource-center/resources` | `02`、`03`、`04` |
-| `ResourceGrantController` | `/resource-grants` | `02`、`03` |
-| `GrantApplicationController` | `/grant-applications` | `02`、`03` |
+| ~~`ResourceGrantController`~~ | ~~`/resource-grants`~~ | **已删除**（2026-04-09） |
+| ~~`GrantApplicationController`~~ | ~~`/grant-applications`~~ | **已删除**（2026-04-09） |
 | `SdkGatewayController` | `/sdk/v1` | `02` |
 | `SandboxController` | `/sandbox` | `02` |
 | `AuditController` | `/audit` | `02`、`03` |
@@ -42,6 +42,6 @@
 
 ## 完整性检查清单
 
-- [x] Controller 条目总数与代码一致（**29**，另 `ResourceCatalogController` (method-level only) 计入表内说明）
+- [x] Controller 条目总数与 [controller-inventory.md](../audit/controller-inventory.md) 一致（**28** `@RestController`；`ResourceCatalogController` 为方法级映射另见 inventory）
 - [x] 每个 Controller 至少映射到一个执行文档或可追踪审计行
-- [x] 核心链路（Catalog / Registry / Grant / GrantApplication / Auth）均已覆盖
+- [x] 核心链路（Catalog / Registry / Auth / 入驻审批）均已覆盖；~~Grant~~ 已删

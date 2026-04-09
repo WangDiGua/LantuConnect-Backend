@@ -1,5 +1,7 @@
 # 审核员（reviewer）页面 × HTTP × 后端能力矩阵（2026-04）
 
+> **2026-04-09**：`/grant-applications*`、`/resource-grants*` 与相关表已删除。下文若仍出现 **`grant-applications` / `resource-grant-management` / `GrantApplicationController`**，视为 **历史门禁与菜单口径**，前端/权限应逐步收敛；验收以 `PRODUCT_DEFINITION.md` §4 为准。
+
 本文档与 Flyway [`V15__reviewer_permissions_align.sql`](../../sql/incremental/V15__reviewer_permissions_align.sql) 及前端侧栏/门禁实现同步，用于全量对照与环境验收。
 
 **角色前提**：平台角色 `reviewer`；JWT 主角色可能与 Casbin 多权限并存；界面以 `/auth/me` 的 `permissions`（库表 `t_platform_role.permissions` 合并）为准。
@@ -49,7 +51,7 @@
 
 | page | 说明 |
 |------|------|
-| grant-applications | 授权审批待办（需 grant / resource-grant 权限） |
+| ~~grant-applications~~ | **历史**（接口已删；宜移除侧栏） |
 | developer-applications | 入驻审批（2026-04 起纳入 `user-resource-assets` 导航） |
 | resource-center 及五类 list/register | 受 `canAccessUserPublishingShell` 约束 |
 | developer-portal（api-docs 等） | 需 service 侧 `developer:portal` |
@@ -60,14 +62,14 @@
 |------|------------|----------|
 | 审核 | `AuditController` | approve/reject/publish（除 platform-force-deprecate） |
 | 入驻 | `DeveloperApplicationController` | 列表与审批 |
-| 授权工单 | `GrantApplicationController` | 服务层可见性含 reviewer |
+| ~~授权工单~~ | ~~`GrantApplicationController`~~ | **已删除** |
 | 用户管理 | `UserMgmtController` | 无类级别角色门槛；具体方法由 `RequirePermission` / `RequireRole` 约束；列表只读需 `user:read` |
 | 仪表盘 | `DashboardController` | `monitor:view` 类接口；`owner-resource-stats` 等服务层校验 |
 
 ## 5. 环境验收建议
 
 1. 以 reviewer 账号登录，确认 `/auth/me` 的 `permissions` 含 V15 集合（顺序可不同）。
-2. 侧栏：可见「授权审批待办」「入驻审批」；管理端可见「用户与权限」下 grant/developer/resource-grant（及只读用户列表若需）。
+2. 侧栏：~~「授权审批待办」~~ 应对齐删除/静态说明；**「入驻审批」**仍可测；管理端「用户与权限」宜移除 ~~grant/resource-grant~~ 子项（若 JWT 仍带相关 permission，为遗留数据）。
 3. 打开 `/user/resource-center` 与 `/admin/resource-catalog` 各做一次只读/代管操作，与后端 403 是否一致。
 
 ---
