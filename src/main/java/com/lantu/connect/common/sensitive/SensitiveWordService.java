@@ -134,8 +134,32 @@ public class SensitiveWordService {
         return result;
     }
 
-    public List<String> listCategories() {
-        return sensitiveWordMapper.selectAllCategories();
+    /**
+     * 预设分类（与五类资源 + 全站一致）；库中无词条时 count 为 0，仍返回便于前端下拉。
+     */
+    private static final List<String> PRESET_CATEGORIES = List.of(
+            "agent", "skill", "mcp", "app", "dataset", "general", "default");
+
+    public List<SensitiveWordCategoryStat> listCategories() {
+        List<SensitiveWordCategoryStat> rows = sensitiveWordMapper.selectCategoryCounts();
+        Map<String, Integer> map = new LinkedHashMap<>();
+        for (SensitiveWordCategoryStat r : rows) {
+            if (r.getCategory() != null) {
+                map.put(r.getCategory(), r.getCount() != null ? r.getCount() : 0);
+            }
+        }
+        List<SensitiveWordCategoryStat> out = new ArrayList<>();
+        for (String p : PRESET_CATEGORIES) {
+            out.add(new SensitiveWordCategoryStat(p, map.getOrDefault(p, 0)));
+        }
+        List<String> extras = map.keySet().stream()
+                .filter(k -> !PRESET_CATEGORIES.contains(k))
+                .sorted()
+                .toList();
+        for (String e : extras) {
+            out.add(new SensitiveWordCategoryStat(e, map.get(e)));
+        }
+        return out;
     }
 
     /**

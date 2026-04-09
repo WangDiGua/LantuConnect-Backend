@@ -50,7 +50,7 @@ public class SensitiveWordController {
 
     @GetMapping("/categories")
     @RequireRole({"platform_admin"})
-    public R<List<String>> listCategories() {
+    public R<List<SensitiveWordCategoryStat>> listCategories() {
         return R.ok(sensitiveWordService.listCategories());
     }
 
