@@ -1,5 +1,6 @@
 package com.lantu.connect.auth.controller;
 
+import com.lantu.connect.auth.dto.AccountInsightsVO;
 import com.lantu.connect.auth.dto.ChangePasswordRequest;
 import com.lantu.connect.auth.dto.LoginRequest;
 import com.lantu.connect.auth.dto.LoginResponse;
@@ -101,6 +102,12 @@ public class AuthController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int pageSize) {
         return R.ok(authService.loginHistory(userId, page, pageSize));
+    }
+
+    /** 个人资料：安全分、本月登录次数、近 7 日成功登录分布等 */
+    @GetMapping("/account-insights")
+    public R<AccountInsightsVO> accountInsights(@RequestHeader("X-User-Id") Long userId) {
+        return R.ok(authService.accountInsights(userId));
     }
 
     @GetMapping("/sessions")

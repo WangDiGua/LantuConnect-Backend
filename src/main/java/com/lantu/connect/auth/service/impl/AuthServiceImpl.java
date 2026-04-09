@@ -49,7 +49,9 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
@@ -490,6 +492,91 @@ public class AuthServiceImpl implements AuthService {
                 .orderByDesc(LoginHistory::getLoginTime);
         Page<LoginHistory> result = loginHistoryMapper.selectPage(p, q);
         return PageResults.from(result);
+    }
+
+    @Override
+    public AccountInsightsVO accountInsights(Long userId) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
+        }
+
+        long totalSuccess = loginHistoryMapper.selectCount(
+                new LambdaQueryWrapper<LoginHistory>()
+                        .eq(LoginHistory::getUserId, userId)
+                        .eq(LoginHistory::getResult, "success"));
+
+        LocalDate today = LocalDate.now();
+        LocalDateTime monthStart = today.withDayOfMonth(1).atStartOfDay();
+        LocalDateTime nextMonthStart = today.plusMonths(1).withDayOfMonth(1).atStartOfDay();
+        long monthSuccess = loginHistoryMapper.selectCount(
+                new LambdaQueryWrapper<LoginHistory>()
+                        .eq(LoginHistory::getUserId, userId)
+                        .eq(LoginHistory::getResult, "success")
+                        .ge(LoginHistory::getLoginTime, monthStart)
+                        .lt(LoginHistory::getLoginTime, nextMonthStart));
+
+        List<Integer> byDay = new ArrayList<>(7);
+        List<String> labels = new ArrayList<>(7);
+        for (int i = 6; i >= 0; i--) {
+            LocalDate d = today.minusDays(i);
+            labels.add(d.toString());
+            LocalDateTime dayStart = d.atStartOfDay();
+            LocalDateTime dayEnd = d.plusDays(1).atStartOfDay();
+            long c = loginHistoryMapper.selectCount(
+                    new LambdaQueryWrapper<LoginHistory>()
+                            .eq(LoginHistory::getUserId, userId)
+                            .eq(LoginHistory::getResult, "success")
+                            .ge(LoginHistory::getLoginTime, dayStart)
+                            .lt(LoginHistory::getLoginTime, dayEnd));
+            byDay.add((int) Math.min(Integer.MAX_VALUE, c));
+        }
+
+        long fail30 = loginHistoryMapper.selectCount(
+                new LambdaQueryWrapper<LoginHistory>()
+                        .eq(LoginHistory::getUserId, userId)
+                        .in(LoginHistory::getResult, List.of("fail", "locked"))
+                        .ge(LoginHistory::getLoginTime, LocalDateTime.now().minusDays(30)));
+
+        long activeSessions = sessionTrackerService.getActiveSessionCount(userId);
+
+        int score = 100;
+        if ("locked".equalsIgnoreCase(String.valueOf(user.getStatus()).trim())) {
+            score = 25;
+        } else {
+            score -= Math.min(45, (int) fail30 * 6);
+            if (activeSessions > 5) {
+                score -= 12;
+            } else if (activeSessions > 3) {
+                score -= 6;
+            }
+            score = Math.max(0, Math.min(100, score));
+        }
+
+        String level;
+        String label;
+        if (score >= 75) {
+            level = "good";
+            label = "良好";
+        } else if (score >= 50) {
+            level = "fair";
+            label = "一般";
+        } else {
+            level = "warn";
+            label = "注意";
+        }
+
+        return AccountInsightsVO.builder()
+                .securityScore(score)
+                .securityLevel(level)
+                .securityLabel(label)
+                .totalSuccessLogins(totalSuccess)
+                .loginCountThisMonth(monthSuccess)
+                .recentSuccessByDay(byDay)
+                .recentDayLabels(labels)
+                .failedAttemptsLast30Days(fail30)
+                .activeSessionCount(activeSessions)
+                .build();
     }
 
     private void writeLoginHistory(Long userId, String username, String loginType,

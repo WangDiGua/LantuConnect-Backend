@@ -1,5 +1,6 @@
 package com.lantu.connect.auth.service;
 
+import com.lantu.connect.auth.dto.AccountInsightsVO;
 import com.lantu.connect.auth.dto.ChangePasswordRequest;
 import com.lantu.connect.auth.dto.LoginRequest;
 import com.lantu.connect.auth.dto.LoginResponse;
@@ -37,6 +38,8 @@ public interface AuthService {
     void updateProfile(Long userId, ProfileUpdateRequest request);
 
     PageResult<LoginHistory> loginHistory(Long userId, int page, int pageSize);
+
+    AccountInsightsVO accountInsights(Long userId);
 
     List<SessionItem> listSessions(Long userId, String currentSessionId);
 
