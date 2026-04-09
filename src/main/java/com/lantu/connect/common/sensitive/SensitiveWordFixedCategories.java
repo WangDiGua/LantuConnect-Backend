@@ -3,7 +3,7 @@ package com.lantu.connect.common.sensitive;
 import java.util.List;
 
 /**
- * 敏感词业务<strong>专用</strong>分类字典（写死）。
+ * 敏感词业务<strong>专用</strong>分类字典（写死）；管理端交互与公告「类型」一致：下拉选中文场景，存库为稳定 code。
  * <p>
  * <strong>注意：</strong>与资源目录、五类市场、{@code t_tag} 等「资源标签/分类」无关，禁止复用 agent/skill/mcp 等资源 type 作为敏感词分类。
  */
