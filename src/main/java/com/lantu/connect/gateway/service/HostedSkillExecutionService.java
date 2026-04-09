@@ -84,7 +84,7 @@ public class HostedSkillExecutionService {
         if (!"published".equalsIgnoreCase(status)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "Skill 未发布，禁止调用");
         }
-        String mode = row.get("execution_mode") == null ? "pack" : String.valueOf(row.get("execution_mode")).trim().toLowerCase(Locale.ROOT);
+        String mode = row.get("execution_mode") == null ? EXECUTION_HOSTED : String.valueOf(row.get("execution_mode")).trim().toLowerCase(Locale.ROOT);
         if (!EXECUTION_HOSTED.equals(mode)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "该 Skill 非 hosted 模式");
         }

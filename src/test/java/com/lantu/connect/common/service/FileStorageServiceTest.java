@@ -29,8 +29,6 @@ class FileStorageServiceTest {
         FileBootstrapProperties fileProps = new FileBootstrapProperties();
         fileProps.setUploadDir(tempDir.toString());
         fileProps.setMaxSizeMb(10);
-        fileProps.setSkillPackMaxMb(10);
-        fileProps.setStorageType("local");
         fileProps.setAllowedCategories("document,avatar,image,attachment,temp,dataset");
         when(runtime.file()).thenReturn(fileProps);
 

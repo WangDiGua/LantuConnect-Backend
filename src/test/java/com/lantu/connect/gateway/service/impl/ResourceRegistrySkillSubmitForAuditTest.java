@@ -2,7 +2,6 @@ package com.lantu.connect.gateway.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.auth.mapper.PlatformRoleMapper;
-import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.util.DeptScopeHelper;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.gateway.protocol.ProtocolInvokerRegistry;
@@ -27,7 +26,6 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -58,11 +56,11 @@ class ResourceRegistrySkillSubmitForAuditTest {
     private ResourceRegistryServiceImpl resourceRegistryService;
 
     @Test
-    void submitForAuditAllowsSkillWhenArtifactPresentEvenIfPackInvalid() {
+    void submitForAuditAllowsHostedSkillWhenPromptPresent() {
         long uid = 1L;
         long rid = 99L;
         when(platformRoleMapper.selectRolesByUserId(uid)).thenReturn(List.of());
-        stubResourceQueries(rid, uid, "invalid");
+        stubResourceQueries(rid, uid, "hosted", "You are a helpful assistant.");
         when(jdbcTemplate.queryForObject(contains("t_audit_item"), eq(Integer.class), any(), any())).thenReturn(0);
         doReturn(1).when(jdbcTemplate).update(anyString(), any(Object[].class));
         when(jdbcTemplate.queryForList(anyString())).thenReturn(List.of());
@@ -75,30 +73,14 @@ class ResourceRegistrySkillSubmitForAuditTest {
                 eq(rid));
     }
 
-    @Test
-    void submitForAuditAllowsSkillWhenPackValid() {
-        long uid = 1L;
-        long rid = 100L;
-        when(platformRoleMapper.selectRolesByUserId(uid)).thenReturn(List.of());
-        stubResourceQueries(rid, uid, "valid");
-        when(jdbcTemplate.queryForObject(contains("t_audit_item"), eq(Integer.class), any(), any())).thenReturn(0);
-        doReturn(1).when(jdbcTemplate).update(anyString(), any(Object[].class));
-        when(jdbcTemplate.queryForList(anyString())).thenReturn(List.of());
-
-        resourceRegistryService.submitForAudit(uid, rid);
-
-        verify(jdbcTemplate, atLeastOnce()).update(
-                contains("UPDATE t_resource SET status"),
-                eq(ResourceLifecycleStateMachine.STATUS_PENDING_REVIEW),
-                eq(rid));
-    }
-
-    private void stubResourceQueries(long rid, long uid, String packStatus) {
+    private void stubResourceQueries(long rid, long uid, String executionMode, String hostedPrompt) {
         when(jdbcTemplate.queryForList(anyString(), anyLong())).thenAnswer(inv -> {
             String sql = inv.getArgument(0);
             long idArg = ((Number) inv.getArgument(1)).longValue();
             if (idArg == rid && sql.contains("t_resource_skill_ext")) {
-                return List.of(Map.of("pack_validation_status", packStatus, "artifact_uri", "/uploads/x.zip"));
+                return List.of(Map.of(
+                        "execution_mode", executionMode,
+                        "hosted_system_prompt", hostedPrompt));
             }
             if (idArg == rid && sql.contains("FROM t_resource")) {
                 return List.of(Map.of(

@@ -5,19 +5,13 @@ import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.config.FileBootstrapProperties;
 import com.lantu.connect.common.storage.FileStorageSupport;
 import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
-import io.minio.BucketExistsArgs;
-import io.minio.MakeBucketArgs;
-import io.minio.MinioClient;
-import io.minio.PutObjectArgs;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -26,11 +20,11 @@ import java.util.Arrays;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
- * 文件持久化：通过 {@code file.storage-type} 选择 <strong>local</strong>（默认）或 <strong>minio</strong>。
+ * 文件持久化：仅写入 {@code file.upload-dir} 下，对外返回 {@code /uploads/...} 路径前缀。
  */
 @Slf4j
 @Service
@@ -84,84 +78,6 @@ public class FileStorageService {
         String datePath = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM"));
         String relativePath = safeCategory + "/" + datePath + "/" + UUID.randomUUID() + "." + ext;
 
-        if (isMinioMode()) {
-            return storeToMinio(file, relativePath);
-        }
-        return storeToLocal(file, relativePath);
-    }
-
-    /**
-     * 持久化 Anthropic 式技能 zip，单文件上限可高于通用上传（默认 100MB）。
-     */
-    public String storeSkillPack(byte[] data, String originalFilename) {
-        if (data == null || data.length == 0) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "文件不能为空");
-        }
-        int skillPackMaxMb = f().getSkillPackMaxMb();
-        if (data.length > (long) skillPackMaxMb * 1024 * 1024) {
-            throw new BusinessException(ResultCode.FILE_SIZE_EXCEEDED, "技能包超过大小限制 (" + skillPackMaxMb + "MB)");
-        }
-        if (originalFilename != null && originalFilename.contains(".")) {
-            String ext = originalFilename.substring(originalFilename.lastIndexOf('.') + 1).toLowerCase();
-            if (!"zip".equals(ext)) {
-                throw new BusinessException(ResultCode.UNSUPPORTED_FILE_TYPE, "技能包须为 zip");
-            }
-        }
-        String datePath = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM"));
-        String relativePath = "skill-pack/" + datePath + "/" + UUID.randomUUID() + ".zip";
-        if (isMinioMode()) {
-            return storeSkillPackToMinio(data, relativePath);
-        }
-        return storeSkillPackToLocal(data, relativePath);
-    }
-
-    private boolean isMinioMode() {
-        String storageType = f().getStorageType();
-        if ("minio".equalsIgnoreCase(storageType)) {
-            return true;
-        }
-        if ("local".equalsIgnoreCase(storageType)) {
-            return false;
-        }
-        throw new BusinessException(ResultCode.PARAM_ERROR,
-                "file.storage-type 仅支持 local（默认）或 minio，当前值: " + storageType);
-    }
-
-    private String storeSkillPackToLocal(byte[] data, String relativePath) {
-        Path fullPath = storageSupport.resolveLocalWritePath(relativePath);
-        try {
-            Files.createDirectories(fullPath.getParent());
-            Files.write(fullPath, data);
-        } catch (IOException e) {
-            log.error("技能包存储失败: {}", fullPath, e);
-            throw new BusinessException(ResultCode.FILE_STORAGE_ERROR);
-        }
-        return "/uploads/" + relativePath;
-    }
-
-    private String storeSkillPackToMinio(byte[] data, String relativePath) {
-        String key = storageSupport.normalizeObjectKey(relativePath);
-        try {
-            MinioClient client = storageSupport.createMinioClient();
-            ensureBucket(client);
-            try (InputStream is = new ByteArrayInputStream(data)) {
-                client.putObject(PutObjectArgs.builder()
-                        .bucket(f().getMinio().getBucket())
-                        .object(key)
-                        .stream(is, data.length, -1)
-                        .contentType("application/zip")
-                        .build());
-            }
-            return normalizedMinioPublicPrefix() + relativePath;
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("MinIO 技能包存储失败: {}", relativePath, e);
-            throw new BusinessException(ResultCode.FILE_STORAGE_ERROR, "对象存储服务异常");
-        }
-    }
-
-    private String storeToLocal(MultipartFile file, String relativePath) {
         Path fullPath = storageSupport.resolveLocalWritePath(relativePath);
         try {
             Files.createDirectories(fullPath.getParent());
@@ -171,44 +87,6 @@ public class FileStorageService {
             throw new BusinessException(ResultCode.FILE_STORAGE_ERROR);
         }
         return "/uploads/" + relativePath;
-    }
-
-    private String storeToMinio(MultipartFile file, String relativePath) {
-        String key = storageSupport.normalizeObjectKey(relativePath);
-        try {
-            MinioClient client = storageSupport.createMinioClient();
-            ensureBucket(client);
-            try (InputStream is = file.getInputStream()) {
-                client.putObject(PutObjectArgs.builder()
-                        .bucket(f().getMinio().getBucket())
-                        .object(key)
-                        .stream(is, file.getSize(), -1)
-                        .contentType(file.getContentType())
-                        .build());
-            }
-            return normalizedMinioPublicPrefix() + key;
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("MinIO 存储失败: {}", relativePath, e);
-            throw new BusinessException(ResultCode.FILE_STORAGE_ERROR, "对象存储服务异常");
-        }
-    }
-
-    private void ensureBucket(MinioClient client) throws Exception {
-        String minioBucket = f().getMinio().getBucket();
-        boolean bucketExists = client.bucketExists(BucketExistsArgs.builder().bucket(minioBucket).build());
-        if (!bucketExists) {
-            client.makeBucket(MakeBucketArgs.builder().bucket(minioBucket).build());
-        }
-    }
-
-    /** 与 {@link com.lantu.connect.common.storage.FileStorageSupport#extractMinioObjectKey} 使用的前缀一致 */
-    private String normalizedMinioPublicPrefix() {
-        String minioEndpoint = f().getMinio().getEndpoint();
-        String minioBucket = f().getMinio().getBucket();
-        String ep = minioEndpoint.replaceAll("/+$", "");
-        return ep + "/" + minioBucket + "/";
     }
 
     private String normalizeCategory(String category) {

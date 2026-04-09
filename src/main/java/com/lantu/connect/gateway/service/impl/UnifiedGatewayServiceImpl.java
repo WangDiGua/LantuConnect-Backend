@@ -293,18 +293,6 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             }
         }
 
-        Map<Long, Long> downloadById = new HashMap<>();
-        for (Map<String, Object> row : jdbcTemplate.queryForList(
-                "SELECT resource_id, COUNT(*) AS c FROM t_skill_pack_download_event WHERE resource_id IN ("
-                        + placeholders
-                        + ") GROUP BY resource_id",
-                idArgs)) {
-            Long rid = longOrNull(row.get("resource_id"));
-            if (rid != null) {
-                downloadById.put(rid, longValue(row.get("c")));
-            }
-        }
-
         for (ResourceCatalogItemVO vo : items) {
             Long rid = longOrNull(vo.getResourceId());
             if (rid == null) {
@@ -315,7 +303,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             }
             vo.setCallCount(callById.getOrDefault(rid, 0L));
             vo.setUsageCount(usageById.getOrDefault(rid, 0L));
-            vo.setDownloadCount(downloadById.getOrDefault(rid, 0L));
+            vo.setDownloadCount(0L);
         }
     }
 
@@ -895,7 +883,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private ResourceResolveVO resolveSkill(Map<String, Object> base, String version) {
         Long id = longValue(base.get("id"));
         Map<String, Object> ext = queryOne("""
-                        SELECT skill_type, execution_mode, artifact_uri, artifact_sha256, manifest_json, entry_doc, spec_json, parameters_schema, is_public, pack_validation_status, skill_root_path, service_detail_md,
+                        SELECT skill_type, execution_mode, manifest_json, entry_doc, spec_json, parameters_schema, is_public, service_detail_md,
                         hosted_default_model, hosted_output_schema
                         FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
                         """,
@@ -904,68 +892,21 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             ext = Map.of();
         }
         String execMode = valueOf(ext.get("execution_mode")).trim().toLowerCase(Locale.ROOT);
-        if (HostedSkillExecutionService.EXECUTION_HOSTED.equals(execMode)) {
-            Map<String, Object> spec = new LinkedHashMap<>();
-            spec.put("executionMode", HostedSkillExecutionService.EXECUTION_HOSTED);
-            if (StringUtils.hasText(valueOf(ext.get("hosted_default_model")))) {
-                spec.put("defaultModel", valueOf(ext.get("hosted_default_model")).trim());
-            }
-            Map<String, Object> outSchema = parseJsonMap(ext.get("hosted_output_schema"));
-            if (!outSchema.isEmpty()) {
-                spec.put("outputSchema", outSchema);
-            }
-            Map<String, Object> params = parseJsonMap(ext.get("parameters_schema"));
-            if (!params.isEmpty()) {
-                spec.put("parametersSchema", params);
-            }
-            String skillDetailMd = valueOf(ext.get("service_detail_md"));
-            return ResourceResolveVO.builder()
-                    .resourceType(TYPE_SKILL)
-                    .resourceId(String.valueOf(id))
-                    .version(version)
-                    .resourceCode(valueOf(base.get("resource_code")))
-                    .displayName(valueOf(base.get("display_name")))
-                    .status(valueOf(base.get("status")))
-                    .createdBy(longOrNull(base.get("created_by")))
-                    .invokeType(HostedSkillExecutionService.INVOKETYPE_HOSTED_LLM)
-                    .endpoint(null)
-                    .spec(spec)
-                    .serviceDetailMd(StringUtils.hasText(skillDetailMd) ? skillDetailMd : null)
-                    .build();
+        if (!HostedSkillExecutionService.EXECUTION_HOSTED.equals(execMode)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Skill 须为 hosted 模式");
         }
         Map<String, Object> spec = new LinkedHashMap<>();
-        Map<String, Object> manifest = parseJsonMap(ext.get("manifest_json"));
-        if (!manifest.isEmpty()) {
-            spec.put("manifest", manifest);
+        spec.put("executionMode", HostedSkillExecutionService.EXECUTION_HOSTED);
+        if (StringUtils.hasText(valueOf(ext.get("hosted_default_model")))) {
+            spec.put("defaultModel", valueOf(ext.get("hosted_default_model")).trim());
         }
-        if (StringUtils.hasText(valueOf(ext.get("entry_doc")))) {
-            spec.put("entryDoc", valueOf(ext.get("entry_doc")).trim());
-        }
-        Map<String, Object> extra = parseJsonMap(ext.get("spec_json"));
-        if (!extra.isEmpty()) {
-            spec.put("extra", extra);
+        Map<String, Object> outSchema = parseJsonMap(ext.get("hosted_output_schema"));
+        if (!outSchema.isEmpty()) {
+            spec.put("outputSchema", outSchema);
         }
         Map<String, Object> params = parseJsonMap(ext.get("parameters_schema"));
         if (!params.isEmpty()) {
             spec.put("parametersSchema", params);
-        }
-        if (StringUtils.hasText(valueOf(ext.get("artifact_sha256")))) {
-            spec.put("artifactSha256", valueOf(ext.get("artifact_sha256")).trim());
-        }
-        if (StringUtils.hasText(valueOf(ext.get("pack_validation_status")))) {
-            spec.put("packValidationStatus", valueOf(ext.get("pack_validation_status")).trim().toLowerCase(Locale.ROOT));
-        }
-        if (StringUtils.hasText(valueOf(ext.get("skill_root_path")))) {
-            spec.put("skillRootPath", valueOf(ext.get("skill_root_path")).trim());
-        }
-        spec.put("packFormat", valueOf(ext.get("skill_type")));
-        String artifactUri = valueOf(ext.get("artifact_uri"));
-        boolean skillPublic = truthySkillPublic(ext.get("is_public"));
-        String endpointOut = StringUtils.hasText(artifactUri) ? artifactUri.trim() : null;
-        if (!skillPublic && StringUtils.hasText(artifactUri)) {
-            spec.put("artifactDownloadApi",
-                    ServletContextPathUtil.join(servletContextPath, "/resource-center/resources/" + id + "/skill-artifact"));
-            endpointOut = null;
         }
         String skillDetailMd = valueOf(ext.get("service_detail_md"));
         return ResourceResolveVO.builder()
@@ -976,24 +917,11 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .displayName(valueOf(base.get("display_name")))
                 .status(valueOf(base.get("status")))
                 .createdBy(longOrNull(base.get("created_by")))
-                .invokeType("artifact")
-                .endpoint(endpointOut)
+                .invokeType(HostedSkillExecutionService.INVOKETYPE_HOSTED_LLM)
+                .endpoint(null)
                 .spec(spec)
                 .serviceDetailMd(StringUtils.hasText(skillDetailMd) ? skillDetailMd : null)
                 .build();
-    }
-
-    private static boolean truthySkillPublic(Object o) {
-        if (o == null) {
-            return false;
-        }
-        if (o instanceof Boolean b) {
-            return b;
-        }
-        if (o instanceof Number n) {
-            return n.intValue() != 0;
-        }
-        return false;
     }
 
     private ResourceResolveVO resolveMcp(Map<String, Object> base, String version) {
@@ -2200,7 +2128,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         Object[] idArgs = skillIds.toArray();
         Map<Long, String> modeById = new HashMap<>();
         for (Map<String, Object> row : jdbcTemplate.queryForList(
-                "SELECT resource_id, COALESCE(NULLIF(TRIM(execution_mode), ''), 'pack') AS em FROM t_resource_skill_ext WHERE resource_id IN ("
+                "SELECT resource_id, COALESCE(NULLIF(TRIM(execution_mode), ''), 'hosted') AS em FROM t_resource_skill_ext WHERE resource_id IN ("
                         + placeholders
                         + ")",
                 idArgs)) {
@@ -2209,7 +2137,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 continue;
             }
             String em = valueOf(row.get("em")).trim().toLowerCase(Locale.ROOT);
-            modeById.put(rid, StringUtils.hasText(em) ? em : "pack");
+            modeById.put(rid, StringUtils.hasText(em) ? em : "hosted");
         }
         for (ResourceCatalogItemVO vo : items) {
             String rt = vo.getResourceType() == null ? "" : vo.getResourceType().trim().toLowerCase(Locale.ROOT);
@@ -2220,7 +2148,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             if (rid == null) {
                 continue;
             }
-            vo.setExecutionMode(modeById.getOrDefault(rid, "pack"));
+            vo.setExecutionMode(modeById.getOrDefault(rid, "hosted"));
         }
     }
 

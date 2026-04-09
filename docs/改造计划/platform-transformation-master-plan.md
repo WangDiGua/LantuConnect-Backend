@@ -18,7 +18,7 @@
    统一登记、审核、上架、目录与消费出口；当前重点进化 **`agent`、`mcp`、Hosted `skill`** 三类的 **组合关系**。
 
 2. **Skill 定义**  
-   **`skill` = Hosted 提示词 / 推理能力**：平台保存提示模板与参数约定，在受控路径内 **代调大模型** 产出结果；可与 **技能包 zip（历史形态）** 以 `execution_mode` 区分。
+   **`skill` = Hosted 提示词 / 推理能力**：平台保存提示模板与参数约定，在受控路径内 **代调大模型** 产出结果。**zip 技能包（`execution_mode=pack`）已下线**（V35），目录与注册仅面向 hosted。
 
 3. **绑定关系（注册时配置）**  
    - **Agent 注册**：可绑定若干 **MCP**（`agent_depends_mcp`）。  
@@ -39,13 +39,13 @@
 
 - **网关**：`UnifiedGatewayServiceImpl` — `invoke` / `invoke-stream`；Hosted skill 分支、`applyMcpPreSkillChain`、`aggregatedCapabilityTools`。
 - **关系**：`t_resource_relation` — `agent_depends_mcp`、`mcp_depends_skill`（及历史类型）；`ResourceRegistryServiceImpl.syncAllBindings`。
-- **Skill 扩展**：`t_resource_skill_ext.execution_mode` 与 hosted 列（见 `sql/incremental/V34__hosted_skill_and_bindings.sql`）。
+- **Skill 扩展**：`t_resource_skill_ext` 仅 `hosted`；pack 列与制品相关字段已由 `sql/incremental/V35__remove_skill_pack_support.sql` 清理（在 V34 hosted 能力之上）。
 
 ---
 
 ## 四、前端改造要点（联调清单）
 
-- **资源注册**：Agent 多选 MCP；MCP 多选前置 Skill；Skill 表单区分 pack / hosted（字段见 `ResourceUpsertRequest`）。
+- **资源注册**：Agent 多选 MCP；MCP 多选前置 Skill；**Skill 仅 hosted**（系统提示词 + `parametersSchema` 等，见 `ResourceUpsertRequest`）。
 - **市场 / 详情**：`include=closure|bindings` 展示 **绑定闭包**；可选调用聚合工具接口。
 
 （前端工程不在本仓库时，以上以 `docs/frontend-alignment-handbook.md` 与 Swagger 为准。）
@@ -57,7 +57,7 @@
 | 阶段 | 内容 | 状态（本仓库） |
 |------|------|----------------|
 | 0 | 规格冻结 | [platform-transformation-spec-freeze.md](platform-transformation-spec-freeze.md)（本目录） |
-| 1 | DB + 注册读写 + resolve 闭包 | V34 + Registry + `bindingClosure` |
+| 1 | DB + 注册读写 + resolve 闭包 | V34 + V35（去 pack）+ Registry + `bindingClosure` |
 | 2 | Hosted Skill invoke | `HostedSkillExecutionService` + `invokeHostedSkill` |
 | 3 | MCP 前置管线 | `applyMcpPreSkillChain` + 日志 |
 | 4 | （可选）聚合 tools BFF | `GET /catalog/capabilities/tools`（及 SDK 同路径） |
@@ -74,4 +74,4 @@
 
 ---
 
-*版本：2026-04-08；与代码同步更新。*
+*版本：2026-04-09；与代码同步更新（hosted-only skill）。*

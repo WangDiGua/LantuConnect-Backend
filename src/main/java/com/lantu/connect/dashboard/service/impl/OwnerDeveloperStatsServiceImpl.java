@@ -65,12 +65,6 @@ public class OwnerDeveloperStatsServiceImpl implements OwnerDeveloperStatsServic
                         """,
                 Long.class, targetOwner, start, end);
 
-        Long skillDl = jdbcTemplate.queryForObject("""
-                        SELECT COUNT(*) FROM t_skill_pack_download_event
-                        WHERE owner_user_id = ? AND create_time >= ? AND create_time <= ?
-                        """,
-                Long.class, targetOwner, start, end);
-
         List<OwnerResourceTypeInvokeCount> byType = jdbcTemplate.query("""
                         SELECT LOWER(COALESCE(NULLIF(TRIM(cl.resource_type), ''), r.resource_type)) AS rt,
                                COUNT(*) AS cnt,
@@ -98,7 +92,6 @@ public class OwnerDeveloperStatsServiceImpl implements OwnerDeveloperStatsServic
                 .gatewayInvokeTotal(gatewayTotal != null ? gatewayTotal : 0L)
                 .gatewayInvokeSuccess(gatewaySuccess != null ? gatewaySuccess : 0L)
                 .usageRecordInvokeTotal(usageInvoke != null ? usageInvoke : 0L)
-                .skillPackDownloadTotal(skillDl != null ? skillDl : 0L)
                 .gatewayInvokesByResourceType(byType)
                 .build();
     }

@@ -131,7 +131,7 @@ public class ResourceCatalogController {
         return R.ok(unifiedGatewayService.resolve(request, apiKey, userId));
     }
 
-    @Operation(summary = "统一调用入口", description = "须提供有效 X-Api-Key。`skill`：仅 `execution_mode=hosted` 且已发布可走本接口；技能包仍禁止。`mcp`：若登记了前置 Hosted Skill，网关内先归一化 JSON 再转发上游。")
+    @Operation(summary = "统一调用入口", description = "须提供有效 X-Api-Key。`skill`：仅 `execution_mode=hosted` 且已发布可走本接口。`mcp`：若登记了前置 Hosted Skill，网关内先归一化 JSON 再转发上游。")
     @SecurityRequirement(name = OpenApiConfiguration.API_KEY_SECURITY)
     @PostMapping("/invoke")
     public ResponseEntity<R<InvokeResponse>> invoke(@RequestHeader(value = "X-Trace-Id", required = false)

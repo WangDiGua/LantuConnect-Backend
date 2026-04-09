@@ -58,9 +58,9 @@ public class ResourceCatalogItemVO {
     private Long usageCount;
 
     /**
-     * 技能包受控下载次数（{@code t_skill_pack_download_event}）；数据集当前无独立下载流水时为 0。
+     * 预留字段；技能 zip 下载已下线，当前恒为 0。
      */
-    @Schema(description = "下载量：技能为技能包下载事件计数；数据集暂无流水时为 0")
+    @Schema(description = "下载量（预留；当前为 0）")
     private Long downloadCount;
 
     /** {@code t_resource.view_count}，详情 GET 成功时递增 */
@@ -90,8 +90,8 @@ public class ResourceCatalogItemVO {
     private Boolean hasGrantForKey;
 
     /**
-     * 仅 {@code resourceType=skill} 时由目录列表批量填充：{@code pack}（默认）或 {@code hosted}。
+     * 仅 {@code resourceType=skill} 时由目录列表批量填充：{@code hosted}。
      */
-    @Schema(description = "技能：execution_mode（pack | hosted）；非技能类型为 null")
+    @Schema(description = "技能：execution_mode（hosted）；非技能类型为 null")
     private String executionMode;
 }

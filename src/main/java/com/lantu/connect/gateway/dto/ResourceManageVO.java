@@ -54,25 +54,17 @@ public class ResourceManageVO {
     private Double temperature;
     private String systemPrompt;
 
-    // --- skill (t_resource_skill_ext)：Anthropic 式内容包 ---
+    // --- skill (t_resource_skill_ext)：Hosted Skill ---
     private String skillType;
-    private String artifactUri;
-    private String artifactSha256;
     private Map<String, Object> manifest;
     private String entryDoc;
-    /** 技能 zip 校验状态：none / pending / valid / invalid */
-    private String packValidationStatus;
-    private LocalDateTime packValidatedAt;
-    private String packValidationMessage;
-    /** zip 内技能根（语义校验子树）；空表示整包 */
-    private String skillRootPath;
     /** skill：已废弃，API 恒为 null（技能包不挂载 MCP）。 */
     private Long parentResourceId;
     /** skill：已废弃，API 恒为 null。 */
     private String displayTemplate;
     private Map<String, Object> parametersSchema;
 
-    /** skill：pack | hosted */
+    /** skill：hosted */
     private String executionMode;
     private String hostedSystemPrompt;
     private String hostedUserTemplate;

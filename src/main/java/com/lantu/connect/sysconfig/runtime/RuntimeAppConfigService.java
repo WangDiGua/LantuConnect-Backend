@@ -15,7 +15,6 @@ import com.lantu.connect.common.config.LantuSystemProperties;
 import com.lantu.connect.common.config.LegacyApiDeprecationProperties;
 import com.lantu.connect.common.config.NotificationProperties;
 import com.lantu.connect.common.idempotency.IdempotencyProperties;
-import com.lantu.connect.gateway.config.SkillPackImportProperties;
 import com.lantu.connect.sysconfig.entity.SystemParam;
 import com.lantu.connect.sysconfig.mapper.SystemParamMapper;
 import lombok.RequiredArgsConstructor;
@@ -46,7 +45,6 @@ public class RuntimeAppConfigService {
 
     private final LegacyApiDeprecationProperties yamlApiDeprecation;
     private final IdempotencyProperties yamlIdempotency;
-    private final SkillPackImportProperties yamlSkillPackImport;
     private final BackendContractProperties yamlContract;
     private final IntegrationProperties yamlIntegration;
     private final NotificationProperties yamlNotification;
@@ -112,10 +110,6 @@ public class RuntimeAppConfigService {
 
     public IdempotencyProperties idempotency() {
         return mergeAt(yamlIdempotency, "/lantu/idempotency");
-    }
-
-    public SkillPackImportProperties skillPackImport() {
-        return mergeAt(yamlSkillPackImport, "/lantu/skill-pack-import");
     }
 
     /** 契约元数据（info 贡献器等）；与 YAML {@link BackendContractProperties} 同结构。 */

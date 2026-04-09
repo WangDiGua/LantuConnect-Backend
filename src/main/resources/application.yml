@@ -165,29 +165,6 @@ lantu:
     enabled: true
     processing-ttl-seconds: 60
     success-ttl-seconds: 86400
-  skill-pack-import:
-    max-bytes: 26214400
-    connect-timeout-seconds: 45
-    read-timeout-seconds: 90
-    max-redirects: 5
-    fetch-retries: 3
-    fetch-retry-delay-ms: 1000
-    https-only: true
-    allowed-host-suffixes: [ ]
-    require-allowed-host-suffixes: false
-    git-clone-enabled: true
-    git-clone-timeout-seconds: 120
-    git-clone-allow-bare-repo-paths: true
-    git-bare-repo-host-suffixes:
-      - github.com
-      - www.github.com
-      - gitlab.com
-      - www.gitlab.com
-      - bitbucket.org
-      - www.bitbucket.org
-      - gitee.com
-      - www.gitee.com
-    git-clone-max-unpacked-bytes: 41943040
   # lantu.skill-external-catalog — 在线技能市场默认；DB 键 skill_external_catalog 可全量覆盖。
   skill-external-catalog:
     provider: skillsmp
@@ -223,18 +200,12 @@ lantu:
     entries: []
 
 # ----------------------------------------------------------------------------
-# file.* — 上传目录、允许类型与 MinIO；可与 runtime_app_config 中的 lantu.file 合并
+# file.* — 本地上传目录与上传分类白名单；可与 runtime_app_config 中的 /file 合并
 # ----------------------------------------------------------------------------
 file:
   upload-dir: ${FILE_UPLOAD_DIR}
   max-size-mb: 50
-  allowed-types: pdf,docx,csv,json,parquet,xlsx,jpg,jpeg,png,gif,svg
-  storage-type: ${FILE_STORAGE_TYPE}
-  minio:
-    endpoint: ${FILE_MINIO_ENDPOINT}
-    access-key: ${FILE_MINIO_ACCESS_KEY}
-    secret-key: ${FILE_MINIO_SECRET_KEY}
-    bucket: ${FILE_MINIO_BUCKET}
+  allowed-categories: document,avatar,image,attachment,temp,dataset
 
 # ----------------------------------------------------------------------------
 # cors.* — 跨域；allow-all-origins=true 时放开任意 Origin/Headers，公网暴露请评估风险。

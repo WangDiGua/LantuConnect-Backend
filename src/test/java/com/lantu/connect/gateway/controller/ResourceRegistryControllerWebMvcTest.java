@@ -13,9 +13,6 @@ import com.lantu.connect.gateway.dto.ResourceVersionVO;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.service.McpConnectivityProbeService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
-import com.lantu.connect.gateway.service.SkillArtifactDownloadService;
-import com.lantu.connect.gateway.service.SkillPackChunkedUploadService;
-import com.lantu.connect.gateway.service.SkillPackUploadService;
 import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,18 +34,12 @@ class ResourceRegistryControllerWebMvcTest {
 
     private MockMvc mockMvc;
     private ResourceRegistryService resourceRegistryService;
-    private SkillPackUploadService skillPackUploadService;
-    private SkillPackChunkedUploadService skillPackChunkedUploadService;
-    private SkillArtifactDownloadService skillArtifactDownloadService;
     private ApiKeyScopeService apiKeyScopeService;
     private McpConnectivityProbeService mcpConnectivityProbeService;
 
     @BeforeEach
     void setUp() {
         resourceRegistryService = mock(ResourceRegistryService.class);
-        skillPackUploadService = mock(SkillPackUploadService.class);
-        skillPackChunkedUploadService = mock(SkillPackChunkedUploadService.class);
-        skillArtifactDownloadService = mock(SkillArtifactDownloadService.class);
         apiKeyScopeService = mock(ApiKeyScopeService.class);
         mcpConnectivityProbeService = mock(McpConnectivityProbeService.class);
         JwtUtil jwtUtil = mock(JwtUtil.class);
@@ -87,8 +78,7 @@ class ResourceRegistryControllerWebMvcTest {
 
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new ResourceRegistryController(
-                        resourceRegistryService, skillPackUploadService, skillPackChunkedUploadService, skillArtifactDownloadService, apiKeyScopeService,
-                        mcpConnectivityProbeService))
+                        resourceRegistryService, mcpConnectivityProbeService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .addFilters(jwtFilter)
                 .build();

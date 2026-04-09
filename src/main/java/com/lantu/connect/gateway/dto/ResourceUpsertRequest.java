@@ -53,19 +53,13 @@ public class ResourceUpsertRequest {
     private String systemPrompt;
 
     /**
-     * 仅 skill 使用：技能包格式（如 anthropic_v1、folder_v1），非 MCP。
+     * 仅 skill 使用：形态标识（hosted_v1）。
      */
     private String skillType;
-    /** 技能包 URI；草稿可为空，上传 zip 或提审前须补齐。 */
-    private String artifactUri;
-    /** 技能包 SHA-256 hex，可选。 */
-    private String artifactSha256;
     /** 包 manifest（JSON），可选。 */
     private Map<String, Object> manifest;
-    /** 入口文档相对路径，如 SKILL.md。 */
+    /** 入口文档相对路径（可选）。 */
     private String entryDoc;
-    /** zip 内技能根目录（可选），与上传 skillRoot 一致。 */
-    private String skillRootPath;
     /**
      * 已废弃：技能仅为技能包资源，不再挂载 MCP；服务端对 resourceType=skill 忽略此字段。
      */
@@ -120,7 +114,7 @@ public class ResourceUpsertRequest {
     private List<Long> relatedPreSkillResourceIds;
 
     /**
-     * 仅 skill：{@code pack}（默认）或 {@code hosted}。
+     * 仅 skill：{@code hosted}（Anthropic zip pack 已下线）。
      */
     private String executionMode;
 
