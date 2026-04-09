@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * 定时清理审计日志，保留天数来自 t_security_setting.audit_log_retention。
+ * <p>
+ * 约定：{@code <= 0} 表示不自动清理（永久保留）；{@code 1..3650} 为保留最近 N 天；缺省或非法回退 90。
  */
 @Component
 @RequiredArgsConstructor
@@ -28,6 +30,10 @@ public class AuditLogRetentionTask {
         }
         try {
             Integer retentionDays = loadRetentionDays();
+            if (retentionDays == null || retentionDays <= 0) {
+                log.info("{} skipped cleanup (retention disabled / forever)", TASK_NAME);
+                return;
+            }
             int rows = jdbcTemplate.update(
                     "DELETE FROM t_audit_log WHERE create_time < DATE_SUB(NOW(), INTERVAL ? DAY)",
                     retentionDays);
@@ -43,8 +49,11 @@ public class AuditLogRetentionTask {
         Integer days = jdbcTemplate.query(
                         "SELECT CAST(`value` AS SIGNED) AS retention_days FROM t_security_setting WHERE `key` = 'audit_log_retention' LIMIT 1",
                         rs -> rs.next() ? rs.getInt("retention_days") : null);
-        if (days == null || days < 7) {
+        if (days == null) {
             return 90;
+        }
+        if (days <= 0) {
+            return 0;
         }
         return Math.min(days, 3650);
     }
