@@ -57,6 +57,7 @@ public class SecurityProperties {
             "/auth/register",
             "/auth/refresh",
             "/auth/logout",
+            "/auth/legal-notices",
             "/catalog/apps/launch",
             "/captcha/**",
             "/error",

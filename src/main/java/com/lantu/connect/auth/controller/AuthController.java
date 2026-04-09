@@ -1,6 +1,8 @@
 package com.lantu.connect.auth.controller;
 
+import com.lantu.connect.auth.config.LegalNoticesProperties;
 import com.lantu.connect.auth.dto.AccountInsightsVO;
+import com.lantu.connect.auth.dto.LegalNoticesVO;
 import com.lantu.connect.auth.dto.ChangePasswordRequest;
 import com.lantu.connect.auth.dto.LoginRequest;
 import com.lantu.connect.auth.dto.LoginResponse;
@@ -50,6 +52,19 @@ public class AuthController {
     private final AuthService authService;
     private final JwtUtil jwtUtil;
     private final ClientIpResolver clientIpResolver;
+    private final LegalNoticesProperties legalNoticesProperties;
+
+    /**
+     * 登录页「隐私 / 条款」弹窗内容；匿名可访问，与 {@link SecurityProperties#getPermitPatterns()} 白名单一致。
+     */
+    @GetMapping("/legal-notices")
+    public R<LegalNoticesVO> legalNotices() {
+        return R.ok(new LegalNoticesVO(
+                legalNoticesProperties.getPrivacyTitle(),
+                legalNoticesProperties.getPrivacyBody(),
+                legalNoticesProperties.getTermsTitle(),
+                legalNoticesProperties.getTermsBody()));
+    }
 
     @PostMapping("/login")
     @RateLimiter(name = "authLogin")
