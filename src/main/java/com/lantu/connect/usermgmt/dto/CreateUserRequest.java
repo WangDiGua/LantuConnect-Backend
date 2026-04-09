@@ -17,6 +17,12 @@ public class CreateUserRequest {
     @NotBlank
     private String username;
 
+    /**
+     * 展示名，写入 t_user.real_name（与学工号 username 区分）。
+     */
+    @NotBlank
+    private String realName;
+
     @NotBlank
     private String password;
 
@@ -33,4 +39,9 @@ public class CreateUserRequest {
     private String phone;
 
     private String department;
+
+    /**
+     * 与 t_user.sex 一致：0 未知、1 男、2 女。
+     */
+    private Integer sex;
 }

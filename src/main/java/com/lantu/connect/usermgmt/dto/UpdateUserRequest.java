@@ -17,9 +17,14 @@ public class UpdateUserRequest {
 
     private String email;
 
+    private String realName;
+
     private String phone;
 
     private String department;
+
+    /** 0 未知、1 男、2 女 */
+    private Integer sex;
 
     private String role;
 

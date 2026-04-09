@@ -146,10 +146,11 @@ public class UserMgmtServiceImpl implements UserMgmtService {
         User user = new User();
         user.setUsername(request.getUsername());
         user.setPasswordHash(new BCryptPasswordEncoder(12).encode(request.getPassword()));
-        user.setRealName(request.getUsername());
+        user.setRealName(request.getRealName().trim());
         user.setMail(request.getEmail());
         user.setMobile(request.getPhone());
-        user.setSex(0);
+        int sex = request.getSex() == null ? 0 : request.getSex();
+        user.setSex(sex);
         user.setSchoolId(1L);
         user.setRole(0);
         user.setStatus("active");
@@ -190,8 +191,17 @@ public class UserMgmtServiceImpl implements UserMgmtService {
         if (request.getEmail() != null) {
             existing.setMail(request.getEmail());
         }
+        if (request.getRealName() != null) {
+            String rn = request.getRealName().trim();
+            if (!rn.isEmpty()) {
+                existing.setRealName(rn);
+            }
+        }
         if (request.getPhone() != null) {
             existing.setMobile(request.getPhone());
+        }
+        if (request.getSex() != null) {
+            existing.setSex(request.getSex());
         }
         if (request.getStatus() != null) {
             existing.setStatus(request.getStatus());
