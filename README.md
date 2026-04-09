@@ -80,9 +80,8 @@ mysql -u root -p < sql/lantu_connect.sql
 | 项 | 说明 |
 |----|------|
 | 本地私有值 | 将 **`application-local.example.yml`** 复制为 **`application-local.yml`**（同目录，已 gitignore），填写库、Redis、JWT、加密密钥等；Spring 会 `import` 该文件 |
-| Docker Compose | `docker-compose.yml` 向 app 注入与 `application.yml` 占位符对齐的全套变量（含 `SERVER_*`、`JWT_*`、`LANTU_*`、`FILE_*`、`CORS_*`、技能目录等）；`.env` 可覆写；未覆写项使用 Compose 内开发向默认值 |
+| Docker Compose | `docker-compose.yml` 向 app 注入与 `application.yml` 占位符对齐的全套变量（含 `SERVER_*`、`JWT_*`、`LANTU_*`、`FILE_*`、`CORS_*` 等）；`.env` 可覆写；未覆写项使用 Compose 内开发向默认值 |
 | 列表项 | `lantu.api-deprecation.*-patterns`、`skill-pack-import.*` 等均在 **`application.yml`** |
-| 技能外部目录 | `application.yml` → `lantu.skill-external-catalog`（库表 `skill_external_catalog` 可运行时覆盖） |
 | 文件存储 | `FILE_UPLOAD_DIR`（本地目录）；上传返回 URL 前缀为 `/uploads/...` |
 
 部署到 K8s 等：用 **标准 Spring 环境变量**（与 `application.yml` 中占位符同名，如 `SPRING_DATASOURCE_URL`、`JWT_SECRET`）注入，无需改 YAML。

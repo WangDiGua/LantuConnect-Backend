@@ -50,18 +50,6 @@ lantu:
     default-model: gpt-4o-mini
   system:
     integration-mock: true
-  skill-external-catalog:
-    mirror-catalog-url: ""
-    outbound-http-proxy:
-      host: ""
-      port: 0
-    github-zip-mirror:
-      mode: none
-      prefix: ""
-    skillhub:
-      fallback-base-url: ""
-    skillsmp:
-      api-key: ""
 
 file:
   upload-dir: /data/nexusai/uploads

@@ -59,10 +59,6 @@ DELETE FROM t_usage_record         WHERE user_id = 6;
 DELETE FROM t_notification         WHERE user_id = 6;
 DELETE FROM t_sandbox_session      WHERE owner_user_id = 6;
 
-UPDATE t_skill_pack_download_event
-SET downloader_user_id = NULL
-WHERE downloader_user_id = 6;
-
 UPDATE t_resource SET created_by = 3 WHERE created_by = 6;
 DELETE FROM t_user WHERE user_id = 6;
 

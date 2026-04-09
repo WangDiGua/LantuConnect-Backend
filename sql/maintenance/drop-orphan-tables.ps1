@@ -46,9 +46,7 @@ $expected = [System.Collections.Generic.HashSet[string]]::new(
     't_resource_app_ext','t_resource_circuit_breaker','t_resource_dataset_ext','t_resource_draft',
     't_resource_health_config','t_resource_mcp_ext','t_resource_relation','t_resource_skill_ext',
     't_resource_tag_rel','t_resource_version','t_review','t_review_helpful_rel','t_sandbox_session','t_security_setting',
-    't_sensitive_action_audit','t_sensitive_word','t_skill_external_catalog_item','t_skill_external_catalog_sync',
-    't_skill_external_download_event','t_skill_external_favorite','t_skill_external_review','t_skill_external_view_event',
-    't_skill_pack_download_event','t_system_param','t_tag','t_trace_span','t_usage_record','t_user','t_user_role_rel'
+    't_sensitive_action_audit','t_sensitive_word','t_system_param','t_tag','t_trace_span','t_usage_record','t_user','t_user_role_rel'
   )
 )
 

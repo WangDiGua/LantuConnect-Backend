@@ -92,7 +92,7 @@ geoip:
   timeout-ms: 2000
 
 # ----------------------------------------------------------------------------
-# lantu.* — 业务域配置（安全、网关、集成、幂等、技能包与外部目录等）
+# lantu.* — 业务域配置（安全、网关、集成、幂等、技能包等）
 # ----------------------------------------------------------------------------
 lantu:
   encryption:
@@ -165,39 +165,6 @@ lantu:
     enabled: true
     processing-ttl-seconds: 60
     success-ttl-seconds: 86400
-  # lantu.skill-external-catalog — 在线技能市场默认；DB 键 skill_external_catalog 可全量覆盖。
-  skill-external-catalog:
-    provider: skillsmp
-    remote-catalog-mode: merged
-    cache-ttl-seconds: 3600
-    persistence-enabled: true
-    skill-md-prefetch-on-sync: true
-    skill-md-prefetch-max-per-sync: 0
-    mirror-catalog-url: ${SKILL_MIRROR_CATALOG_URL}
-    mirror-catalog-urls: []
-    catalog-http-sources: []
-    outbound-http-proxy:
-      host: ${SKILL_CATALOG_HTTP_PROXY_HOST}
-      port: ${SKILL_CATALOG_HTTP_PROXY_PORT}
-    github-zip-mirror:
-      mode: ${SKILL_GITHUB_ZIP_MIRROR_MODE}
-      prefix: ${SKILL_GITHUB_ZIP_MIRROR_PREFIX}
-    skillhub:
-      enabled: true
-      base-url: https://agentskillhub.dev
-      fallback-base-url: ${SKILLHUB_FALLBACK_BASE_URL}
-      limit-per-query: 10
-      max-queries-per-request: 12
-      github-default-branch: main
-    skillsmp:
-      enabled: false
-      base-url: https://skillsmp.com/api/v1
-      api-key: ${SKILLSMP_API_KEY}
-      sort-by: stars
-      limit-per-query: 100
-      max-queries-per-request: 12
-      github-default-branch: main
-    entries: []
 
 # ----------------------------------------------------------------------------
 # file.* — 本地上传目录与上传分类白名单；可与 runtime_app_config 中的 /file 合并

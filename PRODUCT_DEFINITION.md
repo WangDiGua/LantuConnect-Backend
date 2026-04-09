@@ -57,15 +57,14 @@
 | 行为 | 是否进入上述调用统计 |
 |------|----------------------|
 | `agent` / `mcp` / `app`（redirect）经网关 **`invoke`** | **是**（在记录逻辑执行到的前提下） |
-| **`skill` 技能包下载** `GET …/resource-center/resources/{id}/skill-artifact` | **否**（`SkillArtifactDownloadService` 不写 `CallLog`/`UsageRecord`） |
 | **`skill` `resolve`、仅浏览目录** | **否** |
 | **`dataset` `resolve`、元数据浏览** | **否** |
 | **数据集文件下载**（若走独立文件/数据集接口） | **当前不等同于 invoke 统计**；是否另有 AccessLog/审计视具体接口而定 |
 | **`app` 仅用浏览器打开 `launchUrl`，未走 `invoke`** | **通常不进** `CallLog`（可能仅有 **AccessLog** 等 HTTP 层日志，与「网关调用统计」不是一张表） |
 
-因此：**数字上的「调用量」≠ 门户内全部数字化资产的使用量**；技能包下载等需 **单独埋点**。当前实现：**技能包成功下载**写入 **`t_skill_pack_download_event`**（owner 维度）；网关 **invoke** 在 **`t_usage_record` 增加 `resource_id`** 便于按资源归属聚合；**`GET /dashboard/owner-resource-stats`** 汇总 call_log / usage_record(invoke) / 技能下载（详见 `docs/permission-flow-comparison-and-plan.md` 阶段 F）。
+因此：**数字上的「调用量」≠ 门户内全部数字化资产的使用量**。平台技能为 **hosted-only**；**`GET /dashboard/owner-resource-stats`** 当前汇总 **`t_call_log`** 与 **`t_usage_record`（`action=invoke`）**（详见实现代码与历史设计文档）。
 
-部分界面用 `UsageRecord.type=skill` 推断「最近使用」：**hosted skill** `invoke` 会产生记录；**pack** 仍以下载埋点为主。
+部分界面用 `UsageRecord.type=skill` 推断「最近使用」：**hosted skill** 的 `invoke` 会产生记录。
 
 ---
 
