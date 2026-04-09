@@ -14,15 +14,13 @@
 
 ## `access_policy`（目录项 `accessPolicy`）
 
-存于 `t_resource.access_policy`，影响 **非 owner** 调用时是否仍须 **资源级 Grant**（均需有效 **X-Api-Key** 与 **scope**）。
+存于 `t_resource.access_policy`，**历史兼容字段**：迁移 `20260409_remove_resource_grants_and_open_catalog.sql` 已将存量刷为 `open_platform`，新建资源在 `ResourceRegistryServiceImpl` 亦固定写入 `open_platform`。
 
-| 取值 | 含义（摘要） |
+**当前网关真值**：`resolve` / `invoke` **不再**根据本字段或已删除的 `t_resource_invoke_grant` 做「逐资源 Grant」裁决；在资源存在、生命周期允许的前提下，主要由 **有效 `X-Api-Key`**、**Key 的 scope**、**`published`** 及控制台/RBAC 目录类型权限等共同约束（见 `ResourceInvokeGrantService` 类注释与 `PRODUCT_DEFINITION.md` §4）。
+
+| 取值 | 含义（仅作库表/JSON 兼容说明，**不是** invoke 的独立开关） |
 |------|----------------|
-| `grant_required` | 非 owner 须有效 Grant + Key scope。 |
-| `open_org` | 与同资源 owner **同一 menuId（部门）** 的用户所持 Key 可 **免 Grant**；仍须 scope。 |
-| `open_platform` | 租户内已通过鉴权的 Key 在满足 scope 时可 **免 Grant**；非匿名公共互联网开放。 |
-
-实现参考：`ResourceInvokeGrantService#isGrantWaivedByAccessPolicy`。
+| `grant_required` / `open_org` / `open_platform` | 历史枚举名仍可出现在旧数据或 OpenAPI 中；**不应**再按「须 Grant / 免 Grant」理解网关行为。 |
 
 ## `include`（目录与解析）
 

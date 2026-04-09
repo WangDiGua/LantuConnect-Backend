@@ -38,8 +38,8 @@ public class OpenApiConfiguration {
                                 .type(SecurityScheme.Type.APIKEY)
                                 .in(SecurityScheme.In.HEADER)
                                 .name("X-Api-Key")
-                                .description("API Key 明文（`sk_...`）。须与 Key 的 scope 及资源 `access_policy`/Grant 规则一致；"
-                                        + "`POST /catalog/resolve` 与 `invoke*` 须提供有效 Key。"))
+                                .description("API Key 明文（`sk_...`）。须具备所需 scope；目录/解析/调用以 Key、scope、资源 published 等为准。"
+                                        + "`access_policy` 为历史字段，不代表 Grant 拦截。`POST /catalog/resolve` 与 `invoke*` 通常须提供有效 Key。"))
                         .addSecuritySchemes(BEARER_SECURITY, new SecurityScheme()
                                 .type(SecurityScheme.Type.HTTP)
                                 .scheme("bearer")

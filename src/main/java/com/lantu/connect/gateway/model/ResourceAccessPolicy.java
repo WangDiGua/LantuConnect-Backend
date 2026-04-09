@@ -49,7 +49,7 @@ public enum ResourceAccessPolicy {
     }
 
     /**
-     * 读取数据库字段；未知或 null 时保守为 grant_required。
+     * 读取数据库字段；未知、null 或空串时按 {@link #OPEN_PLATFORM} 处理（与迁移后库默认值一致）。
      */
     public static ResourceAccessPolicy fromStored(Object column) {
         if (column == null) {

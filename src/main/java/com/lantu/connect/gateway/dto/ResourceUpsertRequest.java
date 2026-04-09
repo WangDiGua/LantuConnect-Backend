@@ -32,8 +32,9 @@ public class ResourceUpsertRequest {
     private List<Long> tagIds;
 
     /**
-     * 消费策略（主表 {@code t_resource.access_policy}）：{@code grant_required}、{@code open_org}、{@code open_platform}。
-     * 统一网关 invoke/resolve 以 API Key scope、发布态与 {@link com.lantu.connect.gateway.security.ResourceInvokeGrantService} 为准（每资源 Grant 表已下线）。
+     * 历史字段（主表 {@code t_resource.access_policy}）。请求体若传入合法枚举仍可落库，但注册实现已将新建/更新统一为
+     * {@link com.lantu.connect.gateway.model.ResourceAccessPolicy#OPEN_PLATFORM}；网关 invoke 不以本字段做 Grant 拦截，
+     * 以 API Key scope、资源 published 与 {@link com.lantu.connect.gateway.security.ResourceInvokeGrantService} 行为为准。
      */
     private String accessPolicy;
 

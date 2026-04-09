@@ -12,7 +12,7 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Schema(description = "各 resourceId 对 invoke 是否通过 Grant/策略校验（与 ResourceInvokeGrantService 一致）")
+@Schema(description = "各 resourceId 是否满足「存在且已 published」的快速判断；真正 invoke 仍走网关 Key/scope 等校验")
 public class InvokeEligibilityResponse {
 
     private Map<String, Boolean> byResourceId;

@@ -44,7 +44,7 @@
   - **平台管理员**：管理平台全局事宜（用户、组织、角色、系统配置、全平台资源与审核等）。
   - **部门管理员**：管理对应部门的**开发者与消费者**，以及本部门范围内的资源协同与审核边界。
   - **开发者**：负责**五类资源的登记、维护、审核流中与「自己的资源」相关的发布与修订**；不包含把「全校师生默认」都当作开发者。
-  - **消费者**：有权**使用已上架的五类资源**（浏览目录、个人 API Key、`resolve`/网关等约定消费路径；**每资源 Grant 申请流若仍存在则为遗留管理能力**）；**可申请开发者入驻**；**个人资料、改密、登录历史**等账号能力对其开放；Casbin 侧目录读权限与 `GatewayUserPermissionService` 一致（**`mcp` 与 `skill` 共用 `skill:read`**）。自助注册默认绑定 **consumer**（见 `AuthServiceImpl.register`）。
+  - **消费者**：有权**使用已上架的五类资源**（浏览目录、个人 API Key、`resolve`/网关等约定消费路径；**per-resource Grant/工单已下线**，消费以 Key、scope、`published` 为准）；**可申请开发者入驻**；**个人资料、改密、登录历史**等账号能力对其开放；Casbin 侧目录读权限与 `GatewayUserPermissionService` 一致（**`mcp` 与 `skill` 共用 `skill:read`**）。自助注册默认绑定 **consumer**（见 `AuthServiceImpl.register`）。
 - **不是**「所有条目都同质可 RPC」的纯服务注册中心：`skill` 与 `dataset` 的分叉是**领域设计**，符合门户对**资产多样性**的预期。
 - **资源消费策略（`t_resource.access_policy`）**：库字段可能仍为 `grant_required` / `open_org` / `open_platform`。**统一网关 invoke/目录裁决以 API Key scope + `published` 与资源可见性为准**（`ResourceInvokeGrantService` 不再读取 `t_resource_invoke_grant`）。产品若仍需组织级开放语义，应在 **Key scope 产品规则** 上落实，而非 Grant 表。
 

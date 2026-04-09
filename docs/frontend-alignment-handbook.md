@@ -149,10 +149,10 @@
 ## 2.9 登录权限 vs 调用权限（网关双层模型）
 
 - 登录权限（RBAC）：决定用户是否可进入某页面与调用管理接口（`@RequireRole` / `@RequirePermission`）。
-- 调用权限：`X-Api-Key` 的 **scope** 与资源 **`t_resource.access_policy`**（如 `grant_required` / `open_org(同部门)` / `open_platform(租户内)`）共同决定在网关侧是否允许 `resolve` / `invoke`。细则见 `PRODUCT_DEFINITION.md` §4 与 `docs/resource-registration-authorization-invocation-guide.md` §3.1。**不改变** `skill` / `dataset` 等「禁止统一 invoke」的产品边界（见 `PRODUCT_DEFINITION.md` §2–§3）。
+- 调用权限：在资源存在且生命周期允许的前提下，主要由 **`X-Api-Key`**、Key 的 **scope**、资源 **`published`**（及 `ResourceInvokeGrantService` 中的 owner/平台 Key 等规则）与 **控制台 RBAC 目录类型权限** 共同约束 `resolve` / `invoke`。**`t_resource.access_policy` 为历史字段**（迁移后多为 `open_platform`），**不再**作为 per-resource Grant 的拦截开关。细则见 `PRODUCT_DEFINITION.md` §4、`docs/api/public-catalog-contract.md`。**不改变** `skill` / `dataset` 等「禁止统一 invoke」的产品边界（见 `PRODUCT_DEFINITION.md` §2–§3）。
 - **已下线（2026-04-09，迁移 `sql/migrations/20260409_remove_resource_grants_and_open_catalog.sql`）**
   - 数据表 **`t_resource_invoke_grant`**、**`t_resource_grant_application`** 已删除；**无**独立 `POST/GET/DELETE /resource-grants` CRUD，**无** `/grant-applications*` 工单链路与审批接口。
-  - 开放平台目录策略随迁移统一调整为以 `access_policy` / 开放目录为准（详见该 SQL 头注释与数据修复语句）。
+  - 迁移将存量 **`access_policy`** 刷为 **`open_platform`**；新产品线下新建资源亦写入该值，**但网关 invoke 不据本字段做 Grant 裁决**。
 - **兼容占位（可选对接）**：`GET /user-settings/api-keys/{apiKeyId}/resource-grants` 仍存在于 `UserSettingsController`，当前服务实现 **恒返回空列表**（保留路径以免旧客户端硬编码报错）。
 
 ### 2.9.1 审计日志保留天数（`audit_log_retention`）
@@ -328,7 +328,7 @@
 | POST/GET/DELETE | `/resource-grants*` | **下线** |
 | 全部 | `/grant-applications*`（含 `approve` / `reject` 等） | **下线** |
 
-跨区域授权与可见性改由 **`access_policy`**、目录与网关校验承载；若需「谁可 invoke」调试，可走资源详情与网关日志，不再维护逐 ApiKey 的 grant 行。
+调用可见性由 **API Key scope、资源 published、目录/RBAC** 与网关实现承载；**不再**维护逐资源的 Grant 行。若需排查 invoke，可走网关日志与 Key scope，而非 `access_policy` 枚举语义。
 
 **占位只读（非 CRUD）**：`GET /user-settings/api-keys/{apiKeyId}/resource-grants` 仍返回 **空数组**（见 §2.9）。
 
@@ -666,7 +666,7 @@
 | `endpoint/protocol/authType/authConfig` | String/Object | mcp: endpoint 必填 | MCP 扩展；`protocol` 必须后端可调用 |
 | `appUrl/embedType` | String | app 必填 | App 扩展 |
 | `dataType/format` | String | dataset 必填 | Dataset 扩展 |
-| `accessPolicy` | String | 否 | 写入 `t_resource.access_policy`；**网关 invoke 以 Key scope 为准**（Grant 表已不作为拦截），见 `PRODUCT_DEFINITION.md` §4 |
+| `accessPolicy` | String | 否 | 历史字段；服务端新建/更新已统一 `open_platform`。**invoke 以 Key、scope、published 等为准**，见 `PRODUCT_DEFINITION.md` §4 |
 
 版本请求体（`ResourceVersionCreateRequest`）：
 
@@ -811,18 +811,18 @@ sandboxToken --> sandboxInvoke["POST /sandbox/invoke"]
 sandboxInvoke --> sandboxResp[SandboxInvokeResponse]
 ```
 
-### 5.6.4 租户内调用与 access_policy（grant 表已移除）
+### 5.6.4 租户内调用（Grant 表已移除）
 
 ```mermaid
 flowchart LR
 consumer[调用方 X-Api-Key] --> resolve["POST /catalog/resolve"]
-resolve --> policyCheck{"access_policy / scope 允许?"}
+resolve --> policyCheck{"Key scope + published + 网关规则?"}
 policyCheck -->|yes| invoke["POST /invoke"]
 policyCheck -->|no| denied[403 授权不足]
 invoke --> ok[调用成功]
 ```
 
-> 原「owner 维护 grant 行 / `/resource-grants`」流程已随表删除下线；产品与实现以 **`access_policy` + scope** 为准（见 §2.9）。
+> 原「owner 维护 grant 行 / `/resource-grants`」流程已随表删除下线。真值以 **Key、scope、资源生命周期** 与 `ResourceInvokeGrantService` 为准；**不以 `access_policy` 做 Grant 短路**。
 
 ---
 
@@ -877,7 +877,7 @@ invoke --> ok[调用成功]
 | `/v1/datasets/**` | 控制器已删除 | 改走统一目录与调用 |
 | `/v1/providers/**` | 控制器已删除 | 改走系统配置/资源域 |
 | `/v1/categories/**` | 控制器已删除 | 改走标签与配置域 |
-| `/resource-grants*`、`/grant-applications*` | 表与控制器已删除（2026-04-09 迁移） | 调用可见性由 `access_policy` 与网关承担；仅保留 `GET .../api-keys/.../resource-grants` 空列表占位 |
+| `/resource-grants*`、`/grant-applications*` | 表与控制器已删除（2026-04-09 迁移） | 调用可见性由 **Key、scope、published** 与网关承担；仅保留 `GET .../api-keys/.../resource-grants` 空列表占位 |
 
 参考：`docs/backend/deprecation/removed-code-audit.md`。
 

@@ -2,6 +2,8 @@
 
 本文档基于当前仓库代码与既有讨论整理，用于评审「开发者自治 + 部门专精 + 超管平台化」前的对齐。**接口路径与错误码以运行时代码为准**；实施后应同步 `PRODUCT_DEFINITION.md` 与前端手册。
 
+> **2026-04-09 真值变更（须优先阅读）**：迁移 `sql/migrations/20260409_remove_resource_grants_and_open_catalog.sql` 已删除 **`t_resource_invoke_grant`**、**`t_resource_grant_application`**。`ResourceInvokeGrantService.ensureApiKeyGranted` **不再**按 per-resource Grant 或 `t_resource.access_policy` 拦截 invoke（见该类注释）。**当前消费侧**以 **有效 `X-Api-Key`、Key scope、资源 `published`（及 owner/平台 Key 等规则）** 为主。下文 **§2.3、§2.4、§四** 中关于 Grant 短路、`access_policy` 免 Grant 的表格描述多为 **迁移前** 设计快照；**请以** `PRODUCT_DEFINITION.md` §4、`docs/api/public-catalog-contract.md` **与代码为准**。
+
 ---
 
 ## 一、角色与载体（共同前提）
@@ -29,29 +31,24 @@
 | 阶段 | 角色（`AuditController`） | 服务层行为（`AuditServiceImpl` 注释与实现） |
 |------|---------------------------|-----------------------------------------------|
 | 列表与 **approve / reject** | `platform_admin` **或** `dept_admin` | `dept_admin`：仅能看到 **本部门提交人** 的审核项（`DeptScopeHelper.isDeptAdminOnly` + `submitter in 部门用户`）。`platform_admin`：全量。 |
-| **publish（上线发布）** | `platform_admin` / `admin` / **同资源代管范围**（owner、同 menu 的 dept_admin） | 将状态从 `testing` → `published`；服务层 `ensureMayPublishAuditedResource` 与 Grant 代管一致。 |
+| **publish（上线发布）** | `platform_admin` / `admin` / **同资源代管范围**（owner、同 menu 的 dept_admin） | 将状态从 `testing` → `published`；服务层 `ensureMayPublishAuditedResource`（与历史 Grant 代管无表级耦合）。 |
 | **平台强制下架** | `platform_admin` | `POST /audit/resources/{id}/platform-force-deprecate` → `deprecated`；与开发者自助 `resource-center/.../deprecate` 区分。 |
 
 结论：**部门已部分专精（只看本部门队列）**；上线发布已与 **资源拥有者 / 本部 dept_admin / 平台** 对齐；超管保留 **跨租户强制下架**。
 
-### 2.3 资源授权（Grant）
+### 2.3 资源授权（Grant）— **已整体下线（2026-04-09）**
 
-| 路径 | 角色 / 条件 | 说明 |
-|------|-------------|------|
-| **`POST /resource-grants` 直接授权** | Controller **无** `@RequireRole`；`ResourceInvokeGrantService.grant` 内 `ensureCanManageGrant` | **资源 owner**、**`platform_admin`**、**`dept_admin`** 均可对**任意** `created_by` 匹配的资源执行授权（部门管理员在 ABAC 上与 owner 并列，**未在代码里限制「仅本部资源」**）。 |
-| **授权申请工单** `GrantApplicationController` | **待办列表、approve、reject** 均为 **`platform_admin`** | 与审核队列不同：**全平台一张工单台**，**没有**按部门过滤；批过即 `resourceInvokeGrantService.grant(reviewerUserId, …)`。 |
-
-结论：**开发者可直接给人开 Grant（若知道用该 API）**，但若产品主路径是「申请 → 待批」，则体验上等价于 **万事找超管**；**部门管理员对 Grant 工单没有入口**（接口层即未开放）。
+`/resource-grants*`、`/grant-applications*` 与对应表已删除；**不再**存在 per-resource Grant CRUD 或工单审批主路径。消费可见性由 **API Key、scope、`published`** 与网关实现承担。方法名 `ResourceInvokeGrantService.ensureApiKeyGranted` 等为历史命名，类注释已说明不再读 Grant 表。
 
 ### 2.4 网关消费（目录 / resolve / invoke）
 
 | 环节 | 行为（与角色并行） |
 |------|---------------------|
 | **登录用户读目录类型** | `GatewayUserPermissionService`：非 `platform_admin` 时需具备如 `skill:read`、`agent:read` 等（按资源类型组合）；**与「是否开发者」解耦，由 Casbin 权限决定**。 |
-| **带 API Key 的 catalog / resolve / invoke** | `UnifiedGatewayServiceImpl`：`apiKeyScopeService` + **`ResourceInvokeGrantService.ensureApiKeyGranted`**（platform key / owner key / 同资源 caller 免 Grant / 显式 Grant）。 |
-| **资源级「免 Grant」短路** | **`t_resource.access_policy`**（`ResourceAccessPolicy`）：`open_platform` 时对已通过上层校验的非平台 Key **免 Grant**；`open_org` 时仅 **user 归属 Key** 且 Key 用户与资源 owner **同部门（menuId）** 时免 Grant；`grant_required` 仍走 Grant。见 [`ResourceInvokeGrantService#isGrantWaivedByAccessPolicy`](src/main/java/com/lantu/connect/gateway/security/ResourceInvokeGrantService.java)。注册侧在 `ResourceUpsertRequest.accessPolicy` / [`ResourceRegistryServiceImpl`](src/main/java/com/lantu/connect/gateway/service/impl/ResourceRegistryServiceImpl.java)。 |
+| **带 API Key 的 catalog / resolve / invoke** | `UnifiedGatewayServiceImpl`：`apiKeyScopeService` + **`ResourceInvokeGrantService.ensureApiKeyGranted`**（platform key / owner key / Key 归属 owner 等短路）；**不再**查 Grant 表或 `access_policy` 做拦截。 |
+| **`t_resource.access_policy`** | **历史字段**（迁移后多为 `open_platform`）；**不再**作为 invoke 的「免 Grant / 须 Grant」开关。注册侧固定写入见 `ResourceRegistryServiceImpl`。 |
 
-结论：**消费侧已具备资源级策略**；与 §2.2–2.3 所述「目标叙事」中的 **公开/组织内免 Grant** 已在网关核心路径落地（仍须 **有效 API Key + scope** 等前置校验）。下文 **§四「公开/免 Grant 消费」一行** 与 **阶段 A/B** 描述已与实现对齐。
+结论：**invoke 真值**以 **有效 API Key + scope + 资源生命周期** 为主；勿再按 §2.4 迁移前的 `access_policy` 叙事排查 Grant。
 
 ### 2.5 超管日常占用的能力（不完全列举）
 
@@ -62,7 +59,7 @@
 | 敏感词、部分标签管理 | `platform_admin` |
 | 用户管理部分接口 | `platform_admin` ± `dept_admin` |
 
-结论：**平台配置与监控** 已在超管侧；但 **Grant 工单、资源 publish** 也在超管侧，导致「什么都像管理员做」的认知。
+结论：**平台配置与监控** 已在超管侧。Grant 工单已下线；**publish** 权已下放至 owner/本部 dept_admin/平台（见审核服务），超管在日常消费上不必再充当唯一入口。
 
 ---
 
@@ -88,7 +85,7 @@
 | **资源发布 publish** | owner / 同部门 dept_admin / platform_admin、admin（服务层校验） | **与 Grant 代管范围一致的自发布**；超管兜底 |
 | **Grant 直接写入** | owner + dept_admin + platform_admin | **主路径：owner**；dept_admin **限定本部资源**；超管兜底 |
 | **Grant 申请待办/审批** | 仅 `platform_admin`，且无部门过滤 | **owner 审批** 或 **部门审批（限本部）**；超管兜底/升级 |
-| **公开/免 Grant 消费** | **`access_policy`**：`open_platform` / `open_org` / `grant_required`，在 `ensureApiKeyGranted` 内短路（仍须 Key + scope；owner/platform key 仍免） | 与左栏一致；产品侧持续澄清 **open_org 与 menuId**、与文档/OpenAPI 对齐 |
+| **公开消费（当前）** | **无 Grant 表**：`ensureApiKeyGranted` 仅保留 owner/平台 Key 等规则；**不**再按 `access_policy` 分支 | 组织级可见若需细化，应在 **Key scope 产品规则** 落实（见 `PRODUCT_DEFINITION.md` §4） |
 | 网关读权限 | Casbin 按资源类型 | 可与「开发者 / 消费者」角色继续对齐 |
 | 开发者看自身统计 | 需专门接口与埋点（下载与 invoke 不同源） | **按 owner 维度的仪表**（调用、下载等分列） |
 
@@ -152,6 +149,7 @@
 | 2026-04-03 | 阶段 D241：发布权下放至 owner/本部代管、平台强制下架接口。 |
 | 2026-04-03 | 阶段 E：`consumer` 角色、trending/搜索按目录权限过滤、`exposeApiDocs` 默认 false。 |
 | 2026-04-03 | 阶段 F/G：owner 统计 API、技能下载埋点、Grant/开放策略测试、审核 AuditLog 全覆盖。 |
+| 2026-04-09 | Grant 表删除、`access_policy` 不再驱动 invoke；本文 §2.3–2.4、§四 已加真值提示，历史阶段 B/C 描述仅供参考。 |
 
 ---
 

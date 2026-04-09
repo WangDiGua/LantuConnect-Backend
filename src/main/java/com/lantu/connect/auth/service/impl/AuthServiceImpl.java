@@ -158,7 +158,7 @@ public class AuthServiceImpl implements AuthService {
         user.setMobile(request.getPhone());
         user.setSex(0);
         user.setSchoolId(1L);
-        /** 自助注册默认 {@code user}：使用已上架五类资源、Grant、个人资料与 Key 等；可申请开发者入驻；无资源注册/发布/平台级审核。 */
+        /** 自助注册默认 {@code user}：使用已上架五类资源、个人 API Key、resolve/invoke 等消费路径；无 per-resource Grant 主路径；可申请开发者入驻；无资源注册/发布/平台级审核。 */
         user.setRole(1);
         user.setStatus("active");
         user.setLastLoginTime(LocalDateTime.now());

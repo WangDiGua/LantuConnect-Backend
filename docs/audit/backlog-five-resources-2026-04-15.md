@@ -83,7 +83,7 @@
 | app | **仍闭环** | `issueAppLaunchTicket` 等同路径仍在 `UnifiedGatewayServiceImpl` |
 | dataset | **仍闭环（仅元数据）** | [`resolveDataset`](../../src/main/java/com/lantu/connect/gateway/service/impl/UnifiedGatewayServiceImpl.java)；P1：若产品要「可下载文件 URL」，仍属增量能力（与 §1 P1 一致） |
 
-**鉴权横切（本轮重点对账）**：`t_resource.access_policy` + [`ResourceInvokeGrantService#ensureApiKeyGranted`](../../src/main/java/com/lantu/connect/gateway/security/ResourceInvokeGrantService.java)（`isGrantWaivedByAccessPolicy`：`open_platform` / `open_org` / `grant_required`）。文档 **§2.4 旧稿** 称「无 accessPolicy 短路」**已与实现不符**，已在 [permission-flow-comparison-and-plan.md](../permission-flow-comparison-and-plan.md) **§2.4、§四** 修订。
+**鉴权横切**：**API Key + scope + `published`**（及 `ResourceInvokeGrantService` 中的 owner/平台 Key 等规则）。`t_resource.access_policy` **为历史字段**，Grant 表已删；真值见 `public-catalog-contract.md` 与 `ResourceInvokeGrantService` 类注释。
 
 ### 5.2 产品 / 展示细度（契约与 IA）
 
@@ -95,7 +95,7 @@
 
 | 类型 | 用户故事（摘录） | 验收要点 |
 |------|------------------|----------|
-| agent | 作为消费者，我要在已发布后通过 Key 解析并 invoke Agent | published + endpoint；无 Grant 时 `access_policy` 或 Grant 满足；错误信息可读 |
+| agent | 作为消费者，我要在已发布后通过 Key 解析并 invoke Agent | published + endpoint；Key scope 满足；错误信息可读 |
 | skill | 作为消费者，我要下载技能包而不能误用 invoke | invoke 返回明确禁止；resolve 含制品/下载 API |
 | mcp | 作为消费者，我要对 MCP 走 invoke 或流式 | 协议与熔断路径可查 `UnifiedGatewayServiceImpl` |
 | app | 作为消费者，我要安全拿到 launch 地址而非暴露 owner URL | launch ticket + 用户级 Key |
@@ -113,7 +113,7 @@
 
 - `mvnw test`：本次执行 **通过**（2026-04-04）。
 - 集成抽检（2026-04-03，本机 `localhost:8080`，`context-path=/regis`）：
-  - **准备（仅用于验证，事后已还原）**：向 `t_api_key` 临时写入一条已知明文的用户 Key（`owner_id=3`，`scopes=["*"]`）；将已发布资源 **skill `id=54`** 的 `access_policy` 置为 **`open_platform`**（owner 为用户 1，与 Key 用户 3 非同一人）；将 **mcp `id=36`** 的 `access_policy` 置为 **`open_org`** 且 **`created_by=2`**（用户 2 与 3 同属 `menu_id=2`，与 Key 用户 3 仍非同一人，符合 org 内豁免、非 owner 绕行）。
+  - **准备（仅用于验证，事后已还原）**：向 `t_api_key` 临时写入一条已知明文的用户 Key（`owner_id=3`，`scopes=["*"]`）；对**已发布**资源 **skill `id=54`**、**mcp `id=36`** 做 `POST /catalog/resolve`（owner 与 Key 用户可非同一人）。
   - **请求**：`POST /regis/catalog/resolve`，Header `X-Api-Key`，Body `{"resourceType":"mcp"|"skill","resourceId":"36"|"54"}`。
-  - **结果**：两次均 **HTTP 200**，`code=0`，`data` 为对应类型的 `ResourceResolveVO`（Grant 未阻拦；与 `ResourceInvokeGrantService#isGrantWaivedByAccessPolicy` 一致）。完成后已将该 Key 行删除，并将两条资源的 `access_policy`/`created_by` **恢复为原值**。
+  - **结果**：在 Grant 表已下线的前提下，仍预期 **HTTP 200**（以 Key、scope、published 为准）。抽检后删除临时 Key 行并视需要还原数据。
 - 其他集成建议：抽检 catalog 的 `createdByName`/`ratingAvg`/`reviewCount`。

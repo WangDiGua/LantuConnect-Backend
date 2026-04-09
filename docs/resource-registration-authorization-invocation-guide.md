@@ -28,7 +28,7 @@
   - 创建/更新自己的资源
   - 提审自己的资源
   - 下线自己的资源
-  - 管理自己资源的授权（Grant）
+  - （历史）per-resource Grant / 授权工单已下线，无独立「授权管理」主路径
 - 部门管理员（dept_admin）
   - 审核资源（approve/reject/publish）
   - 可操作资源（由后端 owner/admin 判断）
@@ -41,7 +41,6 @@
   - 我的资源列表（按类型分 tab）
   - 创建/编辑页面（五类动态表单）
   - 提审/下线/版本页面
-  - 授权管理页面（Grant 管理）
 - 管理员侧
   - 审核列表（pending_review）
   - 审核详情（approve/reject/publish）
@@ -56,7 +55,7 @@
 
 ## 3.1 注册中心（资源拥有者）
 
-- **消费策略 `accessPolicy`（可选）**：写入主表 `t_resource.access_policy`（历史字段，产品文档可能仍列 `grant_required/open_org/open_platform`）。**网关 invoke 路径以 API Key scope 为准**，不再按 per-resource Grant 表裁决；创建缺省 `grant_required`；**更新省略字段则保留库值**。
+- **消费策略 `accessPolicy`（历史）**：主表 `t_resource.access_policy` 仍可能出现在 OpenAPI/旧稿中；**网关 invoke 不以本字段拦截**。注册实现已将新建/更新统一为 `open_platform`（见 `ResourceRegistryServiceImpl`）；**不要**再按「grant_required=须 Grant」理解行为。
 - `POST /resource-center/resources` 创建资源（初始 `draft`）
 - `PUT /resource-center/resources/{id}` 更新资源
 - `DELETE /resource-center/resources/{id}` 删除（受状态机限制）
@@ -71,14 +70,12 @@
 - `GET /audit/resources` 待审核列表（`pending_review`）
 - `POST /audit/resources/{auditId}/approve` 审核通过（到 `testing`）
 - `POST /audit/resources/{auditId}/reject` 审核驳回（到 `rejected`）
-- `POST /audit/resources/{auditId}/publish` 发布（**testing → published**）。服务层校验：调用者须为 **资源 owner**、**与 owner 同 `menu_id` 的 dept_admin** 或 **platform_admin/admin**（与 `POST /resource-grants` 代管范围一致）；`@RequireRole` 含 `developer`、`dept_admin`、`platform_admin`、`admin`。
+- `POST /audit/resources/{auditId}/publish` 发布（**testing → published**）。服务层校验：调用者须为 **资源 owner**、**与 owner 同 `menu_id` 的 dept_admin** 或 **platform_admin/admin**（`ensureMayPublishAuditedResource`）；`@RequireRole` 含 `developer`、`dept_admin`、`platform_admin`、`admin`。
 - `POST /audit/resources/{id}/platform-force-deprecate` **平台强制下架**（body 可选 `{"reason"}`），**仅 platform_admin** → 资源 `deprecated`，并与开发者自助 `POST /resource-center/resources/{id}/deprecate` 区分。
 
-## 3.2.1 授权申请工单（审批路由）
+## 3.2.1 ~~授权申请工单~~（已下线）
 
-- `GET /grant-applications/pending`：**须** `X-User-Id`。可见范围：超管全量；部门管理员仅 **资源拥有者属于本部门** 的待办；普通开发者仅 **自己创建的资源** 上的待办。
-- `POST /grant-applications/{id}/approve`、`reject`：通过/驳回前校验调用者是否为 **资源 owner**、**同部门 dept_admin** 或 **platform_admin/admin**（与直接 `POST /resource-grants` 管理能力对齐）。
-- 提交申请 `POST /grant-applications` 后，会通知 **资源 owner** 与 **平台管理员**（沿用原广播）。
+**2026-04-09 起**：表 `t_resource_grant_application` 与 `t_resource_invoke_grant` 已删除，`/grant-applications*`、`/resource-grants*` 控制器已移除。消费侧以 **API Key + scope + published** 为准。个人设置下 `GET /user-settings/api-keys/{apiKeyId}/resource-grants` 仅占位返回空数组。
 
 ## 3.3 市场/解析/调用
 

@@ -199,10 +199,9 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                     continue;
                 }
                 /*
-                 * 仅 API Key、无登录态：目录按 Key 的 scope + Resource Grant 裁剪（集成方只能看到自己被授予的资源）。
-                 * 浏览器常在 axios 拦截器里附带个人 Key 与 JWT 并存：若对已登录用户仍按 Grant 逐行过滤，
-                 * 则 grant_required 且非本人发布的资源会从广场消失（表现为「仅开发者本人能看见」）。
-                 * 登录态下市场发现只受 RBAC（catalogTypeOk）约束；Grant 仍在 resolve/invoke  enforce。
+                 * 仅 API Key、无登录态：目录按 Key 的 scope 裁剪（apiKeyScopeService.canCatalog）；无 per-resource Grant 行过滤。
+                 * 浏览器常同时带 Key 与 JWT：已登录时不再仅因 Key 而缩小广场，列表还受 RBAC（catalogTypeOk）约束。
+                 * resolve/invoke 由 Key scope + 资源生命周期等在网关内校验（见 ResourceInvokeGrantService）。
                  */
                 if (apiKey != null && userId == null) {
                     if (!apiKeyScopeService.canCatalog(apiKey, rType, rId)) {

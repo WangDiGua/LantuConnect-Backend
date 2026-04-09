@@ -27,12 +27,11 @@ public class ResourceCatalogItemVO {
 
     private String sourceType;
 
-    /** 开发者配置的消费策略（{@code t_resource.access_policy}）；网关 Grant 短路见 {@link com.lantu.connect.gateway.security.ResourceInvokeGrantService#ensureApiKeyGranted}。 */
+    /** 历史字段 {@code t_resource.access_policy} 的回显；网关不再据其做 per-resource Grant 裁决。 */
     @Schema(
-            description = "消费策略：`grant_required` 非 owner 须 Grant；`open_org` 同部门(menuId) Key 免 Grant；`open_platform` 租户内有效 Key 免 Grant。"
-                    + " 均需有效 X-Api-Key 与 scope。",
+            description = "历史兼容：`t_resource.access_policy`（新建/迁移后多为 open_platform）。invoke/resolve 以有效 X-Api-Key、scope、published 等为准，见 ResourceInvokeGrantService。",
             allowableValues = {"grant_required", "open_org", "open_platform"},
-            example = "grant_required")
+            example = "open_platform")
     private String accessPolicy;
 
     private LocalDateTime updateTime;
@@ -84,9 +83,9 @@ public class ResourceCatalogItemVO {
     private Map<String, Object> quality;
 
     /**
-     * 仅当请求携带有效 X-Api-Key 时填充：与 resolve/invoke 网关 Grant 判定一致（含 access_policy 短路、owner Key 等）。
+     * 携带有效 X-Api-Key 时为 true（仅表示「请求带了 Key」，**不是** per-resource Grant 判定结果；Grant 表已下线）。
      */
-    @Schema(description = "携带 X-Api-Key 时非空：当前 Key 是否满足 invoke 的 Grant/策略（与网关一致）")
+    @Schema(description = "携带有效 X-Api-Key 且能解析资源 id 时为 true；历史字段名保留。不表示是否存在资源级 Grant。")
     private Boolean hasGrantForKey;
 
     /**

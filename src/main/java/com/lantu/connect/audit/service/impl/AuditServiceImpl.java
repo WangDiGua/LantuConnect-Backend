@@ -37,7 +37,7 @@ import java.util.Set;
 /**
  * 审核Audit服务实现：
  * 1. 审核员（reviewer）或平台超管执行 approve / reject（pending_review → testing / rejected）
- * 2. publish（testing → published）：资源 owner、全平台审核员（reviewer）或 platform_admin/admin（与 Grant 代管范围一致）
+ * 2. publish（testing → published）：资源 owner、全平台审核员（reviewer）或 platform_admin/admin（与 {@link com.lantu.connect.gateway.security.ResourceInvokeGrantService#ensureMayPublishAuditedResource} 一致）
  *
  * 审核队列不按部门隔离；具备审核角色的账号可查看全平台待审项。
  * 通过、驳回、发布对 {@code t_audit_item} 与 {@code t_resource} 使用「期望状态」条件更新（乐观并发控制），避免多名审核员重复处理同一条。

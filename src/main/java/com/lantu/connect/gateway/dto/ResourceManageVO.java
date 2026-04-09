@@ -23,7 +23,7 @@ public class ResourceManageVO {
     /** 目录标签 id（t_resource_tag_rel → t_tag），与 catalogTagNames 顺序一致（按标签名排序）。 */
     private List<Long> tagIds;
 
-    /** {@code grant_required} | {@code open_org} | {@code open_platform} */
+    /** 历史：`t_resource.access_policy` 回显；invoke 不以该值做 per-resource Grant 裁决。 */
     private String accessPolicy;
 
     private Long createdBy;

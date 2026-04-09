@@ -9,7 +9,7 @@ import lombok.Data;
 import java.util.List;
 
 @Data
-@Schema(description = "按资源 id 批量预判：当前 API Key 对 invoke 是否满足 Grant/策略（与网关一致）")
+@Schema(description = "按资源 id 批量预判：对应类型与 id 在库中是否存在且 status=published（不替代网关 scope 与完整鉴权链）")
 public class InvokeEligibilityRequest {
 
     @NotBlank
