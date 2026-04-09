@@ -137,7 +137,8 @@ public class SensitiveWordController {
     @PutMapping("/{id}")
     @RequireRole({"platform_admin"})
     public R<Void> update(@PathVariable Long id, @Valid @RequestBody UpdateRequest request) {
-        sensitiveWordService.update(id, request.getWord(), request.getCategory(), request.getSeverity(), request.getEnabled());
+        sensitiveWordService.update(id, request.getWord(), request.getCategory(), request.getSeverity(),
+                request.getEnabled(), request.getSource());
         return R.ok();
     }
 
@@ -196,6 +197,8 @@ public class SensitiveWordController {
         private String word;
         private String category;
         private Integer severity;
+        /** 可选；传入非空则更新来源（与录入/导入字典一致） */
+        private String source;
         private Boolean enabled;
     }
 

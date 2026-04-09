@@ -391,7 +391,7 @@ public class SensitiveWordService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public void update(Long id, String word, String category, Integer severity, Boolean enabled) {
+    public void update(Long id, String word, String category, Integer severity, Boolean enabled, String source) {
         SensitiveWord entity = sensitiveWordMapper.selectById(id);
         if (entity == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "敏感词不存在");
@@ -415,6 +415,9 @@ public class SensitiveWordService {
         }
         if (severity != null) {
             entity.setSeverity(severity);
+        }
+        if (StringUtils.hasText(source)) {
+            entity.setSource(source.trim());
         }
         if (enabled != null) {
             entity.setEnabled(enabled);
