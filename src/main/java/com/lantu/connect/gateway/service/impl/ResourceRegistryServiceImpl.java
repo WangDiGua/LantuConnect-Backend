@@ -2762,20 +2762,80 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private void syncAllBindings(Long resourceId, String resourceType, ResourceUpsertRequest request) {
         String rt = normalizeType(resourceType);
+        Long bindingOwnerUserId = requireResourceCreatorForBindings(resourceId);
         if ("agent".equals(rt)) {
             if (request.getRelatedResourceIds() != null) {
+                assertBindingTargetsOwnedBy(resourceId, bindingOwnerUserId, request.getRelatedResourceIds(), "skill");
                 replaceRelations(resourceId, "agent_depends_skill", request.getRelatedResourceIds());
             }
             if (request.getRelatedMcpResourceIds() != null) {
+                assertBindingTargetsOwnedBy(resourceId, bindingOwnerUserId, request.getRelatedMcpResourceIds(), "mcp");
                 replaceRelations(resourceId, "agent_depends_mcp", request.getRelatedMcpResourceIds());
             }
         } else if ("mcp".equals(rt)) {
             if (request.getRelatedPreSkillResourceIds() != null) {
+                assertBindingTargetsOwnedBy(resourceId, bindingOwnerUserId, request.getRelatedPreSkillResourceIds(), "skill");
                 replaceRelations(resourceId, "mcp_depends_skill", request.getRelatedPreSkillResourceIds());
             }
         } else if ("app".equals(rt)) {
             if (request.getRelatedResourceIds() != null) {
+                assertBindingTargetsOwnedBy(resourceId, bindingOwnerUserId, request.getRelatedResourceIds(), null);
                 replaceRelations(resourceId, "app_depends_resource", request.getRelatedResourceIds());
+            }
+        }
+    }
+
+    /**
+     * 关联绑定仅允许指向与<strong>当前资源</strong>同一 {@code created_by} 的登记资源（「本人资源」），
+     * 与操作者是否为管理员无关，避免代操作时绑到操作者名下资源。
+     */
+    private Long requireResourceCreatorForBindings(Long resourceId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT created_by FROM t_resource WHERE id = ? AND deleted = 0 LIMIT 1
+                """, resourceId);
+        if (rows.isEmpty()) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "资源不存在");
+        }
+        Long createdBy = longValue(rows.get(0).get("created_by"));
+        if (createdBy == null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "资源缺少创建者信息，无法校验关联绑定");
+        }
+        return createdBy;
+    }
+
+    /**
+     * @param expectedResourceType 为 {@code null} 时不校验目标类型（如应用泛型关联）
+     */
+    private void assertBindingTargetsOwnedBy(Long fromResourceId, Long ownerUserId, List<Long> toIds,
+                                            String expectedResourceType) {
+        if (toIds == null || toIds.isEmpty()) {
+            return;
+        }
+        for (Long toId : toIds) {
+            if (toId == null) {
+                continue;
+            }
+            if (fromResourceId != null && toId.equals(fromResourceId)) {
+                continue;
+            }
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                    SELECT id, resource_type, created_by FROM t_resource WHERE id = ? AND deleted = 0 LIMIT 1
+                    """, toId);
+            if (rows.isEmpty()) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "绑定目标资源不存在: " + toId);
+            }
+            Map<String, Object> r = rows.get(0);
+            if (expectedResourceType != null) {
+                String trt = normalizeType(stringValue(r.get("resource_type")));
+                if (!expectedResourceType.equalsIgnoreCase(trt)) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR,
+                            "绑定目标类型不符合（期望 " + expectedResourceType + "）: " + toId);
+                }
+            }
+            Long targetCreator = longValue(r.get("created_by"));
+            if (targetCreator == null || !targetCreator.equals(ownerUserId)) {
+                throw new BusinessException(ResultCode.PARAM_ERROR,
+                        "仅可绑定与当前资源同一创建者登记的资源（本人资源）: " + toId);
             }
         }
     }
