@@ -84,7 +84,7 @@
 - `GET /catalog/resources/{type}/{id}` 按类型详情解析；`include` 可含 **`closure` 或 `bindings`**，响应 `bindingClosure` 为绑定无向闭包资源摘要。
 - `POST /catalog/resolve` 统一解析
 - `GET /catalog/capabilities/tools?entryResourceType=&entryResourceId=` **（可选 BFF）** 对闭包内 MCP 聚合 `tools/list`，返回 OpenAI tools 形态与 `routes` 映射（须 `X-Api-Key`，入口 resolve scope + 各 MCP invoke scope）。
-- `POST /invoke` 统一调用（必须 `X-Api-Key`）
+- `POST /invoke` 统一调用（必须 `X-Api-Key`）。**绑定展开**：若 `resourceType=agent` 且登记了 `agent_depends_mcp`，或 `resourceType=skill`（hosted）且存在指向该技能的 `mcp_depends_skill`，网关在转发/代调前会对相关 MCP 拉取 `tools/list`，将 `openAiTools`、`routes`、`warnings`、`entry` 合并进 **`payload._lantu.bindingExpansion`**（仅覆盖该子键，保留调用方在 `_lantu` 下的其它扩展）。**单独 invoke `mcp` 不会**反向追加 Agent。各 MCP 须当前 Key **invoke** scope；无权限的 MCP 记入 `warnings`。开关：`lantu.gateway.binding-expansion`（`enabled` / `agent` / `hosted-skill`）。
 
 **`X-Api-Key` 填什么（与列表里看到的不同）**
 
@@ -97,9 +97,9 @@
 
 ### 3.4.1 绑定字段（注册 JSON）
 
-- **Agent**：`relatedResourceIds`（`agent_depends_skill`，历史）、`relatedMcpResourceIds`（`agent_depends_mcp`）。
-- **MCP**：`relatedPreSkillResourceIds`（`mcp_depends_skill`，顺序为前置链）。
-- **Skill**：`executionMode`：`pack` | `hosted`；hosted 须 `hostedSystemPrompt` 等（见 `ResourceUpsertRequest` / Swagger）。
+- **Agent**：`relatedResourceIds`（`agent_depends_skill`，历史）、`relatedMcpResourceIds`（`agent_depends_mcp`）。**invoke 侧**：仅调 Agent 时，网关可将绑定 MCP 的工具聚合写入上游请求体 `_lantu.bindingExpansion`（见上），**不会**在仅调 MCP 时反向拉起 Agent。
+- **MCP**：`relatedPreSkillResourceIds`（`mcp_depends_skill`，顺序为前置链）。**invoke 侧**：转发 MCP 前仍按链跑前置 Hosted Skill；不追加 Agent。
+- **Skill**：`executionMode`：`pack` | `hosted`；hosted 须 `hostedSystemPrompt` 等（见 `ResourceUpsertRequest` / Swagger）。**invoke 侧**：若有 MCP 通过 `mcp_depends_skill` 绑定到该技能，网关在 Hosted LLM 调用前将同源工具聚合写入 **`payload._lantu.bindingExpansion`**（与 Agent 展开字段一致；当前仍为单次 chat，不自动代执行 `tools/call`）。
 
 ## 3.5 开发者 owner 维度统计
 

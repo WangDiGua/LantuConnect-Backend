@@ -35,6 +35,14 @@
 | `app` | 支持，但为 **redirect/票据** 语义 | **`resolve` 获取 launch 信息**；浏览器打开/嵌入 |
 | `dataset` | **不支持**（无 invoke endpoint） | **`resolve` 读元数据**；若需申请/下载数据文件，由**独立能力或扩展**承载 |
 
+### 3.1 绑定与 invoke 展开（Agent / MCP / Hosted Skill）
+
+- **无绑定**：`invoke` 行为与未登记关联边时一致，请求体不会被网关附加绑定信息。
+- **`agent` + `agent_depends_mcp`**：用户仅 `POST /catalog/invoke`（或 SDK 同源路径）调用 Agent 时，网关在对上游 Agent `endpoint` 转发前，对**已绑定且当前 Key 可 invoke** 的各 MCP 执行与「聚合工具」一致的 **`tools/list`**，将结果写入请求 JSON 保留命名空间 **`_lantu.bindingExpansion`**（含 `entry`、`openAiTools`、`routes`、`warnings`）。**不**代上游自动执行 `tools/call`；Agent 实现自行决定是否消费 tools。开关见 `lantu.gateway.binding-expansion`。
+- **单独 `mcp` invoke**：**不会**根据绑定反向拉起 Agent；若登记 **`mcp_depends_skill`**，仍在网关内先跑前置 Hosted Skill 链（与既有行为一致）。
+- **`skill`（hosted）+ `mcp_depends_skill`（MCP→Skill）**：逆查绑定到该技能的 MCP；对它们做同上 **`tools/list`** 聚合并写入 **`_lantu.bindingExpansion`** 后再进入 Hosted LLM **单次** chat。**当前阶段不**实现 Hosted LLM 的多轮 `tool_calls` 自动回环；与「仅 MCP 侧执行前置 Skill 链」形成产品上的 Skill↔MCP 互补说明。
+- **权限**：展开涉及的每个 MCP 均须在当前 **X-Api-Key** 的 scope 内具备 **invoke** 能力，否则对应 MCP 记入 `warnings` 而非阻断整个请求（与聚合工具 BFF 一致）。
+
 ---
 
 ## 4. 与「注册平台」的关系
@@ -70,9 +78,9 @@
 
 ## 6. 变更纪律
 
-- 若调整 **资源消费策略枚举**、**可否 invoke**、**resolve 字段语义** 或 **skill/MCP 边界**，须同步：
+- 若调整 **资源消费策略枚举**、**可否 invoke**、**resolve 字段语义**、**绑定展开（`_lantu.bindingExpansion`）** 或 **skill/MCP 边界**，须同步：
   - [协议与接口手册](docs/frontend-alignment-handbook.md)
-  - 相关 `docs/resource-registration-authorization-invocation-guide.md` 等读者文档
+  - 相关 `docs/resource-registration-authorization-invocation-guide.md`、`docs/ai-handoff-docs/frontend-mcp-invoke-integration.md` 等读者文档
 - **本文仅作产品锚点**；接口路径、请求头、错误码以手册与 Swagger 为准。
 - 若调整 **调用/用量统计** 的写入点，须同步产品说明与相关仪表盘/报表文档，避免与本文 §5 矛盾。
 

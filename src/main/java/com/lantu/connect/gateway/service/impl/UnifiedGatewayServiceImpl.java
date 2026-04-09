@@ -3,6 +3,7 @@ package com.lantu.connect.gateway.service.impl;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lantu.connect.common.config.GatewayInvokeProperties;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.common.web.ServletContextPathUtil;
@@ -20,7 +21,6 @@ import com.lantu.connect.gateway.dto.ResourceResolveVO;
 import com.lantu.connect.gateway.dto.ResourceStatsVO;
 import com.lantu.connect.gateway.dto.ResourceSummaryVO;
 import com.lantu.connect.gateway.dto.SearchSuggestion;
-import com.lantu.connect.gateway.dto.ToolDispatchRouteVO;
 import com.lantu.connect.gateway.model.ResourceAccessPolicy;
 import com.lantu.connect.gateway.protocol.McpJsonRpcProtocolInvoker;
 import com.lantu.connect.gateway.protocol.McpOutboundHeaderBuilder;
@@ -32,6 +32,7 @@ import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.security.GatewayGovernanceService;
 import com.lantu.connect.gateway.security.GatewayUserPermissionService;
 import com.lantu.connect.gateway.security.ResourceInvokeGrantService;
+import com.lantu.connect.gateway.service.GatewayBindingExpansionService;
 import com.lantu.connect.gateway.service.HostedSkillExecutionService;
 import com.lantu.connect.gateway.service.ResourceBindingClosureService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
@@ -101,6 +102,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private final UserDisplayNameResolver userDisplayNameResolver;
     private final ResourceBindingClosureService resourceBindingClosureService;
     private final HostedSkillExecutionService hostedSkillExecutionService;
+    private final GatewayBindingExpansionService gatewayBindingExpansionService;
+    private final GatewayInvokeProperties gatewayInvokeProperties;
 
     /**
      * 统一资源目录查询：固定从新模型主表检索，再叠加用户权限和 API Key scope 裁剪。
@@ -569,6 +572,18 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             governanceLease = gatewayGovernanceService.applyPreInvoke(userId, apiKey, type, id, 1);
             ProtocolInvokeContext protoCtx = ProtocolInvokeContext.of(apiKey.getId(), id, userId);
             Map<String, Object> payloadForInvoke = request.getPayload();
+            if (TYPE_AGENT.equals(type)
+                    && gatewayInvokeProperties.getBindingExpansion().isEnabled()
+                    && gatewayInvokeProperties.getBindingExpansion().isAgent()) {
+                List<Long> boundMcps = gatewayBindingExpansionService.listAgentBoundMcpIds(id);
+                if (!boundMcps.isEmpty()) {
+                    Map<String, String> entry = Map.of("resourceType", TYPE_AGENT, "resourceId", String.valueOf(id));
+                    AggregatedCapabilityToolsVO agg = gatewayBindingExpansionService.aggregateMcpTools(
+                            boundMcps, entry, userId, traceId, apiKey,
+                            mid -> getByTypeAndId(TYPE_MCP, String.valueOf(mid), null, null, apiKey, userId, "invoke"));
+                    payloadForInvoke = mergeBindingExpansionIntoPayload(payloadForInvoke, agg);
+                }
+            }
             if (TYPE_MCP.equals(type)) {
                 payloadForInvoke = applyMcpPreSkillChain(id, payloadForInvoke);
             }
@@ -1812,124 +1827,50 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         resourceInvokeGrantService.ensureApiKeyGranted(apiKey, "catalog_read", type, startId, userId);
 
         List<ResourceSummaryVO> closure = resourceBindingClosureService.closureForResourceId(startId);
-        List<Map<String, Object>> openAiTools = new ArrayList<>();
-        List<ToolDispatchRouteVO> routes = new ArrayList<>();
-        List<String> warnings = new ArrayList<>();
-        Set<String> usedFunctionNames = new HashSet<>();
-        String rpcTrace = StringUtils.hasText(traceId) ? traceId.trim() : UUID.randomUUID().toString();
-
+        List<Long> mcpIds = new ArrayList<>();
         for (ResourceSummaryVO node : closure) {
             if (node == null || !TYPE_MCP.equalsIgnoreCase(node.getResourceType())) {
                 continue;
             }
-            long mcpId;
             try {
-                mcpId = Long.parseLong(node.getResourceId());
+                mcpIds.add(Long.parseLong(node.getResourceId()));
             } catch (Exception ex) {
                 continue;
             }
-            try {
-                apiKeyScopeService.ensureInvokeAllowed(apiKey, TYPE_MCP, String.valueOf(mcpId));
-            } catch (BusinessException ex) {
-                warnings.add("skip mcp " + mcpId + ": " + ex.getMessage());
-                continue;
-            }
-            ResourceResolveVO mcpResolved;
-            try {
-                mcpResolved = getByTypeAndId(TYPE_MCP, String.valueOf(mcpId), null, null, apiKey, userId, "invoke");
-            } catch (BusinessException ex) {
-                warnings.add("resolve mcp " + mcpId + ": " + ex.getMessage());
-                continue;
-            }
-            ensurePublishedForInvoke(mcpResolved);
-            if (!StringUtils.hasText(mcpResolved.getEndpoint())) {
-                warnings.add("skip mcp " + mcpId + ": missing endpoint");
-                continue;
-            }
-            String protocol = normalizeProtocol(mcpResolved.getInvokeType(), "http");
-            if (!"mcp".equalsIgnoreCase(protocol)) {
-                warnings.add("skip mcp " + mcpId + ": invokeType is not mcp");
-                continue;
-            }
-            try {
-                ProtocolInvokeContext protoCtx = ProtocolInvokeContext.of(apiKey.getId(), mcpId, userId);
-                Map<String, Object> listPayload = new LinkedHashMap<>();
-                listPayload.put("method", "tools/list");
-                ProtocolInvokeResult resp = protocolInvokerRegistry.invoke(
-                        protocol,
-                        mcpResolved.getEndpoint(),
-                        45,
-                        rpcTrace,
-                        listPayload,
-                        mcpResolved.getSpec(),
-                        protoCtx);
-                if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
-                    warnings.add("mcp " + mcpId + " tools/list HTTP " + resp.statusCode());
-                    continue;
-                }
-                JsonNode root = objectMapper.readTree(resp.body() == null ? "{}" : resp.body());
-                JsonNode toolsNode = root.path("result").path("tools");
-                if (!toolsNode.isArray()) {
-                    warnings.add("mcp " + mcpId + " tools/list: unexpected result.tools");
-                    continue;
-                }
-                for (JsonNode tool : toolsNode) {
-                    String origName = tool.path("name").asText("");
-                    if (!StringUtils.hasText(origName)) {
-                        continue;
-                    }
-                    String unified = allocateUnifiedToolName(mcpId, origName, usedFunctionNames);
-                    String description = tool.path("description").asText("");
-                    JsonNode schemaNode = tool.get("inputSchema");
-                    if (schemaNode == null || schemaNode.isNull()) {
-                        schemaNode = objectMapper.readTree("{\"type\":\"object\",\"properties\":{}}");
-                    }
-                    Map<String, Object> parameters = objectMapper.convertValue(schemaNode, new TypeReference<>() { });
-                    Map<String, Object> fn = new LinkedHashMap<>();
-                    fn.put("name", unified);
-                    fn.put("description", description);
-                    fn.put("parameters", parameters);
-                    Map<String, Object> oai = new LinkedHashMap<>();
-                    oai.put("type", "function");
-                    oai.put("function", fn);
-                    openAiTools.add(oai);
-                    routes.add(ToolDispatchRouteVO.builder()
-                            .unifiedFunctionName(unified)
-                            .resourceType(TYPE_MCP)
-                            .resourceId(String.valueOf(mcpId))
-                            .upstreamToolName(origName)
-                            .build());
-                }
-            } catch (Exception ex) {
-                warnings.add("mcp " + mcpId + " tools/list failed: " + ex.getMessage());
-            }
         }
-        return AggregatedCapabilityToolsVO.builder()
-                .openAiTools(openAiTools)
-                .routes(routes)
-                .warnings(warnings)
-                .build();
+        String rpcTrace = StringUtils.hasText(traceId) ? traceId.trim() : UUID.randomUUID().toString();
+        return gatewayBindingExpansionService.aggregateMcpTools(
+                mcpIds,
+                null,
+                userId,
+                rpcTrace,
+                apiKey,
+                mid -> getByTypeAndId(TYPE_MCP, String.valueOf(mid), null, null, apiKey, userId, "invoke"));
     }
 
-    private static String allocateUnifiedToolName(long mcpId, String originalToolName, Set<String> used) {
-        String base = "lantu_mcp_" + mcpId + "_" + safeToolNameSegment(originalToolName);
-        if (used.add(base)) {
-            return base;
+    /**
+     * 将绑定展开写入 {@code _lantu.bindingExpansion}；保留调用方在 {@code _lantu} 下的其它子键。
+     */
+    private Map<String, Object> mergeBindingExpansionIntoPayload(Map<String, Object> payload,
+                                                                 AggregatedCapabilityToolsVO expansion) {
+        if (expansion == null) {
+            return payload;
         }
-        for (int i = 2; i < 10_000; i++) {
-            String candidate = base + "_" + i;
-            if (used.add(candidate)) {
-                return candidate;
+        Map<String, Object> base = payload == null ? new LinkedHashMap<>() : new LinkedHashMap<>(payload);
+        Map<String, Object> lantu = new LinkedHashMap<>();
+        Object existingLantu = base.get("_lantu");
+        if (existingLantu instanceof Map<?, ?> em) {
+            for (Map.Entry<?, ?> e : em.entrySet()) {
+                String key = String.valueOf(e.getKey());
+                if ("bindingExpansion".equals(key)) {
+                    continue;
+                }
+                lantu.put(key, e.getValue());
             }
         }
-        return base + "_x" + System.nanoTime();
-    }
-
-    private static String safeToolNameSegment(String raw) {
-        if (!StringUtils.hasText(raw)) {
-            return "tool";
-        }
-        return raw.trim().replaceAll("[^a-zA-Z0-9_]", "_");
+        lantu.put("bindingExpansion", objectMapper.convertValue(expansion, new TypeReference<Map<String, Object>>() { }));
+        base.put("_lantu", lantu);
+        return base;
     }
 
     private InvokeResponse invokeHostedSkill(String reqId,
@@ -1950,7 +1891,21 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         long t0 = System.nanoTime();
         try {
             governanceLease = gatewayGovernanceService.applyPreInvoke(userId, apiKey, TYPE_SKILL, id, 1);
-            respBody = hostedSkillExecutionService.invokeSkill(id, request.getPayload());
+            Map<String, Object> payloadForSkill = request.getPayload() == null
+                    ? new LinkedHashMap<>()
+                    : new LinkedHashMap<>(request.getPayload());
+            if (gatewayInvokeProperties.getBindingExpansion().isEnabled()
+                    && gatewayInvokeProperties.getBindingExpansion().isHostedSkill()) {
+                List<Long> inverseMcps = gatewayBindingExpansionService.listMcpsDependingOnSkill(id);
+                if (!inverseMcps.isEmpty()) {
+                    Map<String, String> entry = Map.of("resourceType", TYPE_SKILL, "resourceId", String.valueOf(id));
+                    AggregatedCapabilityToolsVO agg = gatewayBindingExpansionService.aggregateMcpTools(
+                            inverseMcps, entry, userId, traceId, apiKey,
+                            mid -> getByTypeAndId(TYPE_MCP, String.valueOf(mid), null, null, apiKey, userId, "invoke"));
+                    payloadForSkill = mergeBindingExpansionIntoPayload(payloadForSkill, agg);
+                }
+            }
+            respBody = hostedSkillExecutionService.invokeSkill(id, payloadForSkill);
             statusCode = 200;
             status = "success";
             errMsg = null;

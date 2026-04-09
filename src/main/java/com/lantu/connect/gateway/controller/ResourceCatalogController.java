@@ -131,7 +131,11 @@ public class ResourceCatalogController {
         return R.ok(unifiedGatewayService.resolve(request, apiKey, userId));
     }
 
-    @Operation(summary = "统一调用入口", description = "须提供有效 X-Api-Key。`skill`：仅 `execution_mode=hosted` 且已发布可走本接口。`mcp`：若登记了前置 Hosted Skill，网关内先归一化 JSON 再转发上游。")
+    @Operation(summary = "统一调用入口",
+            description = "须提供有效 X-Api-Key。`skill`：仅 `execution_mode=hosted` 且已发布可走本接口。`mcp`：若登记了前置 Hosted Skill，网关内先归一化 JSON 再转发上游。"
+                    + " **绑定展开**：对 `agent` 且存在 `agent_depends_mcp` 时，网关在转发上游前对绑定 MCP 执行 `tools/list`，将 `openAiTools`/`routes`/`warnings` 及入口 `entry` 写入请求 JSON 的 `_lantu.bindingExpansion`（可与 `lantu.gateway.binding-expansion` 开关关闭）。"
+                    + " 对 **hosted `skill`** 且存在指向该技能的 `mcp_depends_skill` 时，同样写入上述结构（逆查 MCP 列表）。**单独 invoke `mcp` 不会**反向拉起 Agent。"
+                    + " Key 须对被展开的各 MCP 具备 invoke scope。")
     @SecurityRequirement(name = OpenApiConfiguration.API_KEY_SECURITY)
     @PostMapping("/invoke")
     public ResponseEntity<R<InvokeResponse>> invoke(@RequestHeader(value = "X-Trace-Id", required = false)

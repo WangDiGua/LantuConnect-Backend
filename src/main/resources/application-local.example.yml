@@ -43,6 +43,11 @@ lantu:
     key: local-dev-lantu-encryption-32b-key!!
   security:
     encryption-key: local-dev-security-encryption-key!!
+  gateway:
+    binding-expansion:
+      enabled: true
+      agent: true
+      hosted-skill: true
   hosted-llm:
     enabled: false
     base-url: ""

@@ -39,6 +39,12 @@
 
 前端解析 **`data.body`**（或 unwrap 后的 `body`）为 JSON 即可展示或继续作为下一轮 `payload` 的输入参考。
 
+### 1.1 `agent` / hosted `skill` 与 `_lantu.bindingExpansion`
+
+- 当 **`resourceType=agent`** 且登记 **`agent_depends_mcp`**，或 **`resourceType=skill`（hosted）** 且存在 **`mcp_depends_skill`**（MCP → Skill）绑定时，网关会在**转发到上游 Agent** 或 **调用 Hosted LLM** 之前，对涉及的 MCP 执行 `tools/list` 聚合（与 `GET /catalog/capabilities/tools` 同源逻辑），并将结果写入本次 **`payload` 内的保留键** **`_lantu.bindingExpansion`**（含 `entry`、`openAiTools`、`routes`、`warnings`）。上游 Agent / 模型实现可选择是否消费；**网关不自动代打 `tools/call`**。
+- **仅 invoke `mcp`** 时 **不会**反向注入 Agent；MCP 仍先跑前置 Hosted Skill 链（若已配置）。
+- 调用方 Key 须对展开涉及的每个 MCP 具备 **invoke** scope，否则缺权 MCP 列入 `warnings`。可用 `lantu.gateway.binding-expansion` 关闭或分项关闭（`enabled` / `agent` / `hosted-skill`）。
+
 ## 2. 三种 MCP 相关传输与前端含义
 
 ### 2.1 HTTP / Streamable HTTP（含 SSE 正文）

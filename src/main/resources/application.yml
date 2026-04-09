@@ -112,6 +112,10 @@ lantu:
     encryption-key: ${LANTU_SECURITY_ENCRYPTION_KEY}
   gateway:
     invoke-http-status-reflects-upstream: true
+    binding-expansion:
+      enabled: true
+      agent: true
+      hosted-skill: true
   # Hosted Skill：OpenAI 兼容 Chat Completions（baseUrl 须含 /v1，如 https://api.openai.com/v1）
   hosted-llm:
     enabled: ${LANTU_HOSTED_LLM_ENABLED:true}
