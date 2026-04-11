@@ -4,7 +4,7 @@
 
 1. 资源中心：五类 `*-register/*-list` + 生命周期按钮  
 2. 审核中心：`audit-center` 五类审核页  
-3. 授权中心：`resource-grant-management`  
+3. ~~授权中心：`resource-grant-management`~~ **~~已废弃（2026-04-09 下线）~~**；替代方案：API Key + Scope + `published` 状态；改为确认 **Key + scope + `published`** 与 playground/SDK 验收一致  
 4. 五市场：默认 `published` + resolve/invoke  
 5. 用户与权限管理  
 6. 监控与系统配置  
@@ -14,20 +14,20 @@
 ## 2) 端到端验收路径
 
 ### App 闭环
-`app-register -> app-list submit -> audit-center/app-audit approve -> publish -> app-market resolve/open -> grant -> invoke`
+`app-register -> app-list submit -> audit-center/app-audit approve -> publish -> app-market resolve/open -> invoke`（~~无 grant 步~~；~~已废弃（2026-04-09 下线）~~；替代方案：API Key + Scope + `published` 状态）
 
 ### MCP 闭环
 `mcp-register -> mcp-server-list submit -> audit-center/mcp-audit approve -> publish -> mcp-market resolve/invoke`
 
-### 授权闭环
-未授权 invoke 403 -> 新增授权 -> invoke 成功 -> 撤销授权 -> invoke 403
+### ~~授权闭环~~（已废弃）
+~~未授权 invoke 403 -> 新增授权 -> invoke 成功 -> 撤销授权 -> invoke 403~~ **~~已废弃（2026-04-09 下线）~~**；替代方案：API Key + Scope + `published` 状态
 
 ## 3) 角色验收清单
 
 ### platform_admin
 - 五类资源全链路可操作
 - 审核中心三动作齐全
-- 授权新增/撤销立即生效
+- ~~授权新增/撤销立即生效~~ **~~已废弃（2026-04-09 下线）~~**；替代方案：API Key + Scope + `published` 状态；**API Key / scope** 配置与网关调用行为符合预期
 
 ### dept_admin
 - 可见页面符合权限收敛
@@ -36,7 +36,7 @@
 ### developer
 - 五类资源可注册并提审
 - 市场可见性与发布状态一致
-- 调用授权前后行为正确
+- ~~调用授权前后行为正确~~ **~~已废弃（2026-04-09 下线）~~**；替代方案：API Key + Scope + `published` 状态；调用权限由网关校验
 
 ## 4) 回归检查
 
@@ -52,7 +52,7 @@
 2. 在列表提审。  
 3. 到 `audit-center/mcp-audit` 通过并发布。  
 4. 到 `mcp-market` 检索并执行 `resolve/invoke`。  
-5. 到授权中心新增授权，再撤销授权，验证调用方结果变化。  
+5. ~~到授权中心新增授权，再撤销授权，验证调用方结果变化。~~ **~~已废弃（2026-04-09 下线）~~**；替代方案：API Key + Scope + `published` 状态；改为用 **Playground/SDK** 验证 `resolve/invoke` 在正确 Key 下成功。  
 6. 在评价区提交评论并点赞 helpful，验证列表刷新。
 
 ### dept_admin
@@ -64,7 +64,7 @@
 ### developer
 1. 在 `my-publish` 创建 `agent` 并提审。  
 2. 在市场详情点击 `立即使用`，走 `resolve/invoke`。  
-3. 若 403，按“申请授权”流程完成后重试成功。  
+3. 若 403，核对 **Key、scope、资源是否已 `published`**（~~无 grant 工单路径~~；~~已废弃（2026-04-09 下线）~~；替代方案：API Key + Scope + `published` 状态）。
 4. 在详情页完成评分评论与 helpful 操作。  
 5. 进入 `profile/preferences` 修改并保存，验证回显。
 
@@ -98,13 +98,13 @@
 | `dataset-list` | 列表筛选 + 行操作可用性 |
 | `dataset-register` | 保存草稿 + 提交审核 |
 | `dataset-audit` | 通过/驳回/发布三动作完整 |
-| `provider-list` | 列表可达 + 与授权中心职责不混淆 |
+| `provider-list` | 列表可达 + 与~~授权中心~~职责不混淆；~~授权中心已废弃（2026-04-09 下线）~~ |
 | `provider-create` | 创建提交流程可用 |
 | `user-list` | 用户增改查 + 状态回显 |
 | `role-management` | 角色增改删 + 系统角色保护校验 |
 | `organization` | 组织树增改删 + 挂载校验 |
 | `api-key-management` | API Key 新建 + 撤销 |
-| `resource-grant-management` | 新增授权 + 撤销授权 + 调用影响验证 |
+| ~~`resource-grant-management`~~ | ~~新增授权 + 撤销授权 + 调用影响验证~~ | ~~已废弃（2026-04-09 下线）~~；替代方案：API Key + Scope + `published` 状态 |
 | `developer-applications` | 入驻申请审批（通过/驳回） |
 | `monitoring-overview` | KPI + 告警摘要展示 |
 | `call-logs` | 日志检索 + 分页 + 重试 |
@@ -163,8 +163,8 @@
 
 ## 完整性检查清单
 
-- [x] 改造顺序覆盖资源中心/审核中心/授权中心/市场/治理/壳层/SDK沙箱
-- [x] 至少三条端到端验收路径（App/MCP/授权）完整
+- [x] 改造顺序覆盖资源中心/审核中心/~~授权中心~~/市场/治理/壳层/SDK沙箱（~~授权中心已废弃（2026-04-09 下线）~~）
+- [x] 至少三条端到端验收路径（App/MCP/~~授权~~）完整（~~授权闭环已废弃~~）
 - [x] 三角色验收口径完整
 - [x] 回归检查项完整
 - [x] 逐角色页面回归脚本完整

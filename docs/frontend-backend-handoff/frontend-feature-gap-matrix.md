@@ -35,7 +35,7 @@
 | 路由 page | 主要组件 | 列表/数据 API | 数据流 | 备注 |
 |-----------|----------|---------------|--------|------|
 | user-list / role-management / api-key-management | UserManagementModule | `userMgmtService` 等 | serverPaged | — |
-| ~~resource-grant-management~~ | （宜移除） | — | — | **后端 `/resource-grants*` 已删**；勿再视作 serverPaged 真值 |
+| ~~resource-grant-management~~ | （宜移除） | — | — | ~~已废弃（2026-04-09 下线）~~；替代方案：API Key + Scope + `published` 状态 |
 | organization | OrgStructurePage | `getOrgTree` + `createOrg` / `updateOrg` / `deleteOrg` | 树 CRUD | 表单 Modal 改善父节点选择 |
 | ~~grant-applications~~ | （宜移除） | — | — | **`/grant-applications*` 已删** |
 | developer-applications | DeveloperApplicationListPage | `developerApplicationService.list` + **`keyword`** | serverPaged | 防抖请求 |
@@ -80,7 +80,7 @@
 |------|------------|------|
 | hub / workspace / market* | `catalog` / `explore` | 多为 serverPaged + 少量客户端 tag 过滤 |
 | resource-center | ResourceCenterManagementPage | serverPaged + keyword |
-| ~~my-grant-applications~~ | （宜移除） | **`GET /grant-applications/mine` 已删** |
+| ~~my-grant-applications~~ | （宜移除） | ~~已废弃（2026-04-09 下线）~~；替代方案：API Key + Scope + `published` 状态 |
 | api-key-management（子项） | ApiKeyListPage 等、`listApiKeys` | serverPaged |
 | token 管理（若侧栏可达） | TokenListPage：`GET /user-mgmt/tokens`、`PATCH /user-mgmt/tokens/{id}/revoke` | serverPaged；`keyword`、`status`（`all` / `expired` 等） |
 

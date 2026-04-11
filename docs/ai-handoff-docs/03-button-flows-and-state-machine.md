@@ -43,22 +43,24 @@
 - 成功：状态 `deprecated`
 - 失败：提示并刷新
 
-## 3) 授权与调用按钮流程卡
+## 3) ~~授权与调用按钮流程卡~~（已废弃）
 
-### 申请 API 授权（前端引导）
-- 前置：非 owner
-- 接口：无后端申请单（仅前端引导）
-- 成功：引导 owner 到授权中心执行 `POST /resource-grants`
+> **~~已废弃（2026-04-09 下线）~~**；替代方案：API Key + Scope + `published` 状态。以下流程仅供历史参考。
 
-### 新增授权
-- 前置：owner/管理员
-- 接口：`POST /resource-grants`
-- 请求：`resourceType/resourceId/granteeApiKeyId/actions/expiresAt?`
-- 成功：授权记录出现；调用方可 invoke
+### ~~申请 API 授权（前端引导）~~
+- ~~前置：非 owner~~
+- ~~接口：无后端申请单（仅前端引导）~~
+- ~~成功：引导 owner 到授权中心执行 `POST /resource-grants`~~
 
-### 撤销授权
-- 接口：`DELETE /resource-grants/{grantId}`
-- 成功：调用方再次 invoke 返回 403
+### ~~新增授权~~
+- ~~前置：owner/管理员~~
+- ~~接口：`POST /resource-grants`~~
+- ~~请求：`resourceType/resourceId/granteeApiKeyId/actions/expiresAt?`~~
+- ~~成功：授权记录出现；调用方可 invoke~~
+
+### ~~撤销授权~~
+- ~~接口：`DELETE /resource-grants/{grantId}`~~
+- ~~成功：调用方再次 invoke 返回 403~~
 
 ### 立即使用 / 调用
 - 流程：`POST /catalog/resolve` -> `POST /invoke`
@@ -115,17 +117,20 @@
 4. 状态变为 `testing` 后点击 `发布上架`。
 5. 在市场页检索到该资源（`published`）。
 
-### 授权 -> 调用 -> 撤销（成功路径）
-1. 在 `resource-grant-management` 点击 `新增授权`。
-2. 填写 `resourceType/resourceId/granteeApiKeyId/actions/expiresAt`。
-3. 保存后调用方 `invoke` 成功。
-4. 管理员点击 `撤销授权`。
-5. 调用方再次 `invoke` 返回 403。
+### ~~授权 -> 调用 -> 撤销（成功路径）~~（已废弃）
+> **~~已废弃（2026-04-09 下线）~~**；替代方案：API Key + Scope + `published` 状态
+1. ~~在 `resource-grant-management` 点击 `新增授权`。~~
+2. ~~填写 `resourceType/resourceId/granteeApiKeyId/actions/expiresAt`。~~
+3. ~~保存后调用方 `invoke` 成功。~~
+4. ~~管理员点击 `撤销授权`。~~
+5. ~~调用方再次 `invoke` 返回 403。~~
 
-### 失败重试
-- 审核发布前置不满足：禁用发布按钮并提示。
-- 授权新增失败：弹窗不关闭，保留已填字段，允许重试。
-- 撤销失败：保留记录状态并提示重试。
+### ~~失败重试~~（已废弃）
+- ~~审核发布前置不满足：禁用发布按钮并提示。~~
+- ~~授权新增失败：弹窗不关闭，保留已填字段，允许重试。~~
+- ~~撤销失败：保留记录状态并提示重试。~~
+
+> **替代方案**：API Key + Scope + `published` 状态。调用权限由网关校验 Key 的 scope 与资源的 `published` 状态决定。
 
 ## 4) 状态与按钮矩阵
 
@@ -134,13 +139,13 @@
 | `draft` | 保存、提交审核、删除 | 撤回、发布、下线 | 草稿不会在市场展示 |
 | `pending_review` | 撤回审核、查看进度 | 编辑、删除、发布、下线 | 审核中不可修改内容 |
 | `testing` | 发布、下线、版本管理 | 提交审核、编辑、删除 | 测试中不等于已上架 |
-| `published` | 下线、版本管理、授权管理 | 提交审核、撤回审核 | 已上架可检索可使用 |
+| `published` | 下线、版本管理、~~授权管理~~ | 提交审核、撤回审核 | 已上架可检索可使用；~~授权管理已废弃（2026-04-09 下线）~~ |
 | `deprecated` | 新建版本、查看历史 | 发布、提交审核 | 已下线不可调用 |
 
 ## 完整性检查清单
 
 - [x] 生命周期六大按钮流程完整（保存/提审/撤回/通过/发布/下线）
-- [x] 授权与调用按钮流程完整（申请/新增授权/撤销/调用）
+- [x] ~~授权与调用按钮流程完整（申请/新增授权/撤销/调用）~~ **已废弃（2026-04-09 下线）**；替代方案：API Key + Scope + `published` 状态
 - [x] 状态机矩阵完整（`draft/pending_review/testing/published/deprecated`）
 - [x] 阻断文案已定义
 - [x] 评分评论成功/失败脚本完整

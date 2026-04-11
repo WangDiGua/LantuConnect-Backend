@@ -8,7 +8,7 @@
 
 **企业内部 / 高校的「数字化资产与能力门户」**：统一登记、审核发布、目录发现、按权消费；条目不全是「可被 RPC 的微服务」，也包括应用入口、数据目录、开发者技能包等。
 
-**一句话定位**：统一注册与目录的**数字化资产与可调用能力**——应用与数据以**发现与接入**为主，智能体与 MCP 以**统一网关调用**为主，技能包以**制品分发与开发赋能（如 vibe-coding）**为主。
+**一句话定位**：统一注册与目录的**数字化资产与可调用能力**——应用与数据以**发现与接入**为主，智能体与 MCP 以**统一网关调用**为主，~~技能包以**制品分发与开发赋能（如 vibe-coding）**为主（已废弃，当前仅支持 Hosted 模式）~~。
 
 ---
 
@@ -20,7 +20,7 @@
 | 工具与集成 / 协议化远程服务 | `mcp`（及 agent 的 HTTP/REST 类） | 典型「工具」形态；网关代连上游 MCP 等，走 **`invoke` / `invoke-stream`**。 |
 | 应用资产 / 轻应用 | `app` | 打开或嵌入页面；**`resolve`** 侧重 `launchUrl` / `launchToken`；需要时 **`invoke`** 走 **redirect** 语义，非普通业务 JSON-RPC。 |
 | 数据资产 | `dataset` | **目录与元数据**（类型、格式、规模、标签等）；以 **`resolve`** 为主；**不是**通用远程执行资源（无统一 `invoke` endpoint）。 |
-| 规范与制品 / 开发赋能 | `skill` | **双形态**：**技能包（`execution_mode=pack`）** 通过 **`artifact_uri` / `…/skill-artifact` 下载**，**禁止**网关 `invoke`；**托管技能（`execution_mode=hosted`）** 由平台保存提示模板并 **允许** `invoke`（代调 LLM，见 `lantu.hosted-llm`）。远程可执行工具仍应注册 **`mcp`**。 |
+| 规范与制品 / 开发赋能 | `skill` | **托管技能（`execution_mode=hosted`）** 由平台保存提示模板并 **允许** `invoke`（代调 LLM，见 `lantu.hosted-llm`）。远程可执行工具仍应注册 **`mcp`。~~技能包（`execution_mode=pack`）已废弃（V35 清理），当前仅支持 Hosted 模式~~。** |
 
 ---
 
@@ -29,7 +29,7 @@
 | 类型 | 统一网关 `invoke` | 其他典型消费方式 |
 |------|-------------------|------------------|
 | `agent` | 支持（需 `published`、合法 endpoint、协议受支持） | `resolve` 查看协议与端点 |
-| `skill`（pack） | **不支持** | `resolve` + **制品下载**；宿主侧加载 |
+| `skill`（pack） | ~~不支持（已废弃 V35）~~ | ~~`resolve` + **制品下载**；宿主侧加载~~ |
 | `skill`（hosted） | **支持**（`published`、Hosted LLM 已配置） | `resolve` 查看参数/schema；**无**上游 endpoint |
 | `mcp` | 支持；流式用 `invoke-stream`（MCP）；可配置 **前置 Hosted Skill** 洗参 | `resolve` 查看 endpoint 与鉴权 spec |
 | `app` | 支持，但为 **redirect/票据** 语义 | **`resolve` 获取 launch 信息**；浏览器打开/嵌入 |

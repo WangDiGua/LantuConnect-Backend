@@ -2,7 +2,7 @@
 
 把本文与 `**src/api/services` 全量 `.ts`、`src/types/dto` 全量 `.ts**` 一并提供给后端，可快速对齐路径、query 字段与响应形状。以下为**高优先级**拆分说明。
 
-> **2026-04-09**：`/grant-applications*`、`/resource-grants*`（除占位 `GET .../api-keys/.../resource-grants` 空列表外）**已删除**。下表若仍列出 `grant-application` / `resource-grant` 相关文件，仅代表前端仓库可能遗留，**不再作为后端待实现项**。
+> **2026-04-09**：`/grant-applications*`、`/resource-grants*`（除占位 `GET .../api-keys/.../resource-grants` 空列表外）~~已废弃（2026-04-09 下线）~~。替代方案：API Key + Scope + `published` 状态。下表若仍列出 `grant-application` / `resource-grant` 相关文件，仅代表前端仓库可能遗留，**不再作为后端待实现项**。
 
 ---
 

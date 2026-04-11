@@ -2,7 +2,7 @@
 
 > 版本：v1.0  
 > 适用对象：前端开发、产品、测试、联调负责人  
-> 目标：避免前端流程继续“想当然”，按后端真实能力完整落地 `mcp/agent/skill/dataset/app` 五类资源闭环  
+> 目标：避免前端流程继续"想当然"，按后端真实能力完整落地 `mcp/agent/skill/dataset/app` 五类资源闭环  
 > 后端上下文路径：`/regis`（与前端 `VITE_API_BASE_URL` 一致）
 
 ---
@@ -11,8 +11,8 @@
 
 - 后端已经打通五类资源的主链路：**注册 -> 提审 -> 审核 -> 发布 -> 目录可见 -> 使用/调用**。
 - 上架不是一步：**`approve` 不等于上架**，必须再执行 `publish` 才到 `published`。
-- 统一网关：**`API Key + Scope + published`**；**每资源 Grant 表对 invoke 已下线**（见 `ResourceInvokeGrantService`）。
-- 五类资源都能注册，但“使用方式”不同：
+- 统一网关：**`API Key + Scope + published`**；**每资源 Grant 表对 invoke 已下线**（见 `ResourceInvokeGrantService`）。~~已废弃（2026-04-09 下线）~~；替代方案：API Key + Scope + `published` 状态。
+- 五类资源都能注册，但"使用方式"不同：
   - `agent` / `mcp`：`POST /invoke`（MCP 可 `invoke-stream`）；`mcp` 支持前置 Hosted Skill 链。
   - `skill`：**pack** 禁止 `invoke`；**hosted** 可 `invoke`。
   - `app`：主要是解析后拿 URL 跳转/嵌入（`invokeType=redirect`）。
@@ -28,7 +28,7 @@
   - 创建/更新自己的资源
   - 提审自己的资源
   - 下线自己的资源
-  - 管理自己资源的授权（Grant）
+  - ~~管理自己资源的授权（Grant）~~ **~~已废弃（2026-04-09 下线）~~**
 - 部门管理员（dept_admin）
   - 审核资源（approve/reject/publish）
   - 可操作资源（由后端 owner/admin 判断）
@@ -41,7 +41,7 @@
   - 我的资源列表（按类型分 tab）
   - 创建/编辑页面（五类动态表单）
   - 提审/下线/版本页面
-  - 授权管理页面（Grant 管理）
+  - ~~授权管理页面（Grant 管理）~~ **~~已废弃（2026-04-09 下线）~~**；替代方案：API Key + Scope + `published` 状态
 - 管理员侧
   - 审核列表（pending_review）
   - 审核详情（approve/reject/publish）
@@ -85,9 +85,11 @@
 - 创建接口 `POST /user-settings/api-keys` 或 `POST /user-mgmt/api-keys` 成功后，响应体 **`data.secretPlain`** 为完整可调用密钥（形如 `sk_` + 32 位十六进制），**仅在此一次响应中返回**，前端须提示用户立即复制保存。
 - 列表/详情里常见的 **`maskedKey`（如 `sk_3****`）、`prefix`、`id`（表主键）都不能**当作 `X-Api-Key` 传入：网关会对请求头**整串**做 SHA-256，与库中 `key_hash` 比对；遗失明文只能删除该 Key 后重建。
 
-## 3.4 资源级 Grant（管理接口；网关 invoke 不依赖）
+## 3.4 ~~资源级 Grant（管理接口；网关 invoke 不依赖）~~
 
-- 见主文档 `docs/resource-registration-authorization-invocation-guide.md` §3.4；绑定字段与闭包见 `docs/改造计划/platform-transformation-spec-freeze.md`。
+> **~~已废弃（2026-04-09 下线）~~**；替代方案：API Key + Scope + `published` 状态。以下内容仅供历史参考。
+
+- ~~见主文档 `docs/resource-registration-authorization-invocation-guide.md` §3.4；绑定字段与闭包见 `docs/改造计划/platform-transformation-spec-freeze.md`。~~
 
 ---
 
@@ -206,14 +208,14 @@ flowchart TD
 
 ## 6. 审核与上架（关键误区纠正）
 
-## 6.1 为什么“通过后还没上架”
+## 6.1 为什么"通过后还没上架"
 
 后端是分段状态：
 
 1. `approve`：`pending_review -> testing`
 2. `publish`：`testing -> published`
 
-只有 `published` 才应在前端标记为“已上架可用”。
+只有 `published` 才应在前端标记为"已上架可用"。
 
 ## 6.2 审核接口调用顺序（管理员）
 
@@ -225,36 +227,48 @@ flowchart TD
 
 ---
 
-## 7. 授权模型（不是授权链接）
+## 7. ~~授权模型（不是授权链接）~~（已废弃）
 
-## 7.1 三层校验结构
+> **~~已废弃（2026-04-09 下线）~~**；替代方案：API Key + Scope + `published` 状态。调用权限由网关校验 Key 的 scope 与资源的 `published` 状态决定。
 
-调用是否成功，至少过三层：
+## ~~7.1 三层校验结构~~
 
-1. 用户角色权限（RBAC，若带 `X-User-Id`）
-2. API Key scope（`catalog/resolve/invoke` 的范围）
-3. Grant（资源拥有者是否把该资源授权给该 API Key）
+~~调用是否成功，至少过三层：~~
 
-## 7.2 授权流程图
+1. ~~用户角色权限（RBAC，若带 `X-User-Id`）~~
+2. ~~API Key scope（`catalog/resolve/invoke` 的范围）~~
+3. ~~Grant（资源拥有者是否把该资源授权给该 API Key）~~
+
+**当前替代方案**：API Key + Scope + `published` 状态。网关校验：
+- API Key 有效且未过期
+- Scope 包含所需操作（`catalog`/`resolve`/`invoke`）
+- 资源状态为 `published`
+
+## ~~7.2 授权流程图~~（已废弃）
+
+> **~~已废弃（2026-04-09 下线）~~**；替代方案：API Key + Scope + `published` 状态。
 
 ```mermaid
 flowchart LR
-    ownerUser[ResourceOwner] --> createGrant["POST /resource-grants"]
-    createGrant --> grantActive[GrantActive]
+    ownerUser[ResourceOwner] ~~->|已废弃| createGrant["POST /resource-grants"]
+    createGrant ~~-~~> grantActive[GrantActive]
     thirdCaller[ThirdPartyApiKey] --> resolveResource["POST /catalog/resolve"]
     resolveResource --> invokeResource["POST /invoke"]
-    invokeResource --> checkLayer{"RBAC+Scope+GrantPass"}
+    invokeResource --> checkLayer{"RBAC+Scope+Published"}
     checkLayer -->|yes| invokeSuccess[Success]
     checkLayer -->|no| forbidden403[Forbidden]
-    ownerUser --> revokeGrant["DELETE /resource-grants/{grantId}"]
-    revokeGrant --> forbidden403
 ```
 
-## 7.3 授权接口（资源拥有者/平台管理员）
+**当前流程**：API Key + Scope + `published` 状态校验。
 
-`POST /resource-grants`
+## ~~7.3 授权接口（资源拥有者/平台管理员）~~（已废弃）
+
+> **~~已废弃（2026-04-09 下线）~~**；替代方案：API Key + Scope + `published` 状态。
+
+~~`POST /resource-grants`~~
 
 ```json
+// 已废弃 - 不再使用
 {
   "resourceType": "mcp",
   "resourceId": 29,
@@ -264,20 +278,25 @@ flowchart LR
 }
 ```
 
-字段说明：
+**当前替代方案**：
+- 创建 API Key 时指定 scope（`catalog`/`resolve`/`invoke`）
+- 资源发布到 `published` 状态后即可被调用
+- 无需单独配置 Grant
 
-- `actions` 只支持：`catalog`、`resolve`、`invoke`、`*`
-- 不允许空 actions
-- 过期时间到了会自动失效（校验时拒绝）
+## ~~7.4 常见授权误区~~（已废弃）
 
-## 7.4 常见授权误区
+> **~~已废弃（2026-04-09 下线）~~**；替代方案：API Key + Scope + `published` 状态。
 
-- 误区1：给了 scope 就能调  
-  - 错：跨 owner 的 API Key 还要有 Grant。
-- 误区2：给了 Grant 就能调  
-  - 错：scope 不覆盖 `invoke` 也会 403。
-- 误区3：授权链接可替代 API Key  
-  - 错：后端目前无“授权链接”协议，只有 API Key + Scope + Grant。
+~~常见授权误区：~~
+- ~~误区1：给了 scope 就能调~~
+  - ~~错：跨 owner 的 API Key 还要有 Grant。~~
+  - **当前**：scope + `published` 状态即可调用
+- ~~误区2：给了 Grant 就能调~~
+  - ~~错：scope 不覆盖 `invoke` 也会 403。~~
+  - **当前**：scope 必须包含 `invoke`，资源必须 `published`
+- ~~误区3：授权链接可替代 API Key~~
+  - ~~错：后端目前无"授权链接"协议，只有 API Key + Scope + Grant。~~
+  - **当前**：API Key + Scope + `published` 状态
 
 ---
 
@@ -300,7 +319,7 @@ flowchart TD
 
 ## 8.2 接口头部规范（前端必须统一）
 
-- 管理类接口（资源注册、审核、grant 管理）：
+- 管理类接口（资源注册、审核）：
   - `Authorization: Bearer <token>`
   - `X-User-Id`（由认证链路注入或透传）
 - 目录/解析：
@@ -332,7 +351,7 @@ flowchart TD
 
 ---
 
-## 9. 五类资源“使用方式差异”细化（前端必读）
+## 9. 五类资源"使用方式差异"细化（前端必读）
 
 ## 9.1 MCP
 
@@ -355,6 +374,7 @@ flowchart TD
 
 - 目标：工具型能力（HTTP/MCP 子能力）
 - 同样可 resolve + invoke
+- **Skill Pack**：~~已废弃（V35 清理）~~，当前仅支持 Hosted 模式
 
 ## 9.4 Dataset
 
@@ -371,7 +391,7 @@ flowchart TD
 
 ---
 
-## 10. 版本管理（避免“更新覆盖线上”）
+## 10. 版本管理（避免"更新覆盖线上"）
 
 ## 10.1 创建版本
 
@@ -399,7 +419,7 @@ flowchart TD
 
 ---
 
-## 11. 前端“分子级”落地清单（逐页面）
+## 11. 前端"分子级"落地清单（逐页面）
 
 ## 11.1 创建页（五类动态表单）
 
@@ -429,8 +449,8 @@ flowchart TD
   - 驳回 -> `reject`（必须填写 reason）
   - 发布 -> `publish`
 - 强提醒：
-  - 通过后卡片状态应显示 `testing`，不要显示“已上架”
-  - 发布成功后才显示“已上架/可使用”
+  - 通过后卡片状态应显示 `testing`，不要显示"已上架"
+  - 发布成功后才显示"已上架/可使用"
 
 ## 11.4 市场页
 
@@ -450,13 +470,19 @@ flowchart TD
   - `app` -> URL 打开/嵌入
   - `dataset` -> 展示 metadata/spec
 
-## 11.6 授权管理页
+## ~~11.6 授权管理页~~（已废弃）
 
-- 资源拥有者进入后：
-  - 查询授权列表
-  - 新增授权（选择 API Key、actions、过期时间）
-  - 撤销授权
-- 第三方接入文案必须写清：需要平台发放 API Key + 对应资源 Grant
+> **~~已废弃（2026-04-09 下线）~~**；替代方案：API Key + Scope + `published` 状态。
+
+~~资源拥有者进入后：~~
+  - ~~查询授权列表~~
+  - ~~新增授权（选择 API Key、actions、过期时间）~~
+  - ~~撤销授权~~
+- ~~第三方接入文案必须写清：需要平台发放 API Key + 对应资源 Grant~~
+
+**当前替代方案**：
+- 在 API Key 管理页创建/管理 Key 及其 scope
+- 资源发布后自动可被拥有正确 scope 的 Key 调用
 
 ---
 
@@ -467,7 +493,7 @@ flowchart TD
 - 403 无权限
   - 检查 RBAC 是否有类型访问权限
   - 检查 API Key scope 是否覆盖动作
-  - 检查是否存在有效 Grant
+  - 检查资源是否为 `published` 状态
 - 404 不存在
   - 资源 ID、类型、版本号是否匹配
 - 400 参数错误
@@ -479,7 +505,7 @@ flowchart TD
 
 ## 13. 联调验收清单（测试用）
 
-## 13.1 MCP 完整验收
+## ~~13.1 MCP 完整验收~~（已更新）
 
 1. 开发者创建 MCP 成功（状态 `draft`）  
 2. 提审成功（状态 `pending_review`）  
@@ -487,10 +513,10 @@ flowchart TD
 4. 管理员 publish 后状态 `published`  
 5. 市场 `resourceType=mcp&status=published` 可见  
 6. resolve 返回 endpoint/spec 正确  
-7. invoke 可成功  
-8. 未授权第三方 API Key 调用返回 403  
-9. 授权后第三方调用成功  
-10. 撤销授权后再次 403
+7. invoke 可成功（需正确 API Key + scope）
+8. ~~未授权第三方 API Key 调用返回 403~~ **已废弃**；当前：scope 不匹配或资源未 `published` 返回 403
+9. ~~授权后第三方调用成功~~ **已废弃**；当前：正确 scope + `published` 即可调用
+10. ~~撤销授权后再次 403~~ **已废弃**；当前：撤销 API Key 或资源下线后 403
 
 ## 13.2 其余四类验收最小集
 
@@ -502,8 +528,8 @@ flowchart TD
 
 ## 14. 最后两条硬规则（防再跑偏）
 
-- 规则1：**任何“上架成功”文案必须以 `published` 为准**，不能以 `approve` 为准。  
-- 规则2：**任何“授权”文案必须按 Grant 模型描述**，不要再写“授权链接”。
+- 规则1：**任何"上架成功"文案必须以 `published` 为准**，不能以 `approve` 为准。  
+- 规则2：**调用权限由 API Key + Scope + `published` 状态决定**，~~不再使用 Grant 模型~~（~~已废弃（2026-04-09 下线）~~）。
 
 ---
 
@@ -516,7 +542,6 @@ flowchart TD
 - `src/main/java/com/lantu/connect/audit/service/impl/AuditServiceImpl.java`
 - `src/main/java/com/lantu/connect/gateway/controller/ResourceCatalogController.java`
 - `src/main/java/com/lantu/connect/gateway/service/impl/UnifiedGatewayServiceImpl.java`
-- `src/main/java/com/lantu/connect/gateway/controller/ResourceGrantController.java`
-- `src/main/java/com/lantu/connect/gateway/security/ResourceInvokeGrantService.java`
+- ~~`src/main/java/com/lantu/connect/gateway/controller/ResourceGrantController.java`~~ **已删除**
+- `src/main/java/com/lantu/connect/gateway/security/ResourceInvokeGrantService.java`（校验逻辑已更新为 scope + published）
 - `src/main/java/com/lantu/connect/gateway/security/ApiKeyScopeService.java`
-

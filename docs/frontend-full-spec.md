@@ -80,7 +80,7 @@
 | user-management | `role-management` | `#/admin/role-management` | `UserManagementModule(role-management)` | reachable | 菜单级权限 |
 | user-management | `organization` | `#/admin/organization` | `UserManagementModule(organization)` | reachable | 菜单级权限 |
 | user-management | `api-key-management` | `#/admin/api-key-management` | `UserManagementModule(api-key-management)` | reachable | 菜单级权限 |
-| user-management | `resource-grant-management` | `#/admin/resource-grant-management` | `UserManagementModule` | direct-url-only / placeholder | **已下线**：后端无 CRUD；前端宜移除菜单或改为说明页 |
+| user-management | ~~`resource-grant-management`~~ | `#/admin/resource-grant-management` | `UserManagementModule` | direct-url-only / placeholder | ~~已废弃（2026-04-09 下线）~~；替代方案：API Key + Scope + `published` 状态；前端宜移除菜单或改为说明页 |
 | user-management | `developer-applications` | `#/admin/developer-applications` | `DeveloperApplicationListPage` | reachable | 入驻审批 |
 | monitoring | `monitoring-overview` | `#/admin/monitoring-overview` | `MonitoringModule` | reachable | 菜单级权限 |
 | monitoring | `call-logs` | `#/admin/call-logs` | `MonitoringModule` | reachable | 菜单级权限 |

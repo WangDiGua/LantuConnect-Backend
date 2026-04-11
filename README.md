@@ -143,30 +143,52 @@ docker-compose up -d
 
 ## API 概览
 
+### 统一网关接口（推荐使用）
+
+| 模块 | 路径前缀 | 说明 |
+|------|----------|------|
+| 资源目录 | `/regis/catalog/resources` | 资源目录列表、详情、解析、热门资源、搜索建议 |
+| 统一调用 | `/regis/invoke` | 统一调用入口（agent/mcp/hosted-skill） |
+| 流式调用 | `/regis/invoke-stream` | MCP SSE 流式调用 |
+| SDK v1 | `/regis/sdk/v1/*` | SDK 稳定接口（与统一网关语义一致） |
+| MCP HTTP | `/regis/mcp/v1/resources/{type}/{id}/message` | MCP JSON-RPC 兼容入口 |
+| 资源中心 | `/regis/resource-center/resources` | 资源注册、审核、版本、技能包上传/分片 |
+
+### 管理接口
+
 | 模块 | 路径前缀 | 说明 |
 |------|----------|------|
 | 认证 | `/regis/auth` | 登录、注册、JWT 刷新、密码修改 |
-| 资源中心 | `/regis/resource-center/resources` | Agent/Skill/MCP/App/Dataset 等资源注册、审核、版本、**技能包上传/分片** |
-| Agent | `/regis/agents` | Agent CRUD + 版本发布/回滚 |
-| Skill | `/regis/v1/skills` | Skill CRUD + 调用（与资源中心 skill 并存时对齐以前端联调文档为准） |
-| MCP Server | `/regis/v1/mcp-servers` | MCP 服务注册与 CRUD |
-| 应用 | `/regis/v1/apps` | 智能应用 CRUD |
-| 数据集 | `/regis/v1/datasets` | 数据集 CRUD + 权限申请 |
-| 提供商 | `/regis/v1/providers` | 服务提供商 CRUD |
-| 分类 | `/regis/v1/categories` | 分类树 CRUD |
 | 标签 | `/regis/tags` | 标签管理 + 批量创建 |
 | 用户管理 | `/regis/user-mgmt` | 用户/角色/API Key/Token/组织架构 |
 | 监控 | `/regis/monitoring` | KPI、调用日志、告警、链路追踪 |
 | 健康检查 | `/regis/health` | 健康配置 + 熔断器管理 |
-| 系统配置 | `/regis/system-config` | 模型/限流/参数/安全/审计日志 |
-| 配额 | `/regis/quotas` | 配额管理 |
+| 系统配置 | `/regis/system-config` | 限流/参数/安全/审计日志 |
 | 仪表盘 | `/regis/dashboard` | 管理概览 + 用量统计 |
-| 审核 | `/regis/audit` | Agent/Skill 审核流程 |
+| 审核 | `/regis/audit` | 资源审核流程 |
 | 评论 | `/regis/reviews` | 评分评论 + 有用标记 |
 | 用户活动 | `/regis/user` | 使用记录、收藏、个人统计 |
 | 用户设置 | `/regis/user-settings` | 工作区设置、个人 API Key |
 | 通知 | `/regis/notifications` | 通知列表、未读数、已读标记 |
 | 文件 | `/regis/files` | 文件上传 |
+
+### ~~旧版接口（已废弃）~~
+
+> **注意**：以下接口已废弃，返回 410 Gone 或已移除。请使用上述统一网关接口。
+
+| 模块 | 路径前缀 | 状态 |
+|------|----------|------|
+| ~~Agent~~ | `/regis/agents` | ~~已废弃（Phase 3 重构期间下线）~~ |
+| ~~Skill~~ | `/regis/v1/skills` | ~~已废弃（Phase 3 重构期间下线）~~ |
+| ~~MCP Server~~ | `/regis/v1/mcp-servers` | ~~已废弃（Phase 3 重构期间下线）~~ |
+| ~~应用~~ | `/regis/v1/apps` | ~~已废弃（Phase 3 重构期间下线）~~ |
+| ~~数据集~~ | `/regis/v1/datasets` | ~~已废弃（Phase 3 重构期间下线）~~ |
+| ~~提供商~~ | `/regis/v1/providers` | ~~已废弃（Phase 3 重构期间下线）~~ |
+| ~~分类~~ | `/regis/v1/categories` | ~~已废弃（Phase 3 重构期间下线）~~ |
+| ~~资源授权~~ | `/regis/resource-grants*` | ~~已废弃（2026-04-09 下线）~~ |
+| ~~授权工单~~ | `/regis/grant-applications*` | ~~已废弃（2026-04-09 下线）~~ |
+
+**替代方案**：使用 API Key + Scope + `published` 状态进行权限控制。详见 [docs/api/api-scope-rulebook.md](docs/api/api-scope-rulebook.md)。
 
 ## License
 

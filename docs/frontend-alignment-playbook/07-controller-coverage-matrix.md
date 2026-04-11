@@ -14,8 +14,8 @@
 | `DashboardController` | `/dashboard` | `02`、`01` |
 | `ResourceCatalogController` | 无类级前缀：`/catalog/*`、`/invoke`、`/invoke-stream`、`/catalog/apps/launch` | `02`、`03`、`04` |
 | `ResourceRegistryController` | `/resource-center/resources` | `02`、`03`、`04` |
-| ~~`ResourceGrantController`~~ | ~~`/resource-grants`~~ | **已删除**（2026-04-09） |
-| ~~`GrantApplicationController`~~ | ~~`/grant-applications`~~ | **已删除**（2026-04-09） |
+| ~~`ResourceGrantController`~~ | ~~`/resource-grants`~~ | ~~已废弃（2026-04-09 下线）~~；替代方案：API Key + Scope + `published` 状态 |
+| ~~`GrantApplicationController`~~ | ~~`/grant-applications`~~ | ~~已废弃（2026-04-09 下线）~~；替代方案：API Key + Scope + `published` 状态 |
 | `SdkGatewayController` | `/sdk/v1` | `02` |
 | `SandboxController` | `/sandbox` | `02` |
 | `AuditController` | `/audit` | `02`、`03` |
