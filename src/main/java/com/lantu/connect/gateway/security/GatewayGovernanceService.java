@@ -87,18 +87,6 @@ public class GatewayGovernanceService {
         return null;
     }
 
-    private void checkWindow(String keyPrefix, long windowMs, int limit) {
-        String bucket = String.valueOf(System.currentTimeMillis() / windowMs);
-        String key = keyPrefix + ":" + bucket;
-        Long count = stringRedisTemplate.opsForValue().increment(key);
-        if (count != null && count == 1L) {
-            stringRedisTemplate.expire(key, Duration.ofMillis(windowMs + 1000L));
-        }
-        if (count != null && count > limit) {
-            throw new BusinessException(ResultCode.RATE_LIMITED);
-        }
-    }
-
     private static boolean ruleAppliesToResourceScope(Map<String, Object> rule, String invokeResourceType) {
         String scope = str(rule.get("resource_scope"));
         if (!StringUtils.hasText(scope) || "all".equalsIgnoreCase(scope)) {

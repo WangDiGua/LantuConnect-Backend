@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.config.GatewayInvokeProperties;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
-import com.lantu.connect.common.web.ServletContextPathUtil;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.dashboard.dto.ExploreHubData;
@@ -1732,7 +1731,9 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         sql.append(" ORDER BY call_count DESC LIMIT ? ");
         args.add(fetchCap);
 
-        List<ExploreHubData.ExploreResourceItem> rows = jdbcTemplate.query(sql.toString(), args.toArray(), (rs, i) -> {
+        List<ExploreHubData.ExploreResourceItem> rows = jdbcTemplate.query(
+                sql.toString(),
+                (rs, i) -> {
             Double ratingVal = null;
             double ratingRaw = rs.getDouble("rating");
             if (!rs.wasNull()) {
@@ -1753,7 +1754,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                     .publishedAt(rs.getTimestamp("update_time") != null
                             ? rs.getTimestamp("update_time").toLocalDateTime() : null)
                     .build();
-        });
+        },
+        args.toArray());
         List<ExploreHubData.ExploreResourceItem> out = rows.stream()
                 .filter(item -> typeOk.allow(item.getResourceType()))
                 .limit(lim)
@@ -1796,7 +1798,6 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                         + "FROM t_resource WHERE deleted = 0 AND status = 'published' "
                         + "AND (resource_code LIKE ? OR display_name LIKE ?) "
                         + "ORDER BY update_time DESC LIMIT 50",
-                new Object[]{keyword, keyword},
                 (rs, i) -> {
                     String name = rs.getString("display_name");
                     return SearchSuggestion.builder()
@@ -1805,7 +1806,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                             .resourceId(String.valueOf(rs.getLong("id")))
                             .highlightedText(name)
                             .build();
-                });
+                },
+                keyword, keyword);
         return rows.stream().filter(s -> typeOk.allow(s.getResourceType())).limit(10).toList();
     }
 

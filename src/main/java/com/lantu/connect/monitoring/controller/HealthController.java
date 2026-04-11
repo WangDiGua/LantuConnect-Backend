@@ -81,6 +81,7 @@ public class HealthController {
 
     @GetMapping("/security-config")
     @RequireRole({"platform_admin"})
+    @SuppressWarnings("deprecation")
     public R<Map<String, Object>> securityConfig() {
         Map<String, Object> config = new HashMap<>();
         config.put("jwtEnabled", securityProperties.isJwtEnabled());

@@ -22,7 +22,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -58,7 +57,9 @@ class AuthChainWebMvcTest {
 
         SecurityProperties properties = new SecurityProperties();
         properties.setJwtEnabled(true);
-        properties.setAllowHeaderUserIdFallback(false);
+        @SuppressWarnings("deprecation")
+        SecurityProperties props = properties;
+        props.setAllowHeaderUserIdFallback(false);
         when(sessionRevocationRegistry.isRevoked(anyString())).thenReturn(false);
         ApiKeyScopeService apiKeyScopeService = mock(ApiKeyScopeService.class);
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(

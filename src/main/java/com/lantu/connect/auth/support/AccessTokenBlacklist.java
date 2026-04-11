@@ -47,6 +47,7 @@ public class AccessTokenBlacklist {
     /**
      * 删除无 TTL 的黑名单键（异常写入时），正常登出键会随 access-token 过期自动删除。
      */
+    @SuppressWarnings("deprecation")
     public long removeOrphanBlacklistKeys() {
         try {
             Long removed = redisTemplate.execute((RedisCallback<Long>) connection -> {

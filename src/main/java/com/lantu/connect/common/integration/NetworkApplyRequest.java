@@ -2,8 +2,6 @@ package com.lantu.connect.common.integration;
 
 import lombok.Data;
 
-import java.time.LocalDateTime;
-
 /**
  * 网络下发请求
  *

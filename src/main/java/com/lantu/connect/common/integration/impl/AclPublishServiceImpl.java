@@ -44,10 +44,12 @@ public class AclPublishServiceImpl implements AclPublishService {
             return mockPublish(request);
         }
         try {
+            @SuppressWarnings("rawtypes")
             ResponseEntity<Map> response = restTemplate.postForEntity(
                     aclApiUrl + "/api/v1/acl/publish",
                     request,
                     Map.class);
+            @SuppressWarnings("unchecked")
             Map<String, Object> body = response.getBody();
             if (body != null && Boolean.TRUE.equals(body.get("success"))) {
                 return AclPublishResult.builder()
@@ -95,9 +97,11 @@ public class AclPublishServiceImpl implements AclPublishService {
                     .build();
         }
         try {
+            @SuppressWarnings("rawtypes")
             ResponseEntity<Map> response = restTemplate.getForEntity(
                     aclApiUrl + "/api/v1/acl/status/" + aclId,
                     Map.class);
+            @SuppressWarnings("unchecked")
             Map<String, Object> body = response.getBody();
             return AclPublishResult.builder()
                     .success(true)

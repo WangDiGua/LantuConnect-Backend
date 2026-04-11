@@ -27,6 +27,7 @@ import static org.mockito.Mockito.when;
 
 class JwtAuthenticationFilterTest {
 
+    @SuppressWarnings("deprecation")
     @Test
     void shouldAllowValidUserOwnedApiKeyWithoutJwt() throws Exception {
         SecurityProperties properties = new SecurityProperties();
@@ -88,6 +89,7 @@ class JwtAuthenticationFilterTest {
         assertNull(downstreamUserId.get());
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     void shouldRejectInvalidApiKeyWithoutJwt() throws Exception {
         SecurityProperties properties = new SecurityProperties();
@@ -146,6 +148,7 @@ class JwtAuthenticationFilterTest {
         verify(apiKeyScopeService, never()).authenticateOrNull(any());
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     void shouldRejectRequestWithoutJwtAndApiKey() throws Exception {
         SecurityProperties properties = new SecurityProperties();
@@ -167,6 +170,7 @@ class JwtAuthenticationFilterTest {
         assertEquals(401, response.getStatus());
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     void shouldRejectBearerWhenSessionRevoked() throws Exception {
         SecurityProperties properties = new SecurityProperties();

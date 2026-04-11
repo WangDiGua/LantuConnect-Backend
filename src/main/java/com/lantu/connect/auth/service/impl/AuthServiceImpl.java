@@ -74,7 +74,6 @@ public class AuthServiceImpl implements AuthService {
 
     /** 同一 refresh 并发刷新时缓存新发 token 对，供另一请求复用（避免 React StrictMode 等双次请求误杀）。 */
     private static final String REFRESH_PAIR_PREFIX = "token:refresh:pair:";
-    private static final String USER_PREF_PREFIX = "lantu:user:pref:";
     private final UserMapper userMapper;
     private final UserRoleRelMapper userRoleRelMapper;
     private final PlatformRoleMapper platformRoleMapper;

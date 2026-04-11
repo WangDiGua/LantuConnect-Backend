@@ -44,10 +44,12 @@ public class NetworkApplyServiceImpl implements NetworkApplyService {
             return mockApply(request);
         }
         try {
+            @SuppressWarnings("rawtypes")
             ResponseEntity<Map> response = restTemplate.postForEntity(
                     networkApiUrl + "/api/v1/network/apply",
                     request,
                     Map.class);
+            @SuppressWarnings("unchecked")
             Map<String, Object> body = response.getBody();
             if (body != null && Boolean.TRUE.equals(body.get("success"))) {
                 return NetworkApplyResult.builder()
@@ -95,9 +97,11 @@ public class NetworkApplyServiceImpl implements NetworkApplyService {
                     .build();
         }
         try {
+            @SuppressWarnings("rawtypes")
             ResponseEntity<Map> response = restTemplate.getForEntity(
                     networkApiUrl + "/api/v1/network/status/" + taskId,
                     Map.class);
+            @SuppressWarnings("unchecked")
             Map<String, Object> body = response.getBody();
             return NetworkApplyResult.builder()
                     .success(true)

@@ -47,7 +47,9 @@ class ResourceRegistryControllerWebMvcTest {
         SessionRevocationRegistry sessionRevocationRegistry = mock(SessionRevocationRegistry.class);
         SecurityProperties properties = new SecurityProperties();
         properties.setJwtEnabled(true);
-        properties.setAllowHeaderUserIdFallback(false);
+        @SuppressWarnings("deprecation")
+        SecurityProperties props = properties;
+        props.setAllowHeaderUserIdFallback(false);
         when(sessionRevocationRegistry.isRevoked(any())).thenReturn(false);
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(
                 jwtUtil, blacklist, sessionRevocationRegistry, properties, apiKeyScopeService);

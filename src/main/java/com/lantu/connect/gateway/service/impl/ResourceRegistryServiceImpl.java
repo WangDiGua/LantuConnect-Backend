@@ -435,22 +435,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         return ResourceAccessPolicy.OPEN_PLATFORM;
     }
 
-    private static Timestamp toSqlTimestamp(Object raw) {
-        if (raw == null) {
-            return null;
-        }
-        if (raw instanceof Timestamp ts) {
-            return ts;
-        }
-        if (raw instanceof LocalDateTime ldt) {
-            return Timestamp.valueOf(ldt);
-        }
-        if (raw instanceof java.util.Date d) {
-            return new Timestamp(d.getTime());
-        }
-        return null;
-    }
-
     @Override
     public PageResult<ResourceManageVO> pageMine(Long operatorUserId, String resourceType, String status,
                                                  String keyword, String sortBy, String sortOrder,
@@ -1062,7 +1046,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 .healthStatus(stringValue(quality.get("healthStatus")))
                 .circuitState(stringValue(quality.get("circuitState")))
                 .qualityScore((Integer) quality.get("qualityScore"))
-                .qualityFactors((Map<String, Object>) quality.get("qualityFactors"))
+                .qualityFactors(extractQualityFactors(quality))
                 .degradationHint(hint)
                 .generatedAt(LocalDateTime.now())
                 .build();
@@ -2322,6 +2306,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         return snapshot;
     }
 
+    @SuppressWarnings("unchecked")
     private Map<String, Object> parseJsonMap(Object raw) {
         try {
             if (raw == null) {
@@ -2339,6 +2324,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
     }
 
+    @SuppressWarnings("unchecked")
     private List<Object> parseJsonList(Object raw) {
         try {
             if (raw == null) {
@@ -2354,6 +2340,18 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         } catch (Exception ex) {
             return List.of();
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> extractQualityFactors(Map<String, Object> quality) {
+        Object raw = quality.get("qualityFactors");
+        if (raw == null) {
+            return Map.of();
+        }
+        if (raw instanceof Map) {
+            return (Map<String, Object>) raw;
+        }
+        return Map.of();
     }
 
     private void enrichExtensionFields(ResourceManageVO vo, Long resourceId) {

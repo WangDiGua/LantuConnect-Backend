@@ -76,6 +76,7 @@ class AlertRuleServiceImplTest {
     }
 
     @Test
+    @SuppressWarnings("deprecation")
     void createIgnoresLegacyNotifyChannelsInRequest() {
         when(alertRuleMapper.insert(any())).thenReturn(1);
         AlertRuleCreateRequest req = new AlertRuleCreateRequest();
