@@ -1619,12 +1619,30 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         if (snapshot.containsKey("spec")) {
             Map<String, Object> snapshotSpec = parseJsonMap(snapshot.get("spec"));
             if (!snapshotSpec.isEmpty()) {
-                resolved.setSpec(snapshotSpec);
+                // 快照里的 spec 历史上曾整表覆盖 resolve 结果，导致主表 hosted_system_prompt 已写入的
+                // contextPrompt 被旧快照（缺长文本）抹掉；改为与 resolve 结果浅合并，快照仅覆盖「有实质内容」的键。
+                Map<String, Object> merged = new LinkedHashMap<>();
+                if (resolved.getSpec() != null) {
+                    merged.putAll(resolved.getSpec());
+                }
+                for (Map.Entry<String, Object> e : snapshotSpec.entrySet()) {
+                    if (e.getValue() == null) {
+                        continue;
+                    }
+                    String k = e.getKey();
+                    if ("contextPrompt".equals(k) && !StringUtils.hasText(valueOf(e.getValue()))) {
+                        continue;
+                    }
+                    merged.put(k, e.getValue());
+                }
+                resolved.setSpec(merged);
             }
         }
         if (snapshot.containsKey("serviceDetailMd")) {
             String md = valueOf(snapshot.get("serviceDetailMd"));
-            resolved.setServiceDetailMd(StringUtils.hasText(md) ? md.trim() : null);
+            if (StringUtils.hasText(md)) {
+                resolved.setServiceDetailMd(md.trim());
+            }
         }
         return resolved;
     }
