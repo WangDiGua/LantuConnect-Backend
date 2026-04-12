@@ -33,6 +33,9 @@ public class ApiKey {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<String> scopes;
 
+    /** 非空时网关仅允许访问该集成套餐内资源（见 t_integration_package） */
+    private String integrationPackageId;
+
     private String status;
     private LocalDateTime expiresAt;
     private LocalDateTime lastUsedAt;

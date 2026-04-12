@@ -54,7 +54,7 @@ public class ResourceUpsertRequest {
     private String systemPrompt;
 
     /**
-     * 仅 skill 使用：形态标识（hosted_v1）。
+     * 仅 skill 使用：形态标识（context_v1）。
      */
     private String skillType;
     /** 包 manifest（JSON），可选。 */
@@ -100,36 +100,21 @@ public class ResourceUpsertRequest {
     private List<String> tags;
 
     /**
-     * 关联资源 ID 列表（Agent 依赖的 Skills、App 依赖的 Agent/Skills 等）。
+     * 仅 app：关联资源 ID。agent 不再使用本字段绑 Skill。
      */
     private List<Long> relatedResourceIds;
 
     /**
-     * 仅 agent：绑定的 MCP 资源 ID。null 表示本次不修改该关系；空列表表示清空。
+     * agent / skill：绑定的 MCP 资源 ID（skill 为可选）。null 表示本次不修改；[] 清空。
      */
     private List<Long> relatedMcpResourceIds;
 
     /**
-     * 仅 mcp：前置 Hosted Skill 资源 ID（执行顺序按 ID 升序）。null 不修改；[] 清空。
-     */
-    private List<Long> relatedPreSkillResourceIds;
-
-    /**
-     * 仅 skill：{@code hosted}（Anthropic zip pack 已下线）。
+     * 仅 skill：固定为 {@code context}；请求可省略由服务端默认。
      */
     private String executionMode;
 
-    /** hosted：系统提示 */
-    private String hostedSystemPrompt;
-
-    /** hosted：用户模板，可含 {@code {{input}}} */
-    private String hostedUserTemplate;
-
-    /** hosted：默认模型，可空则走全局配置 */
-    private String hostedDefaultModel;
-
-    private Map<String, Object> hostedOutputSchema;
-
-    private Double hostedTemperature;
+    /** skill：规范/提示词正文（落库 {@code t_resource_skill_ext.hosted_system_prompt}） */
+    private String contextPrompt;
 }
 

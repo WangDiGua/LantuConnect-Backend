@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.integrationpackage.service.IntegrationPackageMembershipService;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import com.lantu.connect.usermgmt.mapper.ApiKeyMapper;
 import lombok.RequiredArgsConstructor;
@@ -17,11 +18,19 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * API Key 鉴权：按 scope 或集成套餐白名单判定「是否允许对该资源发起 catalog/resolve/invoke 动作」。
+ * <p>
+ * <strong>不变量</strong>：本层只做授权裁剪；真实网关调用（{@code POST /invoke}、{@code POST /invoke-stream} 等）在
+ * {@link com.lantu.connect.gateway.service.impl.UnifiedGatewayServiceImpl} 中<strong>另行</strong>校验资源已发布（{@code published}）
+ * 与健康状态（非 {@code down}/{@code disabled}，熔断另见治理逻辑）。即：无论直配 scope 还是绑定集成套餐，均不能绕过「已上线且可调用健康态」约束。
+ */
 @Service
 @RequiredArgsConstructor
 public class ApiKeyScopeService {
 
     private final ApiKeyMapper apiKeyMapper;
+    private final IntegrationPackageMembershipService integrationPackageMembershipService;
 
     public ApiKey authenticateOrNull(String rawApiKey) {
         if (!StringUtils.hasText(rawApiKey)) {
@@ -81,6 +90,9 @@ public class ApiKeyScopeService {
     }
 
     private boolean canAccess(ApiKey apiKey, String action, String resourceType, String resourceId) {
+        if (StringUtils.hasText(apiKey.getIntegrationPackageId())) {
+            return integrationPackageMembershipService.contains(apiKey.getIntegrationPackageId(), resourceType, resourceId);
+        }
         List<String> scopes = apiKey.getScopes();
         if (scopes == null || scopes.isEmpty()) {
             return false;

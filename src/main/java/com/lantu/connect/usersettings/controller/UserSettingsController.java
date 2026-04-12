@@ -4,7 +4,11 @@ import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.web.ClientIpResolver;
 import com.lantu.connect.gateway.dto.ResourceGrantVO;
+import com.lantu.connect.integrationpackage.dto.IntegrationPackageOptionVO;
+import com.lantu.connect.integrationpackage.dto.IntegrationPackageUpsertRequest;
+import com.lantu.connect.integrationpackage.dto.IntegrationPackageVO;
 import com.lantu.connect.usermgmt.dto.ApiKeyCreateRequest;
+import com.lantu.connect.usermgmt.dto.ApiKeyIntegrationPackagePatchRequest;
 import com.lantu.connect.usermgmt.dto.ApiKeyResponse;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import com.lantu.connect.usersettings.dto.InvokeEligibilityRequest;
@@ -56,6 +60,36 @@ public class UserSettingsController {
         return R.ok(userSettingsService.listApiKeys(userId));
     }
 
+    @GetMapping("/integration-packages")
+    public R<List<IntegrationPackageOptionVO>> listIntegrationPackages(@RequestHeader("X-User-Id") Long userId) {
+        return R.ok(userSettingsService.listActiveIntegrationPackages(userId));
+    }
+
+    @GetMapping("/integration-packages/{id}")
+    public R<IntegrationPackageVO> getIntegrationPackage(@RequestHeader("X-User-Id") Long userId,
+                                                       @PathVariable String id) {
+        return R.ok(userSettingsService.getOwnedIntegrationPackage(userId, id));
+    }
+
+    @PostMapping("/integration-packages")
+    public R<IntegrationPackageVO> createIntegrationPackage(@RequestHeader("X-User-Id") Long userId,
+                                                            @Valid @RequestBody IntegrationPackageUpsertRequest request) {
+        return R.ok(userSettingsService.createOwnedIntegrationPackage(userId, request));
+    }
+
+    @PutMapping("/integration-packages/{id}")
+    public R<IntegrationPackageVO> updateIntegrationPackage(@RequestHeader("X-User-Id") Long userId,
+                                                            @PathVariable String id,
+                                                            @Valid @RequestBody IntegrationPackageUpsertRequest request) {
+        return R.ok(userSettingsService.updateOwnedIntegrationPackage(userId, id, request));
+    }
+
+    @DeleteMapping("/integration-packages/{id}")
+    public R<Void> deleteIntegrationPackage(@RequestHeader("X-User-Id") Long userId, @PathVariable String id) {
+        userSettingsService.deleteOwnedIntegrationPackage(userId, id);
+        return R.ok();
+    }
+
     @PostMapping("/api-keys")
     public R<ApiKeyResponse> createApiKey(@RequestHeader("X-User-Id") Long userId, @Valid @RequestBody ApiKeyCreateRequest request) {
         return R.ok(userSettingsService.createApiKey(userId, request));
@@ -96,6 +130,14 @@ public class UserSettingsController {
                                            @RequestBody ApiKeyRevokeRequest body,
                                            HttpServletRequest request) {
         return R.ok(userSettingsService.rotateApiKey(userId, id, body, clientIpResolver.resolve(request)));
+    }
+
+    @PatchMapping("/api-keys/{id}/integration-package")
+    public R<Void> patchApiKeyIntegrationPackage(@RequestHeader("X-User-Id") Long userId,
+                                                 @PathVariable String id,
+                                                 @RequestBody ApiKeyIntegrationPackagePatchRequest body) {
+        userSettingsService.patchApiKeyIntegrationPackage(userId, id, body != null ? body : new ApiKeyIntegrationPackagePatchRequest());
+        return R.ok();
     }
 
     @GetMapping("/stats")

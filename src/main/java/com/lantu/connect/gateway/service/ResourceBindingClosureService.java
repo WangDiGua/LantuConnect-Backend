@@ -20,7 +20,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class ResourceBindingClosureService {
 
-    private static final String BINDING_SQL_TYPES = "'agent_depends_mcp','agent_depends_skill','mcp_depends_skill'";
+    private static final String BINDING_SQL_TYPES = "'agent_depends_mcp','skill_depends_mcp'";
 
     private final JdbcTemplate jdbcTemplate;
 

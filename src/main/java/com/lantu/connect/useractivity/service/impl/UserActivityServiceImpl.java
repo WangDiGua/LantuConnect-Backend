@@ -162,7 +162,7 @@ public class UserActivityServiceImpl implements UserActivityService {
             r.put("displayName", row.get("display_name"));
             r.put("status", row.get("status"));
             r.put("packFormat", row.get("skill_type"));
-            r.put("agentType", "hosted_skill");
+            r.put("agentType", "context_skill");
             r.put("updateTime", toDateTime(row.get("update_time")));
             out.add(r);
         }
@@ -266,7 +266,7 @@ public class UserActivityServiceImpl implements UserActivityService {
                 .agentName(str(row.get("resource_code")))
                 .displayName(str(row.get("display_name")))
                 .description(str(row.get("description")))
-                .agentType("hosted_skill")
+                .agentType("context_skill")
                 .packFormat(packFmt)
                 .status(str(row.get("status")))
                 .source(source)

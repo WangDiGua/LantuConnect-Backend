@@ -91,8 +91,9 @@ public class ResourceRegistryController {
                                                 @RequestParam(required = false) String sortBy,
                                                 @RequestParam(required = false) String sortOrder,
                                                 @RequestParam(defaultValue = "1") Integer page,
-                                                @RequestParam(defaultValue = "20") Integer pageSize) {
-        return R.ok(resourceRegistryService.pageMine(userId, resourceType, status, keyword, sortBy, sortOrder, page, pageSize));
+                                                @RequestParam(defaultValue = "20") Integer pageSize,
+                                                @RequestParam(required = false) Long forResourceId) {
+        return R.ok(resourceRegistryService.pageMine(userId, resourceType, status, keyword, sortBy, sortOrder, page, pageSize, forResourceId));
     }
 
     @GetMapping("/{id}")

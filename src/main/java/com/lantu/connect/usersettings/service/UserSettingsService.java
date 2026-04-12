@@ -1,9 +1,13 @@
 package com.lantu.connect.usersettings.service;
 
 import com.lantu.connect.gateway.dto.ResourceGrantVO;
+import com.lantu.connect.integrationpackage.dto.IntegrationPackageOptionVO;
+import com.lantu.connect.integrationpackage.dto.IntegrationPackageUpsertRequest;
+import com.lantu.connect.integrationpackage.dto.IntegrationPackageVO;
 import com.lantu.connect.usersettings.dto.InvokeEligibilityRequest;
 import com.lantu.connect.usersettings.dto.InvokeEligibilityResponse;
 import com.lantu.connect.usermgmt.dto.ApiKeyCreateRequest;
+import com.lantu.connect.usermgmt.dto.ApiKeyIntegrationPackagePatchRequest;
 import com.lantu.connect.usermgmt.dto.ApiKeyResponse;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import com.lantu.connect.usersettings.dto.ApiKeyRevokeRequest;
@@ -27,7 +31,19 @@ public interface UserSettingsService {
 
     List<ApiKey> listApiKeys(Long userId);
 
+    List<IntegrationPackageOptionVO> listActiveIntegrationPackages(Long userId);
+
+    IntegrationPackageVO getOwnedIntegrationPackage(Long userId, String packageId);
+
+    IntegrationPackageVO createOwnedIntegrationPackage(Long userId, IntegrationPackageUpsertRequest request);
+
+    IntegrationPackageVO updateOwnedIntegrationPackage(Long userId, String packageId, IntegrationPackageUpsertRequest request);
+
+    void deleteOwnedIntegrationPackage(Long userId, String packageId);
+
     ApiKeyResponse createApiKey(Long userId, ApiKeyCreateRequest request);
+
+    void patchApiKeyIntegrationPackage(Long userId, String apiKeyId, ApiKeyIntegrationPackagePatchRequest request);
 
     void deleteApiKey(Long userId, String apiKeyId);
 

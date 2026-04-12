@@ -23,9 +23,13 @@ public interface ResourceRegistryService {
 
     ResourceManageVO deprecate(Long operatorUserId, Long resourceId);
 
+    /**
+     * @param forResourceId 若提供，则仅返回该资源创建者（created_by）登记的资源，且要求操作者可管理该资源；
+     *                        用于 Agent/Skill 绑定 MCP 等场景与后端绑定校验一致；为 {@code null} 时按操作者本人过滤。
+     */
     PageResult<ResourceManageVO> pageMine(Long operatorUserId, String resourceType, String status,
                                           String keyword, String sortBy, String sortOrder,
-                                          Integer page, Integer pageSize);
+                                          Integer page, Integer pageSize, Long forResourceId);
 
     ResourceVersionVO createVersion(Long operatorUserId, Long resourceId, ResourceVersionCreateRequest request);
 

@@ -56,11 +56,11 @@ class ResourceRegistrySkillSubmitForAuditTest {
     private ResourceRegistryServiceImpl resourceRegistryService;
 
     @Test
-    void submitForAuditAllowsHostedSkillWhenPromptPresent() {
+    void submitForAuditAllowsContextSkillWhenPromptPresent() {
         long uid = 1L;
         long rid = 99L;
         when(platformRoleMapper.selectRolesByUserId(uid)).thenReturn(List.of());
-        stubResourceQueries(rid, uid, "hosted", "You are a helpful assistant.");
+        stubResourceQueries(rid, uid, "context", "You are a helpful assistant.");
         when(jdbcTemplate.queryForObject(contains("t_audit_item"), eq(Integer.class), any(), any())).thenReturn(0);
         doReturn(1).when(jdbcTemplate).update(anyString(), any(Object[].class));
         when(jdbcTemplate.queryForList(anyString())).thenReturn(List.of());

@@ -2,7 +2,9 @@ package com.lantu.connect.gateway.controller;
 
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.R;
+import com.lantu.connect.common.config.GatewayInvokeProperties;
 import com.lantu.connect.gateway.dto.AggregatedCapabilityToolsVO;
+import com.lantu.connect.gateway.dto.GatewayIntegrationHintsVO;
 import com.lantu.connect.gateway.dto.InvokeRequest;
 import com.lantu.connect.gateway.dto.InvokeResponse;
 import com.lantu.connect.dashboard.dto.ExploreHubData;
@@ -100,7 +102,10 @@ public class ResourceCatalogController {
         return R.ok(unifiedGatewayService.getByTypeAndId(type, id, include, apiKey, userId));
     }
 
-    @Operation(summary = "绑定闭包内 MCP 工具聚合（可选 BFF）", description = "自某入口资源（如 agent）沿绑定边展开闭包，对各 MCP 调用 tools/list，合并为 OpenAI tools 列表并返回 `routes` 映射；须 X-Api-Key，且对入口资源 resolve、对各 MCP invoke 均在 scope 内。")
+    @Operation(summary = "绑定闭包内 MCP 工具聚合（可选 BFF）",
+            description = "自某入口资源（如 agent、mcp）沿绑定边无向展开闭包，对闭包内 MCP 依次 tools/list，合并为 OpenAI tools + routes + warnings。"
+                    + " 与「外部门户编排」解耦：集成方若仅需拉齐绑定 MCP 工具，应使用本接口而非在客户端手写多 MCP 调用。"
+                    + " 须 X-Api-Key；入口与各 MCP 均须具备 resolve/invoke scope。软上限见 lantu.gateway.capabilities。")
     @SecurityRequirement(name = OpenApiConfiguration.API_KEY_SECURITY)
     @GetMapping("/catalog/capabilities/tools")
     public R<AggregatedCapabilityToolsVO> aggregatedTools(
@@ -111,6 +116,31 @@ public class ResourceCatalogController {
         Long userId = gatewayCallerResolver.resolveTrustedUserIdOrNull();
         ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
         return R.ok(unifiedGatewayService.aggregatedCapabilityTools(userId, traceId, apiKey, entryResourceType, entryResourceId));
+    }
+
+    @Operation(summary = "网关集成提示（运行时开关与聚合上限）", description = "供控制台展示；须登录或 X-Api-Key。不含密钥。")
+    @GetMapping("/catalog/gateway/integration-hints")
+    public R<GatewayIntegrationHintsVO> gatewayIntegrationHints(
+            @RequestHeader(value = "X-Api-Key", required = false) @Parameter(description = "可选，与登录二选一") String apiKeyRaw) {
+        Long userId = gatewayCallerResolver.resolveTrustedUserIdOrNull();
+        ApiKey apiKey = apiKeyScopeService.authenticateOrNull(apiKeyRaw);
+        if (userId == null && apiKey == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "须登录或提供有效的 X-Api-Key");
+        }
+        GatewayInvokeProperties g = runtimeAppConfigService.gateway();
+        GatewayInvokeProperties.BindingExpansion be = g.getBindingExpansion();
+        GatewayInvokeProperties.Capabilities cap = g.getCapabilities();
+        return R.ok(GatewayIntegrationHintsVO.builder()
+                .bindingExpansion(GatewayIntegrationHintsVO.BindingExpansionHint.builder()
+                        .enabled(be.isEnabled())
+                        .agent(be.isAgent())
+                        .mergeActiveSkillMcps(be.isMergeActiveSkillMcps())
+                        .build())
+                .capabilities(GatewayIntegrationHintsVO.CapabilitiesHint.builder()
+                        .maxMcpsPerAggregate(cap.getMaxMcpsPerAggregate())
+                        .maxToolsPerResponse(cap.getMaxToolsPerResponse())
+                        .build())
+                .build());
     }
 
     @Operation(summary = "资源统计（评分等）")
@@ -132,9 +162,10 @@ public class ResourceCatalogController {
     }
 
     @Operation(summary = "统一调用入口",
-            description = "须提供有效 X-Api-Key。`skill`：仅 `execution_mode=hosted` 且已发布可走本接口。`mcp`：若登记了前置 Hosted Skill，网关内先归一化 JSON 再转发上游。"
+            description = "须提供有效 X-Api-Key。**不支持** `resourceType=skill`（Skill 仅通过目录 GET / POST resolve 拉取规范与绑定；请 invoke MCP）。"
                     + " **绑定展开**：对 `agent` 且存在 `agent_depends_mcp` 时，网关在转发上游前对绑定 MCP 执行 `tools/list`，将 `openAiTools`/`routes`/`warnings` 及入口 `entry` 写入请求 JSON 的 `_lantu.bindingExpansion`（可与 `lantu.gateway.binding-expansion` 开关关闭）。"
-                    + " 对 **hosted `skill`** 且存在指向该技能的 `mcp_depends_skill` 时，同样写入上述结构（逆查 MCP 列表）。**单独 invoke `mcp` 不会**反向拉起 Agent。"
+                    + " **activeSkillIds**：invoke `agent` 时可在 `payload` 顶层或 `payload._lantu` 提供 `activeSkillIds`（资源 id 数组或逗号分隔字符串）；若开启 `lantu.gateway.binding-expansion.merge-active-skill-mcps`，将各 Skill 上 `skill_depends_mcp` 与 Agent 自身绑定 MCP **去重合并**后一并写入 `_lantu.bindingExpansion`；无效 id 跳过并在 `warnings` 中说明。"
+                    + " **单独 invoke `mcp` 不会**反向拉起 Agent。"
                     + " Key 须对被展开的各 MCP 具备 invoke scope。")
     @SecurityRequirement(name = OpenApiConfiguration.API_KEY_SECURITY)
     @PostMapping("/invoke")

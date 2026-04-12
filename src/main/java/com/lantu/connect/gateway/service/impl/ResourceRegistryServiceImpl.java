@@ -17,7 +17,6 @@ import com.lantu.connect.gateway.dto.ResourceVersionVO;
 import com.lantu.connect.gateway.model.ResourceAccessPolicy;
 import com.lantu.connect.gateway.protocol.McpOutboundHeaderBuilder;
 import com.lantu.connect.gateway.protocol.ProtocolInvokerRegistry;
-import com.lantu.connect.gateway.service.HostedSkillExecutionService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
@@ -55,10 +54,10 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private static final Set<String> APP_EMBED_TYPES = Set.of("iframe", "redirect", "micro_frontend");
 
-    /** skill.skill_type：仅 hosted。 */
-    private static final Set<String> SKILL_TYPE_ALLOWED = Set.of("hosted_v1");
+    /** skill.skill_type：仅 context_v1。 */
+    private static final Set<String> SKILL_TYPE_ALLOWED = Set.of("context_v1");
 
-    private static final String SKILL_EXEC_HOSTED = HostedSkillExecutionService.EXECUTION_HOSTED;
+    private static final String SKILL_EXEC_CONTEXT = "context";
 
     /** 含 service_detail_md 列的扩展表（用于统一 upsert / 读取逻辑） */
     private static final Set<String> SERVICE_DETAIL_EXT_TABLES = Set.of(
@@ -199,7 +198,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             String type = normalizeType(row.resourceType());
             validateByType(type, merged);
             ensureUniqueCode(type, merged.getResourceCode(), resourceId);
-            ensureSkillHostedReadyForSubmit(merged);
+            ensureSkillReadyForSubmit(merged);
             ResourceAccessPolicy ap = resolveAccessPolicyForUpdate(resourceId, merged);
             Map<String, Object> freezeSnap = buildSnapshot(type, merged, ap);
             String tier = readWorkingDraftTier(resourceId);
@@ -266,12 +265,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "技能扩展信息不存在");
             }
             String emRaw = stringValue(se.get(0).get("execution_mode"));
-            String em = StringUtils.hasText(emRaw) ? emRaw.trim().toLowerCase(Locale.ROOT) : SKILL_EXEC_HOSTED;
-            if (!SKILL_EXEC_HOSTED.equals(em)) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "Skill 须为 hosted 模式");
+            String em = StringUtils.hasText(emRaw) ? emRaw.trim().toLowerCase(Locale.ROOT) : SKILL_EXEC_CONTEXT;
+            if (!SKILL_EXEC_CONTEXT.equals(em)) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "Skill 须为 context 模式");
             }
             if (!StringUtils.hasText(stringValue(se.get(0).get("hosted_system_prompt")))) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "请先填写 hostedSystemPrompt 后再提审");
+                throw new BusinessException(ResultCode.PARAM_ERROR, "请先填写 contextPrompt（规范正文）后再提审");
             }
         }
 
@@ -438,22 +437,31 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     @Override
     public PageResult<ResourceManageVO> pageMine(Long operatorUserId, String resourceType, String status,
                                                  String keyword, String sortBy, String sortOrder,
-                                                 Integer page, Integer pageSize) {
+                                                 Integer page, Integer pageSize, Long forResourceId) {
         ensureAuthenticated(operatorUserId);
         int p = page == null ? 1 : Math.max(1, page);
         int ps = pageSize == null ? 20 : Math.min(100, Math.max(1, pageSize));
         int offset = (p - 1) * ps;
         String normalizedType = StringUtils.hasText(resourceType) ? normalizeType(resourceType) : null;
-        boolean admin = isAdmin(operatorUserId);
+
+        Long listOwnerUserId = operatorUserId;
+        if (forResourceId != null) {
+            requireManageableResource(operatorUserId, forResourceId);
+            Long owner = jdbcTemplate.queryForObject(
+                    "SELECT created_by FROM t_resource WHERE id = ? AND deleted = 0 LIMIT 1",
+                    Long.class, forResourceId);
+            if (owner == null) {
+                throw new BusinessException(ResultCode.NOT_FOUND, "资源不存在");
+            }
+            listOwnerUserId = owner;
+        }
 
         List<Object> countArgs = new ArrayList<>();
         List<Object> listArgs = new ArrayList<>();
         StringBuilder where = new StringBuilder(" WHERE deleted = 0 ");
-        if (!admin) {
-            where.append(" AND created_by = ? ");
-            countArgs.add(operatorUserId);
-            listArgs.add(operatorUserId);
-        }
+        where.append(" AND created_by = ? ");
+        countArgs.add(listOwnerUserId);
+        listArgs.add(listOwnerUserId);
         if (StringUtils.hasText(normalizedType)) {
             where.append(" AND resource_type = ? ");
             countArgs.add(normalizedType);
@@ -812,7 +820,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 }
             }
             case "skill" -> {
-                if (!trimEq(req.getHostedSystemPrompt(), base.getHostedSystemPrompt())) {
+                if (!trimEq(req.getContextPrompt(), base.getContextPrompt())) {
                     return AUDIT_TIER_HIGH;
                 }
             }
@@ -882,7 +890,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         vo.setAccessPolicy(r.getAccessPolicy());
         vo.setRelatedResourceIds(r.getRelatedResourceIds() == null ? null : new ArrayList<>(r.getRelatedResourceIds()));
         vo.setRelatedMcpResourceIds(r.getRelatedMcpResourceIds() == null ? null : new ArrayList<>(r.getRelatedMcpResourceIds()));
-        vo.setRelatedPreSkillResourceIds(r.getRelatedPreSkillResourceIds() == null ? null : new ArrayList<>(r.getRelatedPreSkillResourceIds()));
         vo.setAgentType(r.getAgentType());
         vo.setMode(r.getMode());
         vo.setSpec(r.getSpec() == null || r.getSpec().isEmpty() ? null : shallowCopyMap(r.getSpec()));
@@ -902,13 +909,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 ? null
                 : shallowCopyMap(r.getParametersSchema()));
         vo.setExecutionMode(r.getExecutionMode());
-        vo.setHostedSystemPrompt(r.getHostedSystemPrompt());
-        vo.setHostedUserTemplate(r.getHostedUserTemplate());
-        vo.setHostedDefaultModel(r.getHostedDefaultModel());
-        vo.setHostedOutputSchema(r.getHostedOutputSchema() == null || r.getHostedOutputSchema().isEmpty()
-                ? null
-                : shallowCopyMap(r.getHostedOutputSchema()));
-        vo.setHostedTemperature(r.getHostedTemperature());
+        vo.setContextPrompt(r.getContextPrompt());
         vo.setEndpoint(r.getEndpoint());
         vo.setProtocol(r.getProtocol());
         vo.setAuthType(r.getAuthType());
@@ -1093,9 +1094,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         if (vo.getRelatedMcpResourceIds() != null) {
             req.setRelatedMcpResourceIds(new ArrayList<>(vo.getRelatedMcpResourceIds()));
         }
-        if (vo.getRelatedPreSkillResourceIds() != null) {
-            req.setRelatedPreSkillResourceIds(new ArrayList<>(vo.getRelatedPreSkillResourceIds()));
-        }
         req.setAgentType(vo.getAgentType());
         req.setMode(vo.getMode());
         req.setSpec(vo.getSpec() == null || vo.getSpec().isEmpty() ? null : shallowCopyMap(vo.getSpec()));
@@ -1115,13 +1113,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 ? null
                 : shallowCopyMap(vo.getParametersSchema()));
         req.setExecutionMode(vo.getExecutionMode());
-        req.setHostedSystemPrompt(vo.getHostedSystemPrompt());
-        req.setHostedUserTemplate(vo.getHostedUserTemplate());
-        req.setHostedDefaultModel(vo.getHostedDefaultModel());
-        req.setHostedOutputSchema(vo.getHostedOutputSchema() == null || vo.getHostedOutputSchema().isEmpty()
-                ? null
-                : shallowCopyMap(vo.getHostedOutputSchema()));
-        req.setHostedTemperature(vo.getHostedTemperature());
+        req.setContextPrompt(vo.getContextPrompt());
         req.setEndpoint(vo.getEndpoint());
         req.setProtocol(vo.getProtocol());
         req.setAuthType(vo.getAuthType());
@@ -1162,6 +1154,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         if (current.getRelatedResourceIds() != null) {
             req.setRelatedResourceIds(new ArrayList<>(current.getRelatedResourceIds()));
         }
+        if (current.getRelatedMcpResourceIds() != null) {
+            req.setRelatedMcpResourceIds(new ArrayList<>(current.getRelatedMcpResourceIds()));
+        }
         if (snap.containsKey("resourceCode") && StringUtils.hasText(stringValue(snap.get("resourceCode")))) {
             req.setResourceCode(stringValue(snap.get("resourceCode")).trim());
         }
@@ -1200,20 +1195,10 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 if (snap.containsKey("executionMode") && StringUtils.hasText(stringValue(snap.get("executionMode")))) {
                     req.setExecutionMode(stringValue(snap.get("executionMode")).trim().toLowerCase(Locale.ROOT));
                 }
-                if (snap.containsKey("hostedSystemPrompt")) {
-                    req.setHostedSystemPrompt(stringValue(snap.get("hostedSystemPrompt")));
-                }
-                if (snap.containsKey("hostedUserTemplate")) {
-                    req.setHostedUserTemplate(stringValue(snap.get("hostedUserTemplate")));
-                }
-                if (snap.containsKey("hostedDefaultModel")) {
-                    req.setHostedDefaultModel(stringValue(snap.get("hostedDefaultModel")));
-                }
-                if (snap.containsKey("hostedOutputSchema")) {
-                    req.setHostedOutputSchema(shallowCopyMap(parseJsonMap(snap.get("hostedOutputSchema"))));
-                }
-                if (snap.containsKey("hostedTemperature")) {
-                    req.setHostedTemperature(doubleObject(snap.get("hostedTemperature")));
+                if (snap.containsKey("contextPrompt")) {
+                    req.setContextPrompt(stringValue(snap.get("contextPrompt")));
+                } else if (snap.containsKey("hostedSystemPrompt")) {
+                    req.setContextPrompt(stringValue(snap.get("hostedSystemPrompt")));
                 }
                 if (snap.containsKey("parametersSchema")) {
                     req.setParametersSchema(shallowCopyMap(parseJsonMap(snap.get("parametersSchema"))));
@@ -1653,16 +1638,16 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     private void upsertSkillExt(Long resourceId, ResourceUpsertRequest request) {
         String manifestJson = writeJson(defaultMap(request.getManifest()));
         String serviceMd = resolveExtServiceDetailMd("t_resource_skill_ext", resourceId, request.getServiceDetailMd());
-        String outSchema = writeJson(defaultMap(request.getHostedOutputSchema()));
+        String ctx = request.getContextPrompt() == null ? "" : request.getContextPrompt();
         int updated = jdbcTemplate.update("""
                         UPDATE t_resource_skill_ext
-                        SET skill_type = ?, execution_mode = 'hosted',
+                        SET skill_type = ?, execution_mode = 'context',
                             manifest_json = CAST(? AS JSON), entry_doc = ?,
                             mode = NULL, parent_resource_id = NULL, display_template = NULL,
                             spec_json = CAST(? AS JSON), parameters_schema = CAST(? AS JSON), is_public = ?, max_concurrency = NULL,
                             service_detail_md = ?,
-                            hosted_system_prompt = ?, hosted_user_template = ?, hosted_default_model = ?,
-                            hosted_output_schema = CAST(? AS JSON), hosted_temperature = ?
+                            hosted_system_prompt = ?, hosted_user_template = NULL, hosted_default_model = NULL,
+                            hosted_output_schema = CAST('{}' AS JSON), hosted_temperature = NULL
                         WHERE resource_id = ?
                         """,
                 request.getSkillType().trim().toLowerCase(Locale.ROOT),
@@ -1672,16 +1657,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 writeJson(defaultMap(request.getParametersSchema())),
                 toBoolNumber(request.getIsPublic()),
                 serviceMd,
-                request.getHostedSystemPrompt(),
-                request.getHostedUserTemplate(),
-                request.getHostedDefaultModel(),
-                outSchema,
-                request.getHostedTemperature(),
+                ctx,
                 resourceId);
         if (updated == 0) {
             jdbcTemplate.update("""
                             INSERT INTO t_resource_skill_ext(resource_id, skill_type, execution_mode, manifest_json, entry_doc, mode, parent_resource_id, display_template, spec_json, parameters_schema, is_public, max_concurrency, service_detail_md, hosted_system_prompt, hosted_user_template, hosted_default_model, hosted_output_schema, hosted_temperature)
-                            VALUES(?, ?, 'hosted', CAST(? AS JSON), ?, NULL, NULL, NULL, CAST(? AS JSON), CAST(? AS JSON), ?, NULL, ?, ?, ?, ?, CAST(? AS JSON), ?)
+                            VALUES(?, ?, 'context', CAST(? AS JSON), ?, NULL, NULL, NULL, CAST(? AS JSON), CAST(? AS JSON), ?, NULL, ?, ?, NULL, NULL, CAST('{}' AS JSON), NULL)
                             """,
                     resourceId,
                     request.getSkillType().trim().toLowerCase(Locale.ROOT),
@@ -1691,11 +1672,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     writeJson(defaultMap(request.getParametersSchema())),
                     toBoolNumber(request.getIsPublic()),
                     serviceMd,
-                    request.getHostedSystemPrompt(),
-                    request.getHostedUserTemplate(),
-                    request.getHostedDefaultModel(),
-                    outSchema,
-                    request.getHostedTemperature());
+                    ctx);
         }
     }
 
@@ -1818,51 +1795,55 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
     }
 
-    private void normalizeHostedSkillFields(ResourceUpsertRequest request) {
-        if (StringUtils.hasText(request.getHostedUserTemplate())) {
-            request.setHostedUserTemplate(request.getHostedUserTemplate().trim());
-        }
-        if (StringUtils.hasText(request.getHostedDefaultModel())) {
-            request.setHostedDefaultModel(request.getHostedDefaultModel().trim());
-        }
-    }
-
-    private void validateMcpPreSkillsAreHosted(List<Long> skillIds) {
-        if (skillIds == null || skillIds.isEmpty()) {
+    /**
+     * Skill 绑定的 MCP 须已存在、已发布、类型为 mcp，且与 Skill 同一创建者。
+     */
+    private void validateSkillBoundMcpsPublished(List<Long> mcpIds, Long ownerUserId) {
+        if (mcpIds == null || mcpIds.isEmpty()) {
             return;
         }
-        for (Long sid : skillIds) {
-            if (sid == null) {
+        if (ownerUserId == null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "无法校验 Skill 绑定 MCP：缺少创建者");
+        }
+        for (Long mid : mcpIds) {
+            if (mid == null || mid <= 0) {
                 continue;
             }
             List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                            SELECT COALESCE(NULLIF(TRIM(e.execution_mode), ''), 'hosted') AS em
-                            FROM t_resource_skill_ext e
-                            INNER JOIN t_resource r ON r.id = e.resource_id AND r.deleted = 0 AND r.resource_type = 'skill'
-                            WHERE e.resource_id = ? LIMIT 1
+                            SELECT r.resource_type, r.status, r.created_by
+                            FROM t_resource r
+                            WHERE r.id = ? AND r.deleted = 0
+                            LIMIT 1
                             """,
-                    sid);
+                    mid);
             if (rows.isEmpty()) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "MCP 绑定 Skill 不存在: " + sid);
+                throw new BusinessException(ResultCode.PARAM_ERROR, "绑定的 MCP 不存在: " + mid);
             }
-            String mode = stringValue(rows.get(0).get("em")).trim().toLowerCase(Locale.ROOT);
-            if (!SKILL_EXEC_HOSTED.equals(mode)) {
-                throw new BusinessException(ResultCode.PARAM_ERROR,
-                        "MCP 前置 Skill 必须为 hosted 模式（execution_mode=hosted）: " + sid);
+            Map<String, Object> row = rows.get(0);
+            if (!"mcp".equalsIgnoreCase(stringValue(row.get("resource_type")))) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "绑定目标须为 MCP 资源: " + mid);
+            }
+            if (!ResourceLifecycleStateMachine.STATUS_PUBLISHED.equals(
+                    ResourceLifecycleStateMachine.normalizeStatus(stringValue(row.get("status"))))) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "绑定的 MCP 须为已发布（published）状态: " + mid);
+            }
+            Long cb = longValue(row.get("created_by"));
+            if (cb == null || !cb.equals(ownerUserId)) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "仅能绑定本人登记的 MCP: " + mid);
             }
         }
     }
 
-    private void ensureSkillHostedReadyForSubmit(ResourceUpsertRequest merged) {
+    private void ensureSkillReadyForSubmit(ResourceUpsertRequest merged) {
         if (merged == null || !"skill".equalsIgnoreCase(normalizeType(merged.getResourceType()))) {
             return;
         }
-        String exec = merged.getExecutionMode() == null ? SKILL_EXEC_HOSTED : merged.getExecutionMode().trim().toLowerCase(Locale.ROOT);
-        if (!SKILL_EXEC_HOSTED.equals(exec)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Skill 须为 hosted 模式");
+        String exec = merged.getExecutionMode() == null ? SKILL_EXEC_CONTEXT : merged.getExecutionMode().trim().toLowerCase(Locale.ROOT);
+        if (!SKILL_EXEC_CONTEXT.equals(exec)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Skill 须为 context 模式");
         }
-        if (!StringUtils.hasText(merged.getHostedSystemPrompt())) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "hostedSystemPrompt 不能为空");
+        if (!StringUtils.hasText(merged.getContextPrompt())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "contextPrompt（规范正文）不能为空");
         }
     }
 
@@ -1881,20 +1862,19 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 }
             }
             case "skill" -> {
-                String exec = request.getExecutionMode() == null ? SKILL_EXEC_HOSTED : request.getExecutionMode().trim().toLowerCase(Locale.ROOT);
-                if (!SKILL_EXEC_HOSTED.equals(exec)) {
-                    throw new BusinessException(ResultCode.PARAM_ERROR, "平台 Skill 仅支持 hosted 模式（Anthropic zip 技能包已下线）");
+                String exec = request.getExecutionMode() == null ? SKILL_EXEC_CONTEXT : request.getExecutionMode().trim().toLowerCase(Locale.ROOT);
+                if (!SKILL_EXEC_CONTEXT.equals(exec)) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR, "平台 Skill 仅支持 context 模式");
                 }
-                requireText(request.getHostedSystemPrompt(), "hosted 模式须填写 hostedSystemPrompt");
+                requireText(request.getContextPrompt(), "须填写 contextPrompt（规范正文）");
                 if (StringUtils.hasText(request.getSkillType())) {
                     String st = request.getSkillType().trim().toLowerCase(Locale.ROOT);
                     if (!SKILL_TYPE_ALLOWED.contains(st)) {
-                        throw new BusinessException(ResultCode.PARAM_ERROR, "skillType 仅支持 hosted_v1");
+                        throw new BusinessException(ResultCode.PARAM_ERROR, "skillType 仅支持 context_v1");
                     }
                 }
-                request.setSkillType("hosted_v1");
-                request.setExecutionMode(SKILL_EXEC_HOSTED);
-                normalizeHostedSkillFields(request);
+                request.setSkillType("context_v1");
+                request.setExecutionMode(SKILL_EXEC_CONTEXT);
                 if (StringUtils.hasText(request.getEntryDoc())) {
                     request.setEntryDoc(request.getEntryDoc().trim());
                 }
@@ -1925,7 +1905,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                                 "oauth2_client 需要 auth_config.clientSecret 或 clientSecretRef");
                     }
                 }
-                validateMcpPreSkillsAreHosted(request.getRelatedPreSkillResourceIds());
             }
             case "app" -> {
                 requireText(request.getAppUrl(), "appUrl 不能为空");
@@ -2119,14 +2098,10 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             }
             case "skill" -> {
                 snapshot.put("packFormat", request.getSkillType().trim().toLowerCase(Locale.ROOT));
-                snapshot.put("invokeType", "hosted_llm");
+                snapshot.put("invokeType", "portal_context");
                 snapshot.put("endpoint", null);
-                snapshot.put("executionMode", SKILL_EXEC_HOSTED);
-                snapshot.put("hostedSystemPrompt", request.getHostedSystemPrompt());
-                snapshot.put("hostedUserTemplate", request.getHostedUserTemplate());
-                snapshot.put("hostedDefaultModel", request.getHostedDefaultModel());
-                snapshot.put("hostedOutputSchema", defaultMap(request.getHostedOutputSchema()));
-                snapshot.put("hostedTemperature", request.getHostedTemperature());
+                snapshot.put("executionMode", SKILL_EXEC_CONTEXT);
+                snapshot.put("contextPrompt", request.getContextPrompt());
                 snapshot.put("parametersSchema", defaultMap(request.getParametersSchema()));
                 Map<String, Object> spec = new LinkedHashMap<>();
                 if (request.getManifest() != null && !request.getManifest().isEmpty()) {
@@ -2216,21 +2191,15 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             case "skill" -> {
                 Map<String, Object> ext = jdbcTemplate.queryForList("""
                                 SELECT skill_type, execution_mode, manifest_json, entry_doc, spec_json, service_detail_md,
-                                hosted_system_prompt, hosted_user_template, hosted_default_model, hosted_output_schema, hosted_temperature, parameters_schema
+                                hosted_system_prompt, parameters_schema
                                 FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
                                 """, resourceId)
                         .stream().findFirst().orElse(Map.of());
                 snapshot.put("packFormat", stringValue(ext.get("skill_type")));
-                snapshot.put("invokeType", "hosted_llm");
+                snapshot.put("invokeType", "portal_context");
                 snapshot.put("endpoint", null);
-                snapshot.put("executionMode", SKILL_EXEC_HOSTED);
-                snapshot.put("hostedSystemPrompt", stringValue(ext.get("hosted_system_prompt")));
-                snapshot.put("hostedUserTemplate", stringValue(ext.get("hosted_user_template")));
-                snapshot.put("hostedDefaultModel", stringValue(ext.get("hosted_default_model")));
-                snapshot.put("hostedOutputSchema", parseJsonMap(ext.get("hosted_output_schema")));
-                if (ext.get("hosted_temperature") != null) {
-                    snapshot.put("hostedTemperature", doubleObject(ext.get("hosted_temperature")));
-                }
+                snapshot.put("executionMode", SKILL_EXEC_CONTEXT);
+                snapshot.put("contextPrompt", stringValue(ext.get("hosted_system_prompt")));
                 snapshot.put("parametersSchema", parseJsonMap(ext.get("parameters_schema")));
                 Map<String, Object> spec = new LinkedHashMap<>();
                 Map<String, Object> manifest = parseJsonMap(ext.get("manifest_json"));
@@ -2373,19 +2342,15 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
         switch (type) {
             case "agent" -> {
-                List<Long> skills = loadRelationTargetIds(resourceId, "agent_depends_skill");
-                if (!skills.isEmpty()) {
-                    vo.setRelatedResourceIds(skills);
-                }
                 List<Long> mcps = loadRelationTargetIds(resourceId, "agent_depends_mcp");
                 if (!mcps.isEmpty()) {
                     vo.setRelatedMcpResourceIds(mcps);
                 }
             }
-            case "mcp" -> {
-                List<Long> preSkills = loadRelationTargetIds(resourceId, "mcp_depends_skill");
-                if (!preSkills.isEmpty()) {
-                    vo.setRelatedPreSkillResourceIds(preSkills);
+            case "skill" -> {
+                List<Long> skillMcps = loadRelationTargetIds(resourceId, "skill_depends_mcp");
+                if (!skillMcps.isEmpty()) {
+                    vo.setRelatedMcpResourceIds(skillMcps);
                 }
             }
             case "app" -> {
@@ -2433,7 +2398,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         var rows = jdbcTemplate.queryForList("""
                         SELECT skill_type, execution_mode, manifest_json, entry_doc, mode, parent_resource_id, display_template, spec_json, parameters_schema, is_public, max_concurrency,
                                service_detail_md,
-                               hosted_system_prompt, hosted_user_template, hosted_default_model, hosted_output_schema, hosted_temperature
+                               hosted_system_prompt
                         FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
                         """,
                 resourceId);
@@ -2449,12 +2414,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         vo.setIsPublic(boolObject(r.get("is_public")));
         vo.setServiceDetailMd(stringValue(r.get("service_detail_md")));
         String em = stringValue(r.get("execution_mode"));
-        vo.setExecutionMode(StringUtils.hasText(em) ? em.trim().toLowerCase(Locale.ROOT) : SKILL_EXEC_HOSTED);
-        vo.setHostedSystemPrompt(stringValue(r.get("hosted_system_prompt")));
-        vo.setHostedUserTemplate(stringValue(r.get("hosted_user_template")));
-        vo.setHostedDefaultModel(stringValue(r.get("hosted_default_model")));
-        vo.setHostedOutputSchema(parseJsonMap(r.get("hosted_output_schema")));
-        vo.setHostedTemperature(doubleObject(r.get("hosted_temperature")));
+        vo.setExecutionMode(StringUtils.hasText(em) ? em.trim().toLowerCase(Locale.ROOT) : SKILL_EXEC_CONTEXT);
+        vo.setContextPrompt(stringValue(r.get("hosted_system_prompt")));
         vo.setMode(null);
         vo.setParentResourceId(null);
         vo.setDisplayTemplate(null);
@@ -2762,18 +2723,15 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         String rt = normalizeType(resourceType);
         Long bindingOwnerUserId = requireResourceCreatorForBindings(resourceId);
         if ("agent".equals(rt)) {
-            if (request.getRelatedResourceIds() != null) {
-                assertBindingTargetsOwnedBy(resourceId, bindingOwnerUserId, request.getRelatedResourceIds(), "skill");
-                replaceRelations(resourceId, "agent_depends_skill", request.getRelatedResourceIds());
-            }
             if (request.getRelatedMcpResourceIds() != null) {
                 assertBindingTargetsOwnedBy(resourceId, bindingOwnerUserId, request.getRelatedMcpResourceIds(), "mcp");
                 replaceRelations(resourceId, "agent_depends_mcp", request.getRelatedMcpResourceIds());
             }
-        } else if ("mcp".equals(rt)) {
-            if (request.getRelatedPreSkillResourceIds() != null) {
-                assertBindingTargetsOwnedBy(resourceId, bindingOwnerUserId, request.getRelatedPreSkillResourceIds(), "skill");
-                replaceRelations(resourceId, "mcp_depends_skill", request.getRelatedPreSkillResourceIds());
+        } else if ("skill".equals(rt)) {
+            if (request.getRelatedMcpResourceIds() != null) {
+                validateSkillBoundMcpsPublished(request.getRelatedMcpResourceIds(), bindingOwnerUserId);
+                assertBindingTargetsOwnedBy(resourceId, bindingOwnerUserId, request.getRelatedMcpResourceIds(), "mcp");
+                replaceRelations(resourceId, "skill_depends_mcp", request.getRelatedMcpResourceIds());
             }
         } else if ("app".equals(rt)) {
             if (request.getRelatedResourceIds() != null) {

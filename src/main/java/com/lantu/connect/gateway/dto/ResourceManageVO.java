@@ -34,14 +34,11 @@ public class ResourceManageVO {
     /** 当前默认版本号（t_resource_version.is_current = 1）；无版本记录时为 null。 */
     private String currentVersion;
 
-    /** agent / skill 等：关联资源 ID（与入参 relatedResourceIds 一致）。 */
+    /** app 等：关联资源 ID。agent 不再绑 Skill。 */
     private List<Long> relatedResourceIds;
 
-    /** agent：绑定的 MCP id */
+    /** agent / skill：绑定的 MCP id */
     private List<Long> relatedMcpResourceIds;
-
-    /** mcp：前置 skill id */
-    private List<Long> relatedPreSkillResourceIds;
 
     // --- agent (t_resource_agent_ext) ---
     private String agentType;
@@ -54,7 +51,7 @@ public class ResourceManageVO {
     private Double temperature;
     private String systemPrompt;
 
-    // --- skill (t_resource_skill_ext)：Hosted Skill ---
+    // --- skill (t_resource_skill_ext)：Context Skill ---
     private String skillType;
     private Map<String, Object> manifest;
     private String entryDoc;
@@ -64,13 +61,10 @@ public class ResourceManageVO {
     private String displayTemplate;
     private Map<String, Object> parametersSchema;
 
-    /** skill：hosted */
+    /** skill：context */
     private String executionMode;
-    private String hostedSystemPrompt;
-    private String hostedUserTemplate;
-    private String hostedDefaultModel;
-    private Map<String, Object> hostedOutputSchema;
-    private Double hostedTemperature;
+    /** 规范/提示词正文 */
+    private String contextPrompt;
 
     // --- mcp (t_resource_mcp_ext) ---
     private String endpoint;

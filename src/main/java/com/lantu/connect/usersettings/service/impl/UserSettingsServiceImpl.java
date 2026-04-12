@@ -12,8 +12,16 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.security.RedisAuthRateLimiter;
 import com.lantu.connect.gateway.dto.ResourceGrantVO;
+import com.lantu.connect.integrationpackage.dto.IntegrationPackageOptionVO;
+import com.lantu.connect.integrationpackage.dto.IntegrationPackageUpsertRequest;
+import com.lantu.connect.integrationpackage.dto.IntegrationPackageVO;
+import com.lantu.connect.integrationpackage.entity.IntegrationPackage;
+import com.lantu.connect.integrationpackage.mapper.IntegrationPackageMapper;
+import com.lantu.connect.integrationpackage.service.IntegrationPackageMembershipService;
+import com.lantu.connect.integrationpackage.service.IntegrationPackageService;
 import com.lantu.connect.usermgmt.ApiKeyScopes;
 import com.lantu.connect.usermgmt.dto.ApiKeyCreateRequest;
+import com.lantu.connect.usermgmt.dto.ApiKeyIntegrationPackagePatchRequest;
 import com.lantu.connect.usermgmt.dto.ApiKeyResponse;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import com.lantu.connect.usermgmt.mapper.ApiKeyMapper;
@@ -73,6 +81,9 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     private final PasswordEncoder passwordEncoder;
     private final SensitiveActionAuditMapper sensitiveActionAuditMapper;
     private final RedisAuthRateLimiter redisAuthRateLimiter;
+    private final IntegrationPackageMapper integrationPackageMapper;
+    private final IntegrationPackageMembershipService integrationPackageMembershipService;
+    private final IntegrationPackageService integrationPackageService;
 
     /**
      * 读取工作区偏好：优先 Redis，缺省回退到系统默认模板。
@@ -116,6 +127,34 @@ public class UserSettingsServiceImpl implements UserSettingsService {
                 .orderByDesc(ApiKey::getCreateTime));
     }
 
+    @Override
+    public List<IntegrationPackageOptionVO> listActiveIntegrationPackages(Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证用户无法查询");
+        }
+        return integrationPackageService.listOwnedForUser(userId);
+    }
+
+    @Override
+    public IntegrationPackageVO getOwnedIntegrationPackage(Long userId, String packageId) {
+        return integrationPackageService.getOwnedByUser(packageId, userId);
+    }
+
+    @Override
+    public IntegrationPackageVO createOwnedIntegrationPackage(Long userId, IntegrationPackageUpsertRequest request) {
+        return integrationPackageService.createOwnedByUser(userId, request);
+    }
+
+    @Override
+    public IntegrationPackageVO updateOwnedIntegrationPackage(Long userId, String packageId, IntegrationPackageUpsertRequest request) {
+        return integrationPackageService.updateOwnedByUser(packageId, userId, request);
+    }
+
+    @Override
+    public void deleteOwnedIntegrationPackage(Long userId, String packageId) {
+        integrationPackageService.deleteOwnedByUser(packageId, userId);
+    }
+
     /**
      * 创建用户 API Key：生成明文一次性回传，库内仅保存哈希与掩码。
      */
@@ -136,6 +175,12 @@ public class UserSettingsServiceImpl implements UserSettingsService {
         entity.setOwnerType(OWNER_USER);
         entity.setOwnerId(String.valueOf(userId));
         entity.setCreatedBy(String.valueOf(userId));
+        if (StringUtils.hasText(request.getIntegrationPackageId())) {
+            String pid = request.getIntegrationPackageId().trim();
+            IntegrationPackage pkg = integrationPackageMapper.selectById(pid);
+            assertUserOwnsActivePackage(userId, pkg);
+            entity.setIntegrationPackageId(pid);
+        }
         apiKeyMapper.insert(entity);
         systemNotificationFacade.notifyApiKeyChanged(userId, entity.getId(), entity.getName(), true);
         return ApiKeyResponse.builder()
@@ -145,7 +190,38 @@ public class UserSettingsServiceImpl implements UserSettingsService {
                 .secretPlain(plain)
                 .expiresAt(entity.getExpiresAt())
                 .revoked(!"active".equalsIgnoreCase(entity.getStatus()))
+                .integrationPackageId(entity.getIntegrationPackageId())
                 .build();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void patchApiKeyIntegrationPackage(Long userId, String apiKeyId, ApiKeyIntegrationPackagePatchRequest request) {
+        if (!StringUtils.hasText(apiKeyId)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "API Key id 不能为空");
+        }
+        ApiKey key = apiKeyMapper.selectById(apiKeyId.trim());
+        if (key == null || !OWNER_USER.equals(key.getOwnerType())
+                || !String.valueOf(userId).equals(key.getOwnerId())) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不存在");
+        }
+        String prevPid = key.getIntegrationPackageId();
+        String raw = request != null ? request.getIntegrationPackageId() : null;
+        if (raw == null || raw.isBlank()) {
+            key.setIntegrationPackageId(null);
+        } else {
+            String pid = raw.trim();
+            IntegrationPackage pkg = integrationPackageMapper.selectById(pid);
+            assertUserOwnsActivePackage(userId, pkg);
+            key.setIntegrationPackageId(pid);
+        }
+        apiKeyMapper.updateById(key);
+        if (StringUtils.hasText(prevPid)) {
+            integrationPackageMembershipService.evict(prevPid);
+        }
+        if (StringUtils.hasText(key.getIntegrationPackageId())) {
+            integrationPackageMembershipService.evict(key.getIntegrationPackageId());
+        }
     }
 
     @Override
@@ -249,6 +325,7 @@ public class UserSettingsServiceImpl implements UserSettingsService {
                 .secretPlain(plain)
                 .expiresAt(key.getExpiresAt())
                 .revoked(false)
+                .integrationPackageId(key.getIntegrationPackageId())
                 .build();
     }
 
@@ -392,6 +469,18 @@ public class UserSettingsServiceImpl implements UserSettingsService {
                 .layout(new LinkedHashMap<>())
                 .preferences(pref)
                 .build();
+    }
+
+    private static void assertUserOwnsActivePackage(Long userId, IntegrationPackage pkg) {
+        if (pkg == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "集成套餐不存在");
+        }
+        if (pkg.getOwnerUserId() == null || !userId.equals(pkg.getOwnerUserId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "只能绑定本人创建的集成套餐");
+        }
+        if (!"active".equalsIgnoreCase(pkg.getStatus())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "集成套餐未启用或已停用");
+        }
     }
 
     private static String sha256Hex(String raw) {

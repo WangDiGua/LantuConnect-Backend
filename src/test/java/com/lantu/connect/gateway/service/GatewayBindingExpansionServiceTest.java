@@ -1,6 +1,7 @@
 package com.lantu.connect.gateway.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lantu.connect.common.config.GatewayInvokeProperties;
 import com.lantu.connect.gateway.dto.AggregatedCapabilityToolsVO;
 import com.lantu.connect.gateway.dto.ResourceResolveVO;
 import com.lantu.connect.gateway.protocol.ProtocolInvokeResult;
@@ -40,7 +41,8 @@ class GatewayBindingExpansionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new GatewayBindingExpansionService(jdbcTemplate, objectMapper, protocolInvokerRegistry, apiKeyScopeService);
+        GatewayInvokeProperties gw = new GatewayInvokeProperties();
+        service = new GatewayBindingExpansionService(jdbcTemplate, objectMapper, protocolInvokerRegistry, apiKeyScopeService, gw);
     }
 
     @Test
@@ -48,13 +50,6 @@ class GatewayBindingExpansionServiceTest {
         when(jdbcTemplate.query(anyString(), ArgumentMatchers.<RowMapper<Long>>any(), eq(5L)))
                 .thenReturn(List.of(10L, 11L));
         assertThat(service.listAgentBoundMcpIds(5L)).containsExactly(10L, 11L);
-    }
-
-    @Test
-    void listMcpsDependingOnSkill_queriesInverseRelation() {
-        when(jdbcTemplate.query(anyString(), ArgumentMatchers.<RowMapper<Long>>any(), eq(9L)))
-                .thenReturn(List.of(30L));
-        assertThat(service.listMcpsDependingOnSkill(9L)).containsExactly(30L);
     }
 
     @Test
@@ -74,6 +69,9 @@ class GatewayBindingExpansionServiceTest {
         assertThat(vo.getRoutes()).isEmpty();
         assertThat(vo.getWarnings()).isEmpty();
         assertThat(vo.getEntry()).containsEntry("resourceType", "agent").containsEntry("resourceId", "1");
+        assertThat(vo.getMcpQueriedCount()).isZero();
+        assertThat(vo.getToolFunctionCount()).isZero();
+        assertThat(vo.getAggregateTruncated()).isFalse();
         verifyNoInteractions(protocolInvokerRegistry);
     }
 
@@ -117,8 +115,53 @@ class GatewayBindingExpansionServiceTest {
         assertThat(vo.getOpenAiTools()).hasSize(1);
         assertThat(vo.getRoutes()).hasSize(1);
         assertThat(vo.getWarnings()).isEmpty();
+        assertThat(vo.getMcpQueriedCount()).isEqualTo(1);
+        assertThat(vo.getToolFunctionCount()).isEqualTo(1);
+        assertThat(vo.getAggregateTruncated()).isFalse();
         @SuppressWarnings("unchecked")
         Map<String, Object> fn = (Map<String, Object>) vo.getOpenAiTools().get(0).get("function");
         assertThat(fn.get("name")).isEqualTo("lantu_mcp_10_alpha");
+    }
+
+    @Test
+    void aggregateMcpTools_warnsWhenMaxMcpsTruncates() throws Exception {
+        GatewayInvokeProperties gw = new GatewayInvokeProperties();
+        gw.getCapabilities().setMaxMcpsPerAggregate(1);
+        service = new GatewayBindingExpansionService(jdbcTemplate, objectMapper, protocolInvokerRegistry, apiKeyScopeService, gw);
+        ApiKey key = new ApiKey();
+        key.setId("key-1");
+        ResourceResolveVO resolved = ResourceResolveVO.builder()
+                .resourceType("mcp")
+                .resourceId("10")
+                .resourceCode("c")
+                .status("published")
+                .invokeType("mcp")
+                .endpoint("http://localhost/mcp")
+                .spec(Map.of())
+                .build();
+        when(protocolInvokerRegistry.invoke(
+                eq("mcp"),
+                eq("http://localhost/mcp"),
+                eq(45),
+                anyString(),
+                ArgumentMatchers.<Map<String, Object>>any(),
+                ArgumentMatchers.any(),
+                ArgumentMatchers.any()))
+                .thenReturn(new ProtocolInvokeResult(
+                        200,
+                        """
+                                {"result":{"tools":[{"name":"alpha","description":"d","inputSchema":{"type":"object","properties":{}}}]}}
+                                """,
+                        1L));
+        AggregatedCapabilityToolsVO vo = service.aggregateMcpTools(
+                List.of(10L, 11L),
+                null,
+                100L,
+                "t1",
+                key,
+                id -> resolved);
+        assertThat(vo.getWarnings()).anyMatch(w -> w.contains("maxMcpsPerAggregate"));
+        assertThat(vo.getAggregateTruncated()).isTrue();
+        assertThat(vo.getOpenAiTools()).hasSize(1);
     }
 }

@@ -42,7 +42,8 @@ import java.util.UUID;
 @Tag(name = "SDK统一网关", description = """
         稳定 v1 路径，语义与同服务根路径目录/解析/invoke 一致；本组所有接口必须携带有效 X-Api-Key。
         `include`（目录/详情/解析）为逗号分隔：observability、quality、tags、closure、bindings（单资源详情返回 bindingClosure）。
-        调用授权以 API Key scope 与 published 为主；资源级 Grant 表已下线。""")
+        调用授权以 API Key scope 与 published 为主；资源级 Grant 表已下线。
+        外部门户的多轮编排、意图路由由集成方自行实现；本平台提供统一资源发现、capabilities/tools 聚合与单次 invoke。""")
 @SecurityRequirement(name = OpenApiConfiguration.API_KEY_SECURITY)
 public class SdkGatewayController {
 
@@ -73,7 +74,10 @@ public class SdkGatewayController {
         return R.ok(unifiedGatewayService.getByTypeAndId(type, id, include, apiKey, userId));
     }
 
-    @Operation(summary = "绑定闭包 MCP 工具聚合", description = "等同 GET /catalog/capabilities/tools。")
+    @Operation(summary = "绑定闭包 MCP 工具聚合",
+            description = "等同 GET /catalog/capabilities/tools。自 entryResourceType+entryResourceId 沿绑定边求无向闭包，"
+                    + "对闭包内各 MCP 执行 tools/list，合并为 OpenAI tools + routes；与 invoke 时 payload._lantu.bindingExpansion 数据来源一致。"
+                    + " 软上限见 lantu.gateway.capabilities（maxMcpsPerAggregate/maxToolsPerResponse，0=不限制），触发时 warnings 说明截断。")
     @GetMapping("/capabilities/tools")
     public R<AggregatedCapabilityToolsVO> aggregatedTools(
             @RequestParam @Parameter(description = "入口资源类型") String entryResourceType,
@@ -96,7 +100,9 @@ public class SdkGatewayController {
         return R.ok(unifiedGatewayService.resolve(request, apiKey, userId));
     }
 
-    @Operation(summary = "统一调用入口", description = "等同 POST /invoke；hosted skill 可 invoke，技能包不可。")
+    @Operation(summary = "统一调用入口",
+            description = "等同 POST /invoke。单次请求仅针对一对 resourceType+resourceId；多资源须多次调用。"
+                    + " Skill 不可 invoke，请通过目录/resolve 获取规范。绑定展开与 payload.activeSkillIds 见 ResourceCatalogController.invoke 说明。")
     @PostMapping("/invoke")
     public ResponseEntity<R<InvokeResponse>> invoke(
                                     @Parameter(description = "链路追踪ID，可为空")

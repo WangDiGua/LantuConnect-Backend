@@ -32,7 +32,6 @@ import com.lantu.connect.gateway.security.GatewayGovernanceService;
 import com.lantu.connect.gateway.security.GatewayUserPermissionService;
 import com.lantu.connect.gateway.security.ResourceInvokeGrantService;
 import com.lantu.connect.gateway.service.GatewayBindingExpansionService;
-import com.lantu.connect.gateway.service.HostedSkillExecutionService;
 import com.lantu.connect.gateway.service.ResourceBindingClosureService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
 import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
@@ -64,6 +63,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -79,6 +79,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private static final String TYPE_DATASET = "dataset";
     private static final String STATUS_PUBLISHED = "published";
     private static final String DEFAULT_RESOURCE_VERSION = "v1";
+    /** Skill 扩展表 execution_mode；唯一支持值 */
+    private static final String SKILL_EXEC_CONTEXT = "context";
+    /** resolve 返回：Skill 不可 invoke，仅门户拉取规范 */
+    private static final String INVOKETYPE_PORTAL_CONTEXT = "portal_context";
 
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
@@ -100,7 +104,6 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private final RuntimeAppConfigService runtimeAppConfigService;
     private final UserDisplayNameResolver userDisplayNameResolver;
     private final ResourceBindingClosureService resourceBindingClosureService;
-    private final HostedSkillExecutionService hostedSkillExecutionService;
     private final GatewayBindingExpansionService gatewayBindingExpansionService;
     private final GatewayInvokeProperties gatewayInvokeProperties;
 
@@ -529,6 +532,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
     /**
      * 统一调用网关：协议路由 + 熔断治理 + 观测日志写入。
+     * <p>
+     * <strong>产品不变量</strong>：无论 API Key 仅配 scope 还是绑定集成套餐，通过
+     * {@link #getByTypeAndId} 完成授权后，仍必须满足资源 {@link #ensurePublishedForInvoke 已发布} 且
+     * {@link #ensureResourceHealthNotDown 健康配置非 down/disabled}（熔断见 {@link #ensureNotCircuitOpen}）。
      */
     @Override
     public InvokeResponse invoke(Long userId, String traceId, String ip, InvokeRequest request, ApiKey apiKey) {
@@ -543,12 +550,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         }
         ResourceResolveVO resolved = getByTypeAndId(type, String.valueOf(id), request.getVersion(), null, apiKey, userId, "invoke");
         ensurePublishedForInvoke(resolved);
-        if (TYPE_SKILL.equals(type)
-                && HostedSkillExecutionService.INVOKETYPE_HOSTED_LLM.equalsIgnoreCase(
-                normalizeProtocol(resolved.getInvokeType(), HostedSkillExecutionService.INVOKETYPE_HOSTED_LLM))) {
-            return invokeHostedSkill(reqId, userId, traceId, ip, request, apiKey, id, resolved);
+        if (TYPE_SKILL.equals(type)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "Skill 为上下文规范资源，请通过 GET /catalog/resources/skill/{id} 或 POST /catalog/resolve 获取规范与绑定 MCP，勿使用 POST /invoke（resourceType=skill）。");
         }
-        ensureSkillNotInvokable(type);
         ensureNotCircuitOpen(type, resolved.getResourceCode());
         ensureResourceHealthNotDown(id);
         if (!StringUtils.hasText(resolved.getEndpoint())) {
@@ -574,17 +579,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             if (TYPE_AGENT.equals(type)
                     && gatewayInvokeProperties.getBindingExpansion().isEnabled()
                     && gatewayInvokeProperties.getBindingExpansion().isAgent()) {
-                List<Long> boundMcps = gatewayBindingExpansionService.listAgentBoundMcpIds(id);
-                if (!boundMcps.isEmpty()) {
-                    Map<String, String> entry = Map.of("resourceType", TYPE_AGENT, "resourceId", String.valueOf(id));
-                    AggregatedCapabilityToolsVO agg = gatewayBindingExpansionService.aggregateMcpTools(
-                            boundMcps, entry, userId, traceId, apiKey,
-                            mid -> getByTypeAndId(TYPE_MCP, String.valueOf(mid), null, null, apiKey, userId, "invoke"));
-                    payloadForInvoke = mergeBindingExpansionIntoPayload(payloadForInvoke, agg);
-                }
-            }
-            if (TYPE_MCP.equals(type)) {
-                payloadForInvoke = applyMcpPreSkillChain(id, payloadForInvoke);
+                payloadForInvoke = applyAgentBindingExpansionForInvoke(id, payloadForInvoke, traceId, apiKey, userId);
             }
             ProtocolInvokeResult resp = protocolInvokerRegistry.invoke(
                     protocol,
@@ -680,6 +675,9 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .build();
     }
 
+    /**
+     * MCP 流式调用：与 {@link #invoke} 共享同一套「已发布 + 健康 + 熔断」约束（见类说明）。
+     */
     @Override
     public void invokeStream(Long userId,
                              String traceId,
@@ -692,7 +690,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         }
         String reqId = UUID.randomUUID().toString();
         String type = requireType(request.getResourceType());
-        ensureSkillNotInvokable(type);
+        if (TYPE_SKILL.equals(type)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "Skill 为上下文规范资源，请通过目录或 POST /catalog/resolve 获取；invoke-stream 不支持 resourceType=skill。");
+        }
         Long id = parseId(request.getResourceId());
         if (apiKey == null) {
             if (userId == null) {
@@ -726,9 +727,6 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             governanceLease = gatewayGovernanceService.applyPreInvoke(userId, apiKey, type, id, 1);
             ProtocolInvokeContext protoCtx = ProtocolInvokeContext.of(apiKey.getId(), id, userId);
             Map<String, Object> payloadForStream = request.getPayload();
-            if (TYPE_MCP.equals(type)) {
-                payloadForStream = applyMcpPreSkillChain(id, payloadForStream);
-            }
             mcpJsonRpcProtocolInvoker.streamMcpHttpResponseTo(
                     resolved.getEndpoint(),
                     timeoutSec,
@@ -897,29 +895,33 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         Long id = longValue(base.get("id"));
         Map<String, Object> ext = queryOne("""
                         SELECT skill_type, execution_mode, manifest_json, entry_doc, spec_json, parameters_schema, is_public, service_detail_md,
-                        hosted_default_model, hosted_output_schema
+                        hosted_system_prompt
                         FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
                         """,
                 id);
         if (ext == null) {
             ext = Map.of();
         }
-        String execMode = valueOf(ext.get("execution_mode")).trim().toLowerCase(Locale.ROOT);
-        if (!HostedSkillExecutionService.EXECUTION_HOSTED.equals(execMode)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Skill 须为 hosted 模式");
-        }
         Map<String, Object> spec = new LinkedHashMap<>();
-        spec.put("executionMode", HostedSkillExecutionService.EXECUTION_HOSTED);
-        if (StringUtils.hasText(valueOf(ext.get("hosted_default_model")))) {
-            spec.put("defaultModel", valueOf(ext.get("hosted_default_model")).trim());
-        }
-        Map<String, Object> outSchema = parseJsonMap(ext.get("hosted_output_schema"));
-        if (!outSchema.isEmpty()) {
-            spec.put("outputSchema", outSchema);
+        spec.put("executionMode", SKILL_EXEC_CONTEXT);
+        String ctx = valueOf(ext.get("hosted_system_prompt"));
+        if (StringUtils.hasText(ctx)) {
+            spec.put("contextPrompt", ctx);
         }
         Map<String, Object> params = parseJsonMap(ext.get("parameters_schema"));
         if (!params.isEmpty()) {
             spec.put("parametersSchema", params);
+        }
+        Map<String, Object> manifest = parseJsonMap(ext.get("manifest_json"));
+        if (!manifest.isEmpty()) {
+            spec.put("manifest", manifest);
+        }
+        if (StringUtils.hasText(valueOf(ext.get("entry_doc")))) {
+            spec.put("entryDoc", valueOf(ext.get("entry_doc")).trim());
+        }
+        Map<String, Object> extra = parseJsonMap(ext.get("spec_json"));
+        if (!extra.isEmpty()) {
+            spec.put("extra", extra);
         }
         String skillDetailMd = valueOf(ext.get("service_detail_md"));
         return ResourceResolveVO.builder()
@@ -930,7 +932,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .displayName(valueOf(base.get("display_name")))
                 .status(valueOf(base.get("status")))
                 .createdBy(longOrNull(base.get("created_by")))
-                .invokeType(HostedSkillExecutionService.INVOKETYPE_HOSTED_LLM)
+                .invokeType(INVOKETYPE_PORTAL_CONTEXT)
                 .endpoint(null)
                 .spec(spec)
                 .serviceDetailMd(StringUtils.hasText(skillDetailMd) ? skillDetailMd : null)
@@ -1851,6 +1853,123 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     }
 
     /**
+     * Agent invoke：合并 {@code agent_depends_mcp} 与（可选）payload 中 {@code activeSkillIds} 对应 Skill 的 {@code skill_depends_mcp}，
+     * 去重后写入 {@code _lantu.bindingExpansion}。
+     */
+    private Map<String, Object> applyAgentBindingExpansionForInvoke(long agentResourceId,
+                                                                    Map<String, Object> payloadForInvoke,
+                                                                    String traceId,
+                                                                    ApiKey apiKey,
+                                                                    Long userId) {
+        List<Long> boundMcps = new ArrayList<>(gatewayBindingExpansionService.listAgentBoundMcpIds(agentResourceId));
+        List<String> skillWarnings = new ArrayList<>();
+        if (gatewayInvokeProperties.getBindingExpansion().isMergeActiveSkillMcps()) {
+            for (Long sid : parseActiveSkillIds(payloadForInvoke)) {
+                try {
+                    ResourceResolveVO sr = getByTypeAndId(TYPE_SKILL, String.valueOf(sid), null, null, apiKey, userId, "invoke");
+                    ensurePublishedForInvoke(sr);
+                    boundMcps.addAll(gatewayBindingExpansionService.listSkillBoundMcpIds(sid));
+                } catch (BusinessException ex) {
+                    skillWarnings.add("activeSkillIds skip " + sid + ": " + ex.getMessage());
+                    log.debug("activeSkillIds skip {}: {}", sid, ex.getMessage());
+                }
+            }
+        }
+        List<Long> merged = dedupeMcpIdsPreserveOrder(boundMcps);
+        if (merged.isEmpty()) {
+            return payloadForInvoke;
+        }
+        Map<String, String> entry = Map.of("resourceType", TYPE_AGENT, "resourceId", String.valueOf(agentResourceId));
+        AggregatedCapabilityToolsVO agg = gatewayBindingExpansionService.aggregateMcpTools(
+                merged,
+                entry,
+                userId,
+                traceId,
+                apiKey,
+                mid -> getByTypeAndId(TYPE_MCP, String.valueOf(mid), null, null, apiKey, userId, "invoke"));
+        if (!skillWarnings.isEmpty()) {
+            List<String> w = new ArrayList<>(skillWarnings);
+            if (agg.getWarnings() != null) {
+                w.addAll(agg.getWarnings());
+            }
+            agg = agg.toBuilder().warnings(w).build();
+        }
+        return mergeBindingExpansionIntoPayload(payloadForInvoke, agg);
+    }
+
+    private static List<Long> dedupeMcpIdsPreserveOrder(List<Long> boundMcps) {
+        LinkedHashSet<Long> seen = new LinkedHashSet<>();
+        List<Long> merged = new ArrayList<>();
+        for (Long m : boundMcps) {
+            if (m != null && m > 0 && seen.add(m)) {
+                merged.add(m);
+            }
+        }
+        return merged;
+    }
+
+    /**
+     * 自 payload 顶层或 {@code _lantu.activeSkillIds} 解析 Skill 资源 id 列表（数字或字符串）。
+     */
+    private static List<Long> parseActiveSkillIds(Map<String, Object> payload) {
+        if (payload == null) {
+            return List.of();
+        }
+        Object raw = payload.get("activeSkillIds");
+        if (raw == null) {
+            Object lantu = payload.get("_lantu");
+            if (lantu instanceof Map<?, ?> lm) {
+                raw = lm.get("activeSkillIds");
+            }
+        }
+        if (raw == null) {
+            return List.of();
+        }
+        if (raw instanceof List<?> list) {
+            List<Long> out = new ArrayList<>();
+            for (Object o : list) {
+                Long v = parseLongFlexible(o);
+                if (v != null) {
+                    out.add(v);
+                }
+            }
+            return out;
+        }
+        if (raw instanceof String s && StringUtils.hasText(s)) {
+            List<Long> out = new ArrayList<>();
+            for (String part : s.split(",")) {
+                Long v = parseLongFlexible(part.trim());
+                if (v != null) {
+                    out.add(v);
+                }
+            }
+            return out;
+        }
+        Long single = parseLongFlexible(raw);
+        return single != null ? List.of(single) : List.of();
+    }
+
+    private static Long parseLongFlexible(Object o) {
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof Number n) {
+            return n.longValue();
+        }
+        if (o instanceof String s) {
+            if (!StringUtils.hasText(s)) {
+                return null;
+            }
+            try {
+                return Long.parseLong(s.trim());
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
      * 将绑定展开写入 {@code _lantu.bindingExpansion}；保留调用方在 {@code _lantu} 下的其它子键。
      */
     private Map<String, Object> mergeBindingExpansionIntoPayload(Map<String, Object> payload,
@@ -1873,176 +1992,6 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         lantu.put("bindingExpansion", objectMapper.convertValue(expansion, new TypeReference<Map<String, Object>>() { }));
         base.put("_lantu", lantu);
         return base;
-    }
-
-    private InvokeResponse invokeHostedSkill(String reqId,
-                                            Long userId,
-                                            String traceId,
-                                            String ip,
-                                            InvokeRequest request,
-                                            ApiKey apiKey,
-                                            Long id,
-                                            ResourceResolveVO resolved) {
-        long latencyMs;
-        int statusCode;
-        String status;
-        String respBody;
-        String errMsg;
-        Exception invokeCaught = null;
-        GatewayGovernanceService.InvokeGovernanceLease governanceLease = null;
-        long t0 = System.nanoTime();
-        try {
-            governanceLease = gatewayGovernanceService.applyPreInvoke(userId, apiKey, TYPE_SKILL, id, 1);
-            Map<String, Object> payloadForSkill = request.getPayload() == null
-                    ? new LinkedHashMap<>()
-                    : new LinkedHashMap<>(request.getPayload());
-            if (gatewayInvokeProperties.getBindingExpansion().isEnabled()
-                    && gatewayInvokeProperties.getBindingExpansion().isHostedSkill()) {
-                List<Long> inverseMcps = gatewayBindingExpansionService.listMcpsDependingOnSkill(id);
-                if (!inverseMcps.isEmpty()) {
-                    Map<String, String> entry = Map.of("resourceType", TYPE_SKILL, "resourceId", String.valueOf(id));
-                    AggregatedCapabilityToolsVO agg = gatewayBindingExpansionService.aggregateMcpTools(
-                            inverseMcps, entry, userId, traceId, apiKey,
-                            mid -> getByTypeAndId(TYPE_MCP, String.valueOf(mid), null, null, apiKey, userId, "invoke"));
-                    payloadForSkill = mergeBindingExpansionIntoPayload(payloadForSkill, agg);
-                }
-            }
-            respBody = hostedSkillExecutionService.invokeSkill(id, payloadForSkill);
-            statusCode = 200;
-            status = "success";
-            errMsg = null;
-        } catch (Exception e) {
-            invokeCaught = e;
-            statusCode = 500;
-            status = "error";
-            respBody = "";
-            errMsg = e.getMessage();
-        } finally {
-            gatewayGovernanceService.release(governanceLease);
-        }
-        latencyMs = Math.max(0L, (System.nanoTime() - t0) / 1_000_000L);
-        if (errMsg == null && "error".equals(status) && StringUtils.hasText(respBody)) {
-            errMsg = abbreviateForCallLog(respBody, 4000);
-        }
-
-        Boolean circuitOutcome = classifyGatewayInvokeCircuitOutcome(status, statusCode, invokeCaught);
-        CallLog callLog = new CallLog();
-        callLog.setId(reqId);
-        callLog.setTraceId(traceId);
-        callLog.setAgentId(String.valueOf(id));
-        callLog.setAgentName(resolved.getResourceCode());
-        callLog.setResourceType(TYPE_SKILL);
-        callLog.setUserId(userId == null ? "0" : String.valueOf(userId));
-        callLog.setMethod("POST /invoke");
-        callLog.setStatus(status);
-        callLog.setStatusCode(statusCode);
-        callLog.setLatencyMs((int) Math.max(0L, latencyMs));
-        callLog.setErrorMessage(errMsg);
-        callLog.setIp(StringUtils.hasText(ip) ? ip : "0.0.0.0");
-        callLog.setCreateTime(LocalDateTime.now());
-        TraceSpan span = new TraceSpan();
-        span.setTraceId(traceId);
-        span.setOperationName("gateway.invoke");
-        span.setServiceName("unified-gateway");
-        span.setStartTime(LocalDateTime.now().minusNanos(Math.max(0L, latencyMs) * 1_000_000L));
-        span.setDuration((int) Math.max(0L, latencyMs));
-        span.setStatus(status);
-        span.setTags(Map.of(
-                "resourceType", TYPE_SKILL,
-                "resourceId", String.valueOf(id),
-                "statusCode", statusCode,
-                "requestId", reqId,
-                "invokeKind", HostedSkillExecutionService.INVOKETYPE_HOSTED_LLM
-        ));
-        final String finalStatus = status;
-        final long finalLatencyMs = latencyMs;
-        transactionTemplate.executeWithoutResult(tx -> {
-            recordCircuitResult(TYPE_SKILL, resolved.getResourceCode(), circuitOutcome);
-            callLogMapper.insert(callLog);
-            traceSpanMapper.insert(span);
-            UsageRecord usageRecord = buildUsageRecord(userId, TYPE_SKILL, resolved, request, finalStatus, finalLatencyMs);
-            if (usageRecord != null) {
-                usageRecordMapper.insert(usageRecord);
-            }
-            apiKeyScopeService.markUsed(apiKey);
-        });
-
-        logGatewayInvokeOutcome(
-                "POST /invoke",
-                traceId,
-                reqId,
-                TYPE_SKILL,
-                id,
-                resolved.getResourceCode(),
-                userId,
-                status,
-                statusCode,
-                latencyMs,
-                errMsg,
-                respBody,
-                request.getPayload());
-
-        return InvokeResponse.builder()
-                .requestId(reqId)
-                .traceId(traceId)
-                .resourceType(TYPE_SKILL)
-                .resourceId(String.valueOf(id))
-                .statusCode(statusCode)
-                .status(status)
-                .latencyMs(Math.max(0L, latencyMs))
-                .body(respBody)
-                .build();
-    }
-
-    /**
-     * MCP 前置 Hosted Skill 链：依次输出合法 JSON，最后一跳须为 JSON 对象以作为 tools/call 顶层 payload。
-     */
-    private Map<String, Object> applyMcpPreSkillChain(Long mcpId, Map<String, Object> payload) {
-        List<Long> skillIds = jdbcTemplate.query(
-                """
-                        SELECT to_resource_id FROM t_resource_relation
-                        WHERE from_resource_id = ? AND relation_type = 'mcp_depends_skill'
-                        ORDER BY id ASC
-                        """,
-                (rs, i) -> rs.getLong(1),
-                mcpId);
-        if (skillIds == null || skillIds.isEmpty()) {
-            return payload;
-        }
-        String chainInput;
-        try {
-            chainInput = payload == null || payload.isEmpty() ? "{}" : objectMapper.writeValueAsString(payload);
-        } catch (Exception e) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "MCP 入参序列化失败: " + e.getMessage());
-        }
-        String current = chainInput;
-        int step = 0;
-        for (Long skillId : skillIds) {
-            step++;
-            long stepStart = System.nanoTime();
-            current = hostedSkillExecutionService.normalizeJsonWithHostedSkill(skillId, current);
-            long stepMs = Math.max(0L, (System.nanoTime() - stepStart) / 1_000_000L);
-            log.info("gateway.mcp.pre_skill skill_normalize mcpId={} step={}/{} skillResourceId={} latencyMs={}",
-                    mcpId, step, skillIds.size(), skillId, stepMs);
-        }
-        try {
-            JsonNode root = objectMapper.readTree(current);
-            if (!root.isObject()) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "前置 Skill 链输出须为 JSON 对象");
-            }
-            return objectMapper.convertValue(root, new TypeReference<Map<String, Object>>() { });
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "前置 Skill 链输出无法解析为 JSON 对象: " + e.getMessage());
-        }
-    }
-
-    private static void ensureSkillNotInvokable(String type) {
-        if (TYPE_SKILL.equals(type)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR,
-                    "技能包（resourceType=skill）不支持网关远程调用，请由 Agent 运行时加载；远程工具请使用 resourceType=mcp。");
-        }
     }
 
     private Set<String> parseIncludes(String includeRaw) {
@@ -2084,7 +2033,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         Object[] idArgs = skillIds.toArray();
         Map<Long, String> modeById = new HashMap<>();
         for (Map<String, Object> row : jdbcTemplate.queryForList(
-                "SELECT resource_id, COALESCE(NULLIF(TRIM(execution_mode), ''), 'hosted') AS em FROM t_resource_skill_ext WHERE resource_id IN ("
+                "SELECT resource_id, COALESCE(NULLIF(TRIM(execution_mode), ''), 'context') AS em FROM t_resource_skill_ext WHERE resource_id IN ("
                         + placeholders
                         + ")",
                 idArgs)) {
@@ -2093,7 +2042,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 continue;
             }
             String em = valueOf(row.get("em")).trim().toLowerCase(Locale.ROOT);
-            modeById.put(rid, StringUtils.hasText(em) ? em : "hosted");
+            modeById.put(rid, StringUtils.hasText(em) ? em : SKILL_EXEC_CONTEXT);
         }
         for (ResourceCatalogItemVO vo : items) {
             String rt = vo.getResourceType() == null ? "" : vo.getResourceType().trim().toLowerCase(Locale.ROOT);
@@ -2104,7 +2053,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             if (rid == null) {
                 continue;
             }
-            vo.setExecutionMode(modeById.getOrDefault(rid, "hosted"));
+            vo.setExecutionMode(modeById.getOrDefault(rid, SKILL_EXEC_CONTEXT));
         }
     }
 

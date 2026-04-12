@@ -89,8 +89,8 @@ public class ResourceCatalogItemVO {
     private Boolean hasGrantForKey;
 
     /**
-     * 仅 {@code resourceType=skill} 时由目录列表批量填充：{@code hosted}。
+     * 仅 {@code resourceType=skill} 时由目录列表批量填充：{@code context}。
      */
-    @Schema(description = "技能：execution_mode（hosted）；非技能类型为 null")
+    @Schema(description = "技能：execution_mode（context）；非技能类型为 null")
     private String executionMode;
 }

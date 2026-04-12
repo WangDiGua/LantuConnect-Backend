@@ -47,12 +47,10 @@ lantu:
     binding-expansion:
       enabled: true
       agent: true
-      hosted-skill: true
-  hosted-llm:
-    enabled: false
-    base-url: ""
-    api-key: ""
-    default-model: gpt-4o-mini
+      merge-active-skill-mcps: true
+    capabilities:
+      max-mcps-per-aggregate: 0
+      max-tools-per-response: 0
   system:
     integration-mock: true
 

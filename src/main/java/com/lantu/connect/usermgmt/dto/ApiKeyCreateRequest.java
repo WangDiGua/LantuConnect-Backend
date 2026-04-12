@@ -22,4 +22,7 @@ public class ApiKeyCreateRequest {
     private List<String> scopes;
 
     private LocalDateTime expiresAt;
+
+    /** 可选：绑定集成套餐后，网关按套餐内资源白名单裁剪（管理端创建对外门户 Key 时使用） */
+    private String integrationPackageId;
 }

@@ -31,4 +31,7 @@ public class ApiKeyResponse {
     private LocalDateTime expiresAt;
 
     private Boolean revoked;
+
+    /** 创建/轮换响应可能带回；列表接口见 {@link com.lantu.connect.usermgmt.entity.ApiKey#getIntegrationPackageId()} */
+    private String integrationPackageId;
 }

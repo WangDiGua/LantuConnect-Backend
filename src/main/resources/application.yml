@@ -115,15 +115,10 @@ lantu:
     binding-expansion:
       enabled: true
       agent: true
-      hosted-skill: true
-  # Hosted Skill：OpenAI 兼容 Chat Completions（baseUrl 须含 /v1，如 https://api.openai.com/v1）
-  hosted-llm:
-    enabled: ${LANTU_HOSTED_LLM_ENABLED:true}
-    base-url: ${LANTU_HOSTED_LLM_BASE_URL:}
-    api-key: ${LANTU_HOSTED_LLM_API_KEY:}
-    default-model: ${LANTU_HOSTED_LLM_DEFAULT_MODEL:gpt-4o-mini}
-    connect-timeout-seconds: ${LANTU_HOSTED_LLM_CONNECT_TIMEOUT_SECONDS:30}
-    read-timeout-seconds: ${LANTU_HOSTED_LLM_READ_TIMEOUT_SECONDS:120}
+      merge-active-skill-mcps: true
+    capabilities:
+      max-mcps-per-aggregate: ${LANTU_CAP_MAX_MCPS:0}
+      max-tools-per-response: ${LANTU_CAP_MAX_TOOLS:0}
   logging:
     gateway-invoke-log-success: false
     gateway-invoke-log-payload-preview: false
