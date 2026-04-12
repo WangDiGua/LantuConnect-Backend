@@ -204,12 +204,16 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                     continue;
                 }
                 /*
-                 * 仅 API Key、无登录态：目录按 Key 的 scope 裁剪（apiKeyScopeService.canCatalog）；无 per-resource Grant 行过滤。
-                 * 浏览器常同时带 Key 与 JWT：已登录时不再仅因 Key 而缩小广场，列表还受 RBAC（catalogTypeOk）约束。
-                 * resolve/invoke 由 Key scope + 资源生命周期等在网关内校验（见 ResourceInvokeGrantService）。
+                 * API Key：按 canCatalog 裁剪（直配 scope 或集成套餐白名单）。
+                 * 纯 Key 请求（无 userId）始终裁剪。
+                 * 已登录 + 仅直配 scope 的 Key：为兼容管理端「广场」浏览，可不按 Key 裁剪（仍受 RBAC catalogTypeOk）。
+                 * 绑定 integration_package_id 的 Key：SDK 鉴权会解析出 Key 所有者 userId，若仍跳过裁剪则目录会漏出全站已发布资源，
+                 * 与套餐白名单不一致（未入套餐却可见）；故只要绑定了套餐，无论是否带 userId 均按套餐成员过滤。
                  */
-                if (apiKey != null && userId == null) {
-                    if (!apiKeyScopeService.canCatalog(apiKey, rType, rId)) {
+                if (apiKey != null) {
+                    boolean mustFilterByKey =
+                            userId == null || StringUtils.hasText(apiKey.getIntegrationPackageId());
+                    if (mustFilterByKey && !apiKeyScopeService.canCatalog(apiKey, rType, rId)) {
                         continue;
                     }
                 }
