@@ -117,6 +117,12 @@ public class ApiKeyScopeService {
         if ("dataset".equals(type) && scopes.contains("dataset:read")) return true;
         if ("mcp".equals(type) && scopes.contains("skill:read")) return true;
 
+        // 集成方常只配 catalog（如 catalog:type:skill）即可列目录；POST /sdk/v1/resolve 原需 resolve:* 才能拉 contextPrompt，
+        // 导致门户只能用到列表里的短 description。resolve 对 skill/dataset/agent/mcp 均为读规范，与 catalog 风险同级，故允许 catalog 覆盖 resolve。
+        if ("resolve".equals(action)) {
+            return canAccess(apiKey, "catalog", resourceType, resourceId);
+        }
+
         return false;
     }
 
