@@ -38,7 +38,9 @@ public class HealthServiceImpl implements HealthService {
 
     @Override
     public List<HealthConfig> listConfigs() {
-        return healthConfigMapper.selectList(new LambdaQueryWrapper<HealthConfig>().orderByAsc(HealthConfig::getId));
+        return healthConfigMapper.selectList(new LambdaQueryWrapper<HealthConfig>()
+                .isNotNull(HealthConfig::getCheckType)
+                .orderByAsc(HealthConfig::getId));
     }
 
     /**
@@ -50,6 +52,34 @@ public class HealthServiceImpl implements HealthService {
         LocalDateTime now = LocalDateTime.now();
         if (request.getId() == null) {
             ResourceRef resource = findResourceByCode(request.getTargetName());
+            HealthConfig existingByResource = healthConfigMapper.selectOne(
+                    new LambdaQueryWrapper<HealthConfig>().eq(HealthConfig::getResourceId, resource.id()).last("LIMIT 1"));
+            if (existingByResource != null) {
+                existingByResource.setAgentType(resource.type());
+                existingByResource.setAgentName(request.getTargetName());
+                existingByResource.setDisplayName(resource.displayName());
+                existingByResource.setCheckType("http");
+                existingByResource.setCheckUrl(
+                        request.getTargetUrl() != null ? request.getTargetUrl() : "http://127.0.0.1");
+                existingByResource.setIntervalSec(request.getCheckIntervalSec() != null ? request.getCheckIntervalSec() : 60);
+                existingByResource.setHealthyThreshold(3);
+                existingByResource.setTimeoutSec(10);
+                existingByResource.setHealthStatus(request.getEnabled() != null && request.getEnabled() == 0
+                        ? "disabled"
+                        : "healthy");
+                existingByResource.setUpdateTime(now);
+                healthConfigMapper.updateById(existingByResource);
+                realtimePushService.pushHealthConfigChanged(
+                        existingByResource.getResourceId(),
+                        existingByResource.getAgentType(),
+                        existingByResource.getAgentName(),
+                        existingByResource.getDisplayName(),
+                        existingByResource.getCheckType(),
+                        existingByResource.getHealthStatus(),
+                        now,
+                        null);
+                return existingByResource.getId();
+            }
             HealthConfig entity = new HealthConfig();
             entity.setResourceId(resource.id());
             entity.setAgentType(resource.type());
@@ -125,7 +155,9 @@ public class HealthServiceImpl implements HealthService {
 
     @Override
     public List<CircuitBreaker> listCircuitBreakers() {
-        return circuitBreakerMapper.selectList(new LambdaQueryWrapper<CircuitBreaker>().orderByAsc(CircuitBreaker::getId));
+        return circuitBreakerMapper.selectList(new LambdaQueryWrapper<CircuitBreaker>()
+                .isNotNull(CircuitBreaker::getCurrentState)
+                .orderByAsc(CircuitBreaker::getId));
     }
 
     /**

@@ -12,12 +12,12 @@ public class GatewayInvokeProperties {
     private boolean invokeHttpStatusReflectsUpstream = true;
 
     /**
-     * 绑定关系驱动的 invoke 展开（向请求体写入 {@code _lantu.bindingExpansion}）。
+     * 缁戝畾鍏崇郴椹卞姩鐨?invoke 灞曞紑锛堝悜璇锋眰浣撳啓鍏?{@code _lantu.bindingExpansion}锛夈€?
      */
     private BindingExpansion bindingExpansion = new BindingExpansion();
 
     /**
-     * {@code GET .../capabilities/tools} 聚合时的软上限；0 表示不限制。
+     * {@code GET .../capabilities/tools} 鑱氬悎鏃剁殑杞笂闄愶紱0 琛ㄧず涓嶉檺鍒躲€?
      */
     private Capabilities capabilities = new Capabilities();
 
@@ -26,17 +26,19 @@ public class GatewayInvokeProperties {
         private boolean enabled = true;
         private boolean agent = true;
         /**
-         * invoke Agent 时若 payload（或 {@code _lantu}）含 {@code activeSkillIds}，是否将各 Skill 上 {@code skill_depends_mcp}
-         * 绑定的 MCP 与 Agent 自身绑定 MCP 合并后写入 {@code _lantu.bindingExpansion}。
+         * invoke Agent 鏃惰嫢 payload锛堟垨 {@code _lantu}锛夊惈 {@code activeSkillIds}锛屾槸鍚﹀皢鍚?Skill 涓?{@code skill_depends_mcp}
+         * 缁戝畾鐨?MCP 涓?Agent 鑷韩缁戝畾 MCP 鍚堝苟鍚庡啓鍏?{@code _lantu.bindingExpansion}銆?
          */
         private boolean mergeActiveSkillMcps = true;
     }
 
     @Data
     public static class Capabilities {
-        /** 单次聚合最多处理多少个 MCP id；0 = 不限制 */
+        /** 鍗曟鑱氬悎鏈€澶氬鐞嗗灏戜釜 MCP id锛? = 涓嶉檺鍒?*/
         private int maxMcpsPerAggregate = 0;
-        /** 合并后的 function 工具条数上限；0 = 不限制 */
+        /** 鍚堝苟鍚庣殑 function 宸ュ叿鏉℃暟涓婇檺锛? = 涓嶉檺鍒?*/
         private int maxToolsPerResponse = 0;
+        /** 资源级并发默认兜底值，0 表示使用内置默认值 100 */
+        private int defaultMaxConcurrentPerResource = 100;
     }
 }

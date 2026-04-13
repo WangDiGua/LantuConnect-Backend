@@ -52,6 +52,13 @@ public class ResourceUpsertRequest {
     private Integer maxSteps;
     private Double temperature;
     private String systemPrompt;
+    private String registrationProtocol;
+    private String upstreamEndpoint;
+    private String upstreamAgentId;
+    private String credentialRef;
+    private String transformProfile;
+    private String modelAlias;
+    private Boolean enabled;
 
     /**
      * 仅 skill 使用：形态标识（context_v1）。

@@ -50,6 +50,13 @@ public class ResourceManageVO {
     private Integer maxSteps;
     private Double temperature;
     private String systemPrompt;
+    private String registrationProtocol;
+    private String upstreamEndpoint;
+    private String upstreamAgentId;
+    private String credentialRef;
+    private String transformProfile;
+    private String modelAlias;
+    private Boolean enabled;
 
     // --- skill (t_resource_skill_ext)：Context Skill ---
     private String skillType;

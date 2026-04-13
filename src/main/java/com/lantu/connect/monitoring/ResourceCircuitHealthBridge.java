@@ -41,7 +41,7 @@ public class ResourceCircuitHealthBridge {
         }
         Map<String, Object> res = resRows.get(0);
         List<Map<String, Object>> cbRows = jdbcTemplate.queryForList("""
-                        SELECT current_state FROM t_resource_circuit_breaker
+                        SELECT current_state FROM t_resource_runtime_policy
                         WHERE resource_type = ? AND resource_id = ? LIMIT 1
                         """,
                 rt, resourceId);
@@ -54,7 +54,7 @@ public class ResourceCircuitHealthBridge {
             return;
         }
         int n = jdbcTemplate.update("""
-                        UPDATE t_resource_circuit_breaker
+                        UPDATE t_resource_runtime_policy
                         SET current_state = 'CLOSED', success_count = 0, failure_count = 0, update_time = NOW()
                         WHERE resource_type = ? AND resource_id = ? AND UPPER(TRIM(current_state)) IN ('OPEN', 'HALF_OPEN')
                         """,

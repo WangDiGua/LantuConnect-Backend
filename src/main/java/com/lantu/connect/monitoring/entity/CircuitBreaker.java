@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
  * @date 2026-03-23
  */
 @Data
-@TableName("t_resource_circuit_breaker")
+@TableName("t_resource_runtime_policy")
 public class CircuitBreaker {
 
     public static final String STATE_OPEN = "OPEN";

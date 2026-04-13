@@ -24,8 +24,8 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      maximum-pool-size: 30
-      minimum-idle: 8
+      maximum-pool-size: 50
+      minimum-idle: 10
       connection-timeout: 30000
       max-lifetime: 1800000
       leak-detection-threshold: 0
@@ -119,6 +119,7 @@ lantu:
     capabilities:
       max-mcps-per-aggregate: ${LANTU_CAP_MAX_MCPS:0}
       max-tools-per-response: ${LANTU_CAP_MAX_TOOLS:0}
+      default-max-concurrent-per-resource: ${LANTU_CAP_DEFAULT_MAX_CONCURRENT:100}
   logging:
     gateway-invoke-log-success: false
     gateway-invoke-log-payload-preview: false
@@ -325,17 +326,19 @@ resilience4j:
   bulkhead:
     configs:
       default:
-        max-concurrent-calls: 50
+        max-concurrent-calls: 200
         max-wait-duration: 0ms
     instances:
       skillInvoke:
         base-config: default
+        max-concurrent-calls: 200
       networkApply:
         base-config: default
       aclPublish:
         base-config: default
       httpInvoke:
         base-config: default
+        max-concurrent-calls: 200
       mcpInvoke:
         base-config: default
   timelimiter:

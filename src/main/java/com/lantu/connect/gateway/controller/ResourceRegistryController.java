@@ -12,8 +12,11 @@ import com.lantu.connect.gateway.dto.ResourceVersionCreateRequest;
 import com.lantu.connect.gateway.dto.McpConnectivityProbeRequest;
 import com.lantu.connect.gateway.dto.McpConnectivityProbeResult;
 import com.lantu.connect.gateway.dto.ResourceVersionVO;
+import com.lantu.connect.gateway.dto.AgentKeyMetaVO;
 import com.lantu.connect.gateway.service.McpConnectivityProbeService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
+import com.lantu.connect.gateway.security.AgentApiKeyService;
+import com.lantu.connect.usermgmt.dto.ApiKeyResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -39,6 +42,7 @@ public class ResourceRegistryController {
 
     private final ResourceRegistryService resourceRegistryService;
     private final McpConnectivityProbeService mcpConnectivityProbeService;
+    private final AgentApiKeyService agentApiKeyService;
 
     /**
      * 登记前探测用户自管 MCP 是否可达（JSON-RPC initialize，短超时；不落库、不托管服务）。
@@ -124,6 +128,37 @@ public class ResourceRegistryController {
                                                        @PathVariable Long id,
                                                        @PathVariable String version) {
         return R.ok(resourceRegistryService.applyVersionSnapshotToWorkingCopy(userId, id, version));
+    }
+
+    @PostMapping("/{id}/agent-key/rotate")
+    @AuditLog(action = "agent_key_rotate", resource = "resource-center")
+    public R<ApiKeyResponse> rotateAgentKey(@RequestHeader("X-User-Id") Long userId,
+                                            @PathVariable Long id) {
+        return R.ok(agentApiKeyService.rotate(id, userId));
+    }
+
+    @PostMapping("/{id}/agent-key/revoke")
+    @AuditLog(action = "agent_key_revoke", resource = "resource-center")
+    public R<Void> revokeAgentKey(@RequestHeader("X-User-Id") Long userId,
+                                  @PathVariable Long id) {
+        agentApiKeyService.revoke(id);
+        return R.ok();
+    }
+
+    @GetMapping("/{id}/agent-key/meta")
+    public R<List<AgentKeyMetaVO>> listAgentKeys(@RequestHeader("X-User-Id") Long userId,
+                                                  @PathVariable Long id) {
+        List<AgentKeyMetaVO> rows = agentApiKeyService.list(id).stream()
+                .map(it -> AgentKeyMetaVO.builder()
+                        .id(it.getId())
+                        .maskedKey(it.getMaskedKey())
+                        .status(it.getStatus())
+                        .scopes(it.getScopes())
+                        .createTime(it.getCreateTime())
+                        .lastUsedAt(it.getLastUsedAt())
+                        .build())
+                .toList();
+        return R.ok(rows);
     }
 
     @GetMapping("/{id}/versions")

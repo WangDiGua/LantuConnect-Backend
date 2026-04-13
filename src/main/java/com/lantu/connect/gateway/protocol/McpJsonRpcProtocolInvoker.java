@@ -10,6 +10,7 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -45,6 +46,10 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
     private final McpStreamSessionStore mcpStreamSessionStore;
     private final McpOutboundHeaderBuilder mcpOutboundHeaderBuilder;
     private final RuntimeAppConfigService runtimeAppConfigService;
+    @Qualifier("gatewayHttpClient")
+    private final HttpClient httpClient;
+    @Qualifier("gatewayHttpClientNoRedirect")
+    private final HttpClient noRedirectHttpClient;
 
     private IntegrationProperties i() {
         return runtimeAppConfigService.integration();
@@ -248,10 +253,6 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
         int to = Math.max(1, Math.min(120, timeoutSec));
         String json = buildJsonRpcBody(traceId, payload, spec);
         validateOutboundEndpoint(URI.create(endpoint), true);
-        HttpClient httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(Math.min(60, to)))
-                .build();
-
         CompletableFuture<String> textDone = new CompletableFuture<>();
         StringBuilder acc = new StringBuilder();
         long t0 = System.nanoTime();
@@ -398,10 +399,6 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
                                                             ProtocolInvokeContext ctx,
                                                             boolean attachCachedMcpSession)
             throws IOException, InterruptedException {
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(Math.min(timeoutSec, 120)))
-                .followRedirects(HttpClient.Redirect.NEVER)
-                .build();
         URI current = URI.create(endpoint);
         int maxRedirects = Math.max(0, i().getMcpMaxRedirects());
         int followed = 0;
@@ -409,7 +406,7 @@ public class McpJsonRpcProtocolInvoker implements GatewayProtocolInvoker {
             validateOutboundEndpoint(current, false);
             HttpRequest req = startHttpRequest(current.toString(), timeoutSec, traceId, bodyJson, accept, spec, ctx,
                     attachCachedMcpSession).build();
-            HttpResponse<InputStream> resp = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
+            HttpResponse<InputStream> resp = noRedirectHttpClient.send(req, HttpResponse.BodyHandlers.ofInputStream());
             int code = resp.statusCode();
             if (code >= 300 && code < 400) {
                 if (followed >= maxRedirects) {

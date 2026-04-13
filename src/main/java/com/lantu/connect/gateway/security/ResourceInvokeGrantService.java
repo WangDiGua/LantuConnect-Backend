@@ -50,6 +50,9 @@ public class ResourceInvokeGrantService {
         if (ownerUserId == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "资源不存在或不可访问");
         }
+        if (isApiKeyOwnedByAgentResource(apiKey, resourceId)) {
+            return;
+        }
         if (isApiKeyOwnedByUser(apiKey, ownerUserId)) {
             return;
         }
@@ -143,5 +146,15 @@ public class ResourceInvokeGrantService {
             return false;
         }
         return String.valueOf(userId).equals(apiKey.getOwnerId().trim());
+    }
+
+    private static boolean isApiKeyOwnedByAgentResource(ApiKey apiKey, Long resourceId) {
+        if (!"agent".equalsIgnoreCase(apiKey.getOwnerType())) {
+            return false;
+        }
+        if (resourceId == null || !StringUtils.hasText(apiKey.getOwnerId())) {
+            return false;
+        }
+        return String.valueOf(resourceId).equals(apiKey.getOwnerId().trim());
     }
 }

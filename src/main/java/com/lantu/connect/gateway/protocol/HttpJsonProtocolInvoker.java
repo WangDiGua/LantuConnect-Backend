@@ -5,6 +5,7 @@ import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -23,6 +24,8 @@ public class HttpJsonProtocolInvoker implements GatewayProtocolInvoker {
     private static final Set<String> SUPPORTED = Set.of("http", "rest", "openapi", "webhook");
 
     private final ObjectMapper objectMapper;
+    @Qualifier("gatewayHttpClient")
+    private final HttpClient httpClient;
 
     @Override
     public boolean supports(String protocol) {
@@ -44,7 +47,6 @@ public class HttpJsonProtocolInvoker implements GatewayProtocolInvoker {
                                        ProtocolInvokeContext ctx) throws Exception {
         int to = Math.max(1, Math.min(120, timeoutSec));
         String body = objectMapper.writeValueAsString(payload == null ? Map.of() : payload);
-        HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(to)).build();
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(endpoint))
                 .timeout(Duration.ofSeconds(to))
@@ -53,7 +55,7 @@ public class HttpJsonProtocolInvoker implements GatewayProtocolInvoker {
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
         long t0 = System.nanoTime();
-        HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
         long ms = Math.max(0L, (System.nanoTime() - t0) / 1_000_000L);
         return new ProtocolInvokeResult(resp.statusCode(), resp.body(), ms);
     }

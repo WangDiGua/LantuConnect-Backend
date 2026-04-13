@@ -2,6 +2,7 @@ package com.lantu.connect.gateway.security;
 
 import com.lantu.connect.auth.entity.PlatformRole;
 import com.lantu.connect.auth.mapper.PlatformRoleMapper;
+import com.lantu.connect.common.config.GatewayInvokeProperties;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.usermgmt.entity.ApiKey;
@@ -16,22 +17,32 @@ import org.springframework.util.StringUtils;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class GatewayGovernanceService {
 
+    private static final String CONCURRENT_PREFIX = "gw:concurrent:";
+    private static final String LIMIT_CACHE_PREFIX = "gw:concurrent-limit:";
+    private static final long LIMIT_CACHE_TTL_MS = 30_000L;
+    private static final long CONCURRENT_TTL_MS = 10 * 60 * 1000L;
+
     private final PlatformRoleMapper platformRoleMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final JdbcTemplate jdbcTemplate;
+    private final GatewayInvokeProperties gatewayInvokeProperties;
+
+    private final ConcurrentHashMap<String, CachedLimit> limitCache = new ConcurrentHashMap<>();
 
     public InvokeGovernanceLease applyPreInvoke(Long userId, ApiKey apiKey, String resourceType, Long resourceId, int tokens) {
         List<PlatformRole> roles = userId == null ? Collections.emptyList() : platformRoleMapper.selectRolesByUserId(userId);
         enforceRuleRateLimit(userId, roles, resourceType);
         enforceResourceRateLimit(resourceType, resourceId);
-        String concurrentKey = acquireConcurrentPermit(resourceType, resourceId);
+        String concurrentKey = acquireConcurrentPermit(resourceType, resourceId, tokens);
         return InvokeGovernanceLease.builder()
                 .concurrentKey(concurrentKey)
                 .build();
@@ -54,7 +65,8 @@ public class GatewayGovernanceService {
     private void enforceRuleRateLimit(Long userId, List<PlatformRole> roles, String invokeResourceType) {
         List<Map<String, Object>> rules = jdbcTemplate.queryForList(
                 "SELECT id, target, target_value, window_ms, max_requests, action, resource_scope "
-                        + "FROM t_rate_limit_rule WHERE enabled = 1 ORDER BY priority DESC");
+                        + "FROM t_rate_limit_rule WHERE enabled = 1 ORDER BY priority DESC",
+                new Object[0]);
         for (Map<String, Object> rule : rules) {
             if (!ruleAppliesToResourceScope(rule, invokeResourceType)) {
                 continue;
@@ -79,12 +91,91 @@ public class GatewayGovernanceService {
         }
     }
 
-    /** 已移除 t_quota_rate_limit 资源级限流，统一由 t_rate_limit_rule 与用户维度规则承接。 */
     private void enforceResourceRateLimit(String resourceType, Long resourceId) {
+        if (!StringUtils.hasText(resourceType) || resourceId == null) {
+            return;
+        }
+        String limitKey = resolveLimitCacheKey(resourceType, resourceId);
+        CachedLimit cached = limitCache.get(limitKey);
+        if (cached != null && !cached.isExpired()) {
+            return;
+        }
+        int limit = resolveConcurrencyLimitFromDb(resourceType, resourceId);
+        limitCache.put(limitKey, new CachedLimit(limit, System.currentTimeMillis() + LIMIT_CACHE_TTL_MS));
     }
 
-    private String acquireConcurrentPermit(String resourceType, Long resourceId) {
-        return null;
+    private String acquireConcurrentPermit(String resourceType, Long resourceId, int tokens) {
+        if (!StringUtils.hasText(resourceType) || resourceId == null) {
+            return null;
+        }
+        int effectiveTokens = Math.max(1, tokens);
+        int limit = resolveConcurrencyLimit(resourceType, resourceId);
+        String key = CONCURRENT_PREFIX + resourceType.trim().toLowerCase(Locale.ROOT) + ":" + resourceId;
+        Long current = stringRedisTemplate.opsForValue().increment(key, effectiveTokens);
+        if (current != null && current == effectiveTokens) {
+            stringRedisTemplate.expire(key, Duration.ofMillis(CONCURRENT_TTL_MS));
+        }
+        if (current != null && current > limit) {
+            try {
+                Long afterRollback = stringRedisTemplate.opsForValue().decrement(key, effectiveTokens);
+                if (afterRollback != null && afterRollback <= 0) {
+                    stringRedisTemplate.delete(key);
+                }
+            } catch (RuntimeException ex) {
+                log.debug("rollback concurrent permit failed: {}", ex.toString());
+            }
+            throw new BusinessException(ResultCode.RATE_LIMITED, "资源并发已达上限: " + resourceType + "/" + resourceId);
+        }
+        return key;
+    }
+
+    private int resolveConcurrencyLimit(String resourceType, Long resourceId) {
+        String limitKey = resolveLimitCacheKey(resourceType, resourceId);
+        CachedLimit cached = limitCache.get(limitKey);
+        if (cached != null && !cached.isExpired()) {
+            return cached.limit;
+        }
+        int limit = resolveConcurrencyLimitFromDb(resourceType, resourceId);
+        limitCache.put(limitKey, new CachedLimit(limit, System.currentTimeMillis() + LIMIT_CACHE_TTL_MS));
+        return limit;
+    }
+
+    private int resolveConcurrencyLimitFromDb(String resourceType, Long resourceId) {
+        String type = resourceType.trim().toLowerCase(Locale.ROOT);
+        Integer limit = null;
+        if ("agent".equals(type)) {
+            limit = queryMaxConcurrency("SELECT max_concurrency FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1", resourceId);
+        } else if ("skill".equals(type)) {
+            limit = queryMaxConcurrency("SELECT max_concurrency FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1", resourceId);
+        }
+        if (limit != null && limit > 0) {
+            return limit;
+        }
+        int fallback = gatewayInvokeProperties.getCapabilities().getDefaultMaxConcurrentPerResource();
+        return fallback > 0 ? fallback : 100;
+    }
+
+    private Integer queryMaxConcurrency(String sql, Long resourceId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, new Object[]{resourceId});
+        if (rows.isEmpty()) {
+            return null;
+        }
+        Object v = rows.get(0).get("max_concurrency");
+        if (v instanceof Number n) {
+            return n.intValue();
+        }
+        if (v == null) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(String.valueOf(v));
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private String resolveLimitCacheKey(String resourceType, Long resourceId) {
+        return LIMIT_CACHE_PREFIX + resourceType.trim().toLowerCase(Locale.ROOT) + ":" + resourceId;
     }
 
     private static boolean ruleAppliesToResourceScope(Map<String, Object> rule, String invokeResourceType) {
@@ -144,5 +235,11 @@ public class GatewayGovernanceService {
 
     @Builder
     public record InvokeGovernanceLease(String concurrentKey) {
+    }
+
+    private record CachedLimit(int limit, long expiresAt) {
+        boolean isExpired() {
+            return System.currentTimeMillis() >= expiresAt;
+        }
     }
 }

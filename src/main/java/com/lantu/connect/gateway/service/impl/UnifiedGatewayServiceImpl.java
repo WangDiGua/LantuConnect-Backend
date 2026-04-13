@@ -875,10 +875,31 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private ResourceResolveVO resolveAgent(Map<String, Object> base, String version) {
         Long id = longValue(base.get("id"));
         Map<String, Object> ext = queryOne(
-                "SELECT spec_json, service_detail_md FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1",
+                "SELECT spec_json, service_detail_md, registration_protocol, upstream_endpoint, upstream_agent_id, credential_ref, transform_profile, model_alias, enabled FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1",
                 id);
         Map<String, Object> spec = parseJsonMap(ext == null ? null : ext.get("spec_json"));
-        String invokeType = normalizeProtocol(spec == null ? null : spec.get("protocol"), "rest");
+        String invokeType = normalizeProtocol(ext == null ? null : ext.get("registration_protocol"), "rest");
+        if (spec != null && ext != null) {
+            if (StringUtils.hasText(valueOf(ext.get("registration_protocol")))) {
+                spec.put("registrationProtocol", valueOf(ext.get("registration_protocol")));
+            }
+            if (StringUtils.hasText(valueOf(ext.get("upstream_endpoint")))) {
+                spec.put("upstreamEndpoint", valueOf(ext.get("upstream_endpoint")));
+            }
+            if (StringUtils.hasText(valueOf(ext.get("upstream_agent_id")))) {
+                spec.put("upstreamAgentId", valueOf(ext.get("upstream_agent_id")));
+            }
+            if (StringUtils.hasText(valueOf(ext.get("credential_ref")))) {
+                spec.put("credentialRef", valueOf(ext.get("credential_ref")));
+            }
+            if (StringUtils.hasText(valueOf(ext.get("transform_profile")))) {
+                spec.put("transformProfile", valueOf(ext.get("transform_profile")));
+            }
+            if (StringUtils.hasText(valueOf(ext.get("model_alias")))) {
+                spec.put("modelAlias", valueOf(ext.get("model_alias")));
+            }
+            spec.put("enabled", boolValue(ext.get("enabled"), true));
+        }
         String serviceMd = ext == null ? "" : valueOf(ext.get("service_detail_md"));
         return ResourceResolveVO.builder()
                 .resourceType(TYPE_AGENT)
@@ -889,7 +910,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .status(valueOf(base.get("status")))
                 .createdBy(longOrNull(base.get("created_by")))
                 .invokeType(invokeType)
-                .endpoint(specUrl(spec))
+                .endpoint(valueOf(ext == null ? null : ext.get("upstream_endpoint")))
                 .spec(spec)
                 .serviceDetailMd(StringUtils.hasText(serviceMd) ? serviceMd : null)
                 .build();
@@ -1086,7 +1107,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             return;
         }
         Map<String, Object> row = queryOne(
-                "SELECT health_status FROM t_resource_health_config WHERE resource_id = ? LIMIT 1",
+                "SELECT health_status FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1",
                 resourceId);
         if (row == null) {
             return;
@@ -1112,7 +1133,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             return false;
         }
         Map<String, Object> healthRow = queryOne(
-                "SELECT health_status FROM t_resource_health_config WHERE resource_id = ? LIMIT 1",
+                "SELECT health_status FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1",
                 resourceId);
         if (healthRow != null) {
             String hs = valueOf(healthRow.get("health_status"));
@@ -1140,7 +1161,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         }
         String rt = resourceType.trim().toLowerCase(Locale.ROOT);
         Map<String, Object> row = queryOne(
-                "SELECT current_state FROM t_resource_circuit_breaker WHERE resource_type = ? AND resource_id = ? LIMIT 1",
+                "SELECT current_state FROM t_resource_runtime_policy WHERE resource_type = ? AND resource_id = ? LIMIT 1",
                 rt, resourceId);
         if (row == null) {
             return false;
@@ -1155,7 +1176,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             return;
         }
         Map<String, Object> row = queryOne(
-                "SELECT current_state, fallback_message, half_open_max_calls, success_count, failure_count FROM t_resource_circuit_breaker WHERE resource_type = ? AND resource_id = ? LIMIT 1",
+                "SELECT current_state, fallback_message, half_open_max_calls, success_count, failure_count FROM t_resource_runtime_policy WHERE resource_type = ? AND resource_id = ? LIMIT 1",
                 resourceType, resourceId);
         if (row == null) {
             return;
@@ -1224,7 +1245,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             return;
         }
         Map<String, Object> current = queryOne(
-                "SELECT id, current_state, success_count, failure_count, failure_threshold, half_open_max_calls FROM t_resource_circuit_breaker WHERE resource_type = ? AND resource_id = ? LIMIT 1",
+                "SELECT id, current_state, success_count, failure_count, failure_threshold, half_open_max_calls FROM t_resource_runtime_policy WHERE resource_type = ? AND resource_id = ? LIMIT 1",
                 resourceType, resourceId);
         if (current == null) {
             Map<String, Object> base = queryOne(
@@ -1234,8 +1255,14 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 return;
             }
             jdbcTemplate.update(
-                    "INSERT INTO t_resource_circuit_breaker(resource_id, resource_type, resource_code, display_name, current_state, failure_threshold, open_duration_sec, half_open_max_calls, success_count, failure_count, create_time, update_time) "
-                            + "VALUES(?, ?, ?, ?, 'CLOSED', 5, 60, 3, ?, ?, NOW(), NOW())",
+                    "INSERT INTO t_resource_runtime_policy(resource_id, resource_type, resource_code, display_name, current_state, failure_threshold, open_duration_sec, half_open_max_calls, success_count, failure_count, create_time, update_time) "
+                            + "VALUES(?, ?, ?, ?, 'CLOSED', 5, 60, 3, ?, ?, NOW(), NOW()) "
+                            + "ON DUPLICATE KEY UPDATE "
+                            + "resource_type = VALUES(resource_type), resource_code = VALUES(resource_code), display_name = VALUES(display_name), "
+                            + "current_state = VALUES(current_state), failure_threshold = VALUES(failure_threshold), "
+                            + "open_duration_sec = VALUES(open_duration_sec), half_open_max_calls = VALUES(half_open_max_calls), "
+                            + "success_count = COALESCE(success_count,0) + VALUES(success_count), "
+                            + "failure_count = COALESCE(failure_count,0) + VALUES(failure_count), update_time = NOW()",
                     resourceId,
                     resourceType,
                     valueOf(base.get("resource_code")),
@@ -1255,19 +1282,19 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 long allowed = Math.max(1L, longValue(current.get("half_open_max_calls")));
                 if (successCount >= allowed) {
                     jdbcTemplate.update(
-                            "UPDATE t_resource_circuit_breaker SET success_count = ?, failure_count = 0, current_state = 'CLOSED', update_time = NOW() "
+                            "UPDATE t_resource_runtime_policy SET success_count = ?, failure_count = 0, current_state = 'CLOSED', update_time = NOW() "
                                     + "WHERE resource_type = ? AND resource_id = ?",
                             successCount, resourceType, resourceId);
                 } else {
                     jdbcTemplate.update(
-                            "UPDATE t_resource_circuit_breaker SET success_count = ?, failure_count = 0, current_state = 'HALF_OPEN', update_time = NOW() "
+                            "UPDATE t_resource_runtime_policy SET success_count = ?, failure_count = 0, current_state = 'HALF_OPEN', update_time = NOW() "
                                     + "WHERE resource_type = ? AND resource_id = ?",
                             successCount, resourceType, resourceId);
                 }
                 return;
             }
             jdbcTemplate.update(
-                    "UPDATE t_resource_circuit_breaker SET success_count = COALESCE(success_count,0) + 1, failure_count = 0, current_state = 'CLOSED', update_time = NOW() "
+                    "UPDATE t_resource_runtime_policy SET success_count = COALESCE(success_count,0) + 1, failure_count = 0, current_state = 'CLOSED', update_time = NOW() "
                             + "WHERE resource_type = ? AND resource_id = ?",
                     resourceType, resourceId);
             return;
@@ -1275,14 +1302,14 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
         if ("HALF_OPEN".equalsIgnoreCase(currentState)) {
             jdbcTemplate.update(
-                    "UPDATE t_resource_circuit_breaker SET current_state = 'OPEN', last_opened_at = NOW(), success_count = 0, failure_count = COALESCE(failure_count,0) + 1, update_time = NOW() "
+                    "UPDATE t_resource_runtime_policy SET current_state = 'OPEN', last_opened_at = NOW(), success_count = 0, failure_count = COALESCE(failure_count,0) + 1, update_time = NOW() "
                             + "WHERE resource_type = ? AND resource_id = ?",
                     resourceType, resourceId);
             return;
         }
 
         jdbcTemplate.update(
-                "UPDATE t_resource_circuit_breaker SET failure_count = COALESCE(failure_count,0) + 1, update_time = NOW() "
+                "UPDATE t_resource_runtime_policy SET failure_count = COALESCE(failure_count,0) + 1, update_time = NOW() "
                         + "WHERE resource_type = ? AND resource_id = ?",
                 resourceType, resourceId);
         applyAutoOpen(resourceType, resourceId);
@@ -1291,7 +1318,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
     private void applyAutoOpen(String resourceType, Long resourceId) {
         Map<String, Object> row = queryOne(
-                "SELECT failure_count, failure_threshold FROM t_resource_circuit_breaker WHERE resource_type = ? AND resource_id = ? LIMIT 1",
+                "SELECT failure_count, failure_threshold FROM t_resource_runtime_policy WHERE resource_type = ? AND resource_id = ? LIMIT 1",
                 resourceType, resourceId);
         if (row == null) {
             return;
@@ -1300,7 +1327,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         long threshold = Math.max(1L, longValue(row.get("failure_threshold")));
         if (failureCount >= threshold) {
             jdbcTemplate.update(
-                    "UPDATE t_resource_circuit_breaker SET current_state = 'OPEN', last_opened_at = NOW(), success_count = 0, update_time = NOW() "
+                    "UPDATE t_resource_runtime_policy SET current_state = 'OPEN', last_opened_at = NOW(), success_count = 0, update_time = NOW() "
                             + "WHERE resource_type = ? AND resource_id = ?",
                     resourceType, resourceId);
         }
@@ -1403,6 +1430,29 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
     private static String valueOf(Object v) {
         return v == null ? null : String.valueOf(v);
+    }
+
+    private static boolean boolValue(Object v, boolean defaultValue) {
+        if (v == null) {
+            return defaultValue;
+        }
+        if (v instanceof Boolean b) {
+            return b;
+        }
+        if (v instanceof Number n) {
+            return n.intValue() != 0;
+        }
+        String s = String.valueOf(v).trim();
+        if (!StringUtils.hasText(s)) {
+            return defaultValue;
+        }
+        if ("true".equalsIgnoreCase(s) || "1".equals(s)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(s) || "0".equals(s)) {
+            return false;
+        }
+        return defaultValue;
     }
 
     private static LocalDateTime toDateTime(Object v) {
@@ -2209,12 +2259,12 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         double latencyFactor = Math.max(0D, 1D - (avgLatency / 8000D));
         int qualityScore = (int) Math.round(successRate * 70D + latencyFactor * 30D);
         qualityScore = Math.max(0, Math.min(100, qualityScore));
-        String healthStatus = valueOf(queryOne("SELECT health_status FROM t_resource_health_config WHERE resource_id = ? LIMIT 1", resourceId) == null
+        String healthStatus = valueOf(queryOne("SELECT health_status FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1", resourceId) == null
                 ? null
-                : queryOne("SELECT health_status FROM t_resource_health_config WHERE resource_id = ? LIMIT 1", resourceId).get("health_status"));
-        String circuitState = valueOf(queryOne("SELECT current_state FROM t_resource_circuit_breaker WHERE resource_id = ? LIMIT 1", resourceId) == null
+                : queryOne("SELECT health_status FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1", resourceId).get("health_status"));
+        String circuitState = valueOf(queryOne("SELECT current_state FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1", resourceId) == null
                 ? null
-                : queryOne("SELECT current_state FROM t_resource_circuit_breaker WHERE resource_id = ? LIMIT 1", resourceId).get("current_state"));
+                : queryOne("SELECT current_state FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1", resourceId).get("current_state"));
         String degradationCode = null;
         String degradationHint = null;
         if ("OPEN".equalsIgnoreCase(circuitState)) {

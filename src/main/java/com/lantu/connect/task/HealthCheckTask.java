@@ -43,7 +43,7 @@ public class HealthCheckTask {
         try {
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                     "SELECT id, resource_id, resource_type, resource_code, display_name, check_type, check_url, timeout_sec, "
-                            + "healthy_threshold, interval_sec, health_status FROM t_resource_health_config "
+                            + "healthy_threshold, interval_sec, health_status FROM t_resource_runtime_policy "
                             + "WHERE check_url IS NOT NULL AND TRIM(check_url) <> '' "
                             + "AND (check_type IS NULL OR LOWER(TRIM(check_type)) IN ('', 'http'))");
             int healthy = 0, degraded = 0, down = 0;
@@ -85,7 +85,7 @@ public class HealthCheckTask {
                 }
                 LocalDateTime checkedAt = LocalDateTime.now();
                 jdbcTemplate.update(
-                        "UPDATE t_resource_health_config SET health_status = ?, last_check_time = ? WHERE id = ?",
+                        "UPDATE t_resource_runtime_policy SET health_status = ?, last_check_time = ? WHERE id = ?",
                         status, checkedAt, id);
                 if ("healthy".equalsIgnoreCase(status)
                         && resourceId != null

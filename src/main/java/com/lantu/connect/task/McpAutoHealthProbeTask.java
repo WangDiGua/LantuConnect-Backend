@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 已发布 MCP 资源的周期性 JSON-RPC 探活：写入 {@code t_resource_health_config}（{@code check_type=mcp_jsonrpc}），
+ * 已发布 MCP 资源的周期性 JSON-RPC 探活：写入 {@code t_resource_runtime_policy}（{@code check_type=mcp_jsonrpc}），
  * 与仅做 HTTP GET 的 {@link HealthCheckTask} 分离，避免对 MCP 端点误发 GET。
  */
 @Component
@@ -76,7 +76,7 @@ public class McpAutoHealthProbeTask {
                 }
                 Map<String, Object> health = jdbcTemplate.queryForList(
                                 "SELECT id, check_type, health_status, healthy_threshold, timeout_sec "
-                                        + "FROM t_resource_health_config WHERE resource_id = ? LIMIT 1",
+                                        + "FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1",
                                 resourceId)
                         .stream().findFirst().orElse(null);
                 if (health != null) {
@@ -137,7 +137,7 @@ public class McpAutoHealthProbeTask {
                 String prevProbeStatus = health == null ? null : trimToNull(health.get("health_status"));
                 if (health == null) {
                     jdbcTemplate.update(
-                            "INSERT INTO t_resource_health_config (resource_id, resource_type, resource_code, display_name, "
+                            "INSERT INTO t_resource_runtime_policy (resource_id, resource_type, resource_code, display_name, "
                                     + "check_type, check_url, interval_sec, healthy_threshold, timeout_sec, health_status, last_check_time) "
                                     + "VALUES (?, ?, ?, ?, ?, ?, 300, ?, ?, ?, ?)",
                             resourceId,
@@ -153,7 +153,7 @@ public class McpAutoHealthProbeTask {
                 } else {
                     Long hid = ((Number) health.get("id")).longValue();
                     jdbcTemplate.update(
-                            "UPDATE t_resource_health_config SET health_status = ?, last_check_time = ?, check_url = ?, "
+                            "UPDATE t_resource_runtime_policy SET health_status = ?, last_check_time = ?, check_url = ?, "
                                     + "check_type = ?, healthy_threshold = ? WHERE id = ?",
                             status, now, endpoint.trim(), CHECK_TYPE_MCP, failThreshold, hid);
                 }

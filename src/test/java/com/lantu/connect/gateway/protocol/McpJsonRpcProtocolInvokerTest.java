@@ -7,6 +7,7 @@ import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.net.http.HttpClient;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
@@ -19,13 +20,16 @@ class McpJsonRpcProtocolInvokerTest {
         McpStreamSessionStore store = org.mockito.Mockito.mock(McpStreamSessionStore.class);
         McpOutboundHeaderBuilder headerBuilder = org.mockito.Mockito.mock(McpOutboundHeaderBuilder.class);
         RuntimeAppConfigService runtime = mock(RuntimeAppConfigService.class);
+        HttpClient httpClient = mock(HttpClient.class);
+        HttpClient noRedirectHttpClient = mock(HttpClient.class);
         IntegrationProperties integration = new IntegrationProperties();
         integration.setMcpHttpAccept("application/json");
         integration.setMcpAllowHttp(false);
         integration.setMcpMaxRedirects(0);
         when(runtime.integration()).thenReturn(integration);
 
-        McpJsonRpcProtocolInvoker invoker = new McpJsonRpcProtocolInvoker(new ObjectMapper(), store, headerBuilder, runtime);
+        McpJsonRpcProtocolInvoker invoker = new McpJsonRpcProtocolInvoker(
+                new ObjectMapper(), store, headerBuilder, runtime, httpClient, noRedirectHttpClient);
 
         assertThrows(BusinessException.class, () ->
                 invoker.invoke("http://example.com/mcp", 5, "trace-1", Map.of(), Map.of(), null));
@@ -36,6 +40,8 @@ class McpJsonRpcProtocolInvokerTest {
         McpStreamSessionStore store = org.mockito.Mockito.mock(McpStreamSessionStore.class);
         McpOutboundHeaderBuilder headerBuilder = org.mockito.Mockito.mock(McpOutboundHeaderBuilder.class);
         RuntimeAppConfigService runtime = mock(RuntimeAppConfigService.class);
+        HttpClient httpClient = mock(HttpClient.class);
+        HttpClient noRedirectHttpClient = mock(HttpClient.class);
         IntegrationProperties integration = new IntegrationProperties();
         integration.setMcpHttpAccept("application/json");
         integration.setMcpAllowHttp(true);
@@ -43,7 +49,8 @@ class McpJsonRpcProtocolInvokerTest {
         integration.setMcpMaxRedirects(0);
         when(runtime.integration()).thenReturn(integration);
 
-        McpJsonRpcProtocolInvoker invoker = new McpJsonRpcProtocolInvoker(new ObjectMapper(), store, headerBuilder, runtime);
+        McpJsonRpcProtocolInvoker invoker = new McpJsonRpcProtocolInvoker(
+                new ObjectMapper(), store, headerBuilder, runtime, httpClient, noRedirectHttpClient);
 
         assertThrows(BusinessException.class, () ->
                 invoker.invoke("http://localhost:8080/mcp", 5, "trace-1", Map.of(), Map.of(), null));

@@ -7,6 +7,7 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -37,6 +38,8 @@ public class Oauth2ClientCredentialsTokenService {
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
     private final RuntimeAppConfigService runtimeAppConfigService;
+    @Qualifier("gatewayHttpClient")
+    private final HttpClient httpClient;
 
     /**
      * @return access_token 明文
@@ -75,7 +78,6 @@ public class Oauth2ClientCredentialsTokenService {
 
         int oauth2ConnectTimeoutSec = runtimeAppConfigService.integration().getOauth2().getConnectTimeoutSec();
         int to = Math.max(5, Math.min(60, oauth2ConnectTimeoutSec));
-        HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(to)).build();
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(tokenUrl.trim()))
                 .timeout(Duration.ofSeconds(to))
@@ -83,7 +85,7 @@ public class Oauth2ClientCredentialsTokenService {
                 .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .build();
         try {
-            HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
                 throw new BusinessException(ResultCode.PARAM_ERROR,
                         "OAuth2 token 请求失败 HTTP " + resp.statusCode() + ": " + resp.body());

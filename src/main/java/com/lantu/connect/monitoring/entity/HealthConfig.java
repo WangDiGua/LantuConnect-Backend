@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
  * @date 2026-03-23
  */
 @Data
-@TableName("t_resource_health_config")
+@TableName("t_resource_runtime_policy")
 public class HealthConfig {
 
     @TableId(type = IdType.AUTO)

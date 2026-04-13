@@ -1,6 +1,8 @@
 package com.lantu.connect.gateway.protocol;
 
 import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -13,7 +15,11 @@ import java.util.Map;
 
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class SseProtocolInvoker implements GatewayProtocolInvoker {
+
+    @Qualifier("gatewayHttpClient")
+    private final HttpClient httpClient;
 
     @Override
     public boolean supports(String protocol) {
@@ -29,7 +35,6 @@ public class SseProtocolInvoker implements GatewayProtocolInvoker {
                                        ProtocolInvokeContext ctx) throws Exception {
         int to = Math.max(1, Math.min(120, timeoutSec));
         long t0 = System.nanoTime();
-        HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(to)).build();
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(endpoint))
                 .timeout(Duration.ofSeconds(to))
@@ -37,7 +42,7 @@ public class SseProtocolInvoker implements GatewayProtocolInvoker {
                 .header("X-Trace-Id", traceId)
                 .GET()
                 .build();
-        HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
         long ms = Math.max(0L, (System.nanoTime() - t0) / 1_000_000L);
         if (resp.statusCode() >= 400) {
             log.warn("SSE invoke failed: endpoint={} status={}", endpoint, resp.statusCode());

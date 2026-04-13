@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.UUID;
 
 /**
@@ -38,33 +39,31 @@ public class GatewayBindingExpansionService {
 
     private static final String TYPE_MCP = "mcp";
     private static final String STATUS_PUBLISHED = "published";
+    private static final long RELATION_CACHE_TTL_MS = 30_000L;
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ProtocolInvokerRegistry protocolInvokerRegistry;
     private final ApiKeyScopeService apiKeyScopeService;
     private final GatewayInvokeProperties gatewayInvokeProperties;
+    private final ConcurrentHashMap<String, CachedIds> relationCache = new ConcurrentHashMap<>();
 
     public List<Long> listAgentBoundMcpIds(long agentResourceId) {
-        return jdbcTemplate.query(
+        return cachedRelationIds("agent", agentResourceId,
                 """
                         SELECT to_resource_id FROM t_resource_relation
                         WHERE from_resource_id = ? AND relation_type = 'agent_depends_mcp'
                         ORDER BY id ASC
-                        """,
-                (rs, i) -> rs.getLong(1),
-                agentResourceId);
+                        """);
     }
 
     public List<Long> listSkillBoundMcpIds(long skillResourceId) {
-        return jdbcTemplate.query(
+        return cachedRelationIds("skill", skillResourceId,
                 """
                         SELECT to_resource_id FROM t_resource_relation
                         WHERE from_resource_id = ? AND relation_type = 'skill_depends_mcp'
                         ORDER BY id ASC
-                        """,
-                (rs, i) -> rs.getLong(1),
-                skillResourceId);
+                        """);
     }
 
     /**
@@ -216,6 +215,18 @@ public class GatewayBindingExpansionService {
                 .build();
     }
 
+    private List<Long> cachedRelationIds(String kind, long resourceId, String sql) {
+        String key = kind + ":" + resourceId;
+        CachedIds cached = relationCache.get(key);
+        long now = System.currentTimeMillis();
+        if (cached != null && cached.expiresAt > now) {
+            return cached.ids;
+        }
+        List<Long> ids = List.copyOf(jdbcTemplate.query(sql, (rs, i) -> rs.getLong(1), resourceId));
+        relationCache.put(key, new CachedIds(ids, now + RELATION_CACHE_TTL_MS));
+        return ids;
+    }
+
     private static boolean ensurePublishedForInvoke(ResourceResolveVO resolved, List<String> warnings, long mcpId) {
         if (resolved == null) {
             warnings.add("resolve mcp " + mcpId + ": missing resolve");
@@ -258,5 +269,8 @@ public class GatewayBindingExpansionService {
             return "tool";
         }
         return raw.trim().replaceAll("[^a-zA-Z0-9_]", "_");
+    }
+
+    private record CachedIds(List<Long> ids, long expiresAt) {
     }
 }

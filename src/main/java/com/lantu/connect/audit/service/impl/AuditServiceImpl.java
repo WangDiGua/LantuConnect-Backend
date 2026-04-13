@@ -19,6 +19,7 @@ import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
 import com.lantu.connect.gateway.security.ResourceInvokeGrantService;
+import com.lantu.connect.gateway.security.AgentApiKeyService;
 import com.lantu.connect.notification.service.NotificationEventCodes;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
 import com.lantu.connect.realtime.AuditPendingPushDebouncer;
@@ -68,6 +69,7 @@ public class AuditServiceImpl implements AuditService {
     private final SystemNotificationFacade systemNotificationFacade;
     private final UserDisplayNameResolver userDisplayNameResolver;
     private final ResourceInvokeGrantService resourceInvokeGrantService;
+    private final AgentApiKeyService agentApiKeyService;
     private final CasbinAuthorizationService casbinAuthorizationService;
     private final ResourceRegistryService resourceRegistryService;
     private final ObjectMapper objectMapper;
@@ -362,6 +364,9 @@ public class AuditServiceImpl implements AuditService {
         }
         syncResourceStatusIf(item, STATUS_PUBLISHED, ResourceLifecycleStateMachine.STATUS_TESTING);
         ensureDefaultVersion(item.getTargetId());
+        if ("agent".equalsIgnoreCase(item.getTargetType())) {
+            agentApiKeyService.ensureActiveKeyForAgent(item.getTargetId(), reviewerId);
+        }
 
         boolean platformActor = casbinAuthorizationService.hasAnyRole(reviewerId, new String[]{"platform_admin", "admin"});
         String detail = platformActor

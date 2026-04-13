@@ -20,6 +20,7 @@ import com.lantu.connect.gateway.protocol.ProtocolInvokerRegistry;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
+import com.lantu.connect.common.util.SensitiveDataEncryptor;
 import com.lantu.connect.notification.service.NotificationEventCodes;
 import com.lantu.connect.notification.service.NotificationService;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
@@ -53,6 +54,11 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     private static final Set<String> RESOURCE_TYPES = Set.of("agent", "skill", "mcp", "app", "dataset");
 
     private static final Set<String> APP_EMBED_TYPES = Set.of("iframe", "redirect", "micro_frontend");
+    private static final Set<String> AGENT_REG_PROTOCOLS = Set.of(
+            "bailian_compatible",
+            "openai_compatible",
+            "anthropic_messages",
+            "gemini_generatecontent");
 
     /** skill.skill_type：仅 context_v1。 */
     private static final Set<String> SKILL_TYPE_ALLOWED = Set.of("context_v1");
@@ -78,6 +84,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     private final ObjectMapper objectMapper;
     private final PlatformRoleMapper platformRoleMapper;
     private final ProtocolInvokerRegistry protocolInvokerRegistry;
+    private final SensitiveDataEncryptor sensitiveDataEncryptor;
     private final UserDisplayNameResolver userDisplayNameResolver;
     private final NotificationService notificationService;
     private final SystemNotificationFacade systemNotificationFacade;
@@ -90,6 +97,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         String type = normalizeType(request.getResourceType());
         validateByType(type, request);
         ensureUniqueCode(type, request.getResourceCode(), null);
+        if ("agent".equals(type)) {
+            ensureUniqueAgentModelAlias(operatorUserId, request.getModelAlias(), null);
+        }
         ResourceAccessPolicy accessPolicy = ResourceAccessPolicy.OPEN_PLATFORM;
 
         LocalDateTime now = LocalDateTime.now();
@@ -134,6 +144,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
         validateByType(type, request);
         ensureUniqueCode(type, request.getResourceCode(), resourceId);
+        if ("agent".equals(type)) {
+            ensureUniqueAgentModelAlias(requireResourceCreatorForBindings(resourceId), request.getModelAlias(), resourceId);
+        }
 
         String st = ResourceLifecycleStateMachine.normalizeStatus(row.status());
         if (ResourceLifecycleStateMachine.STATUS_PUBLISHED.equals(st)) {
@@ -1178,10 +1191,27 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     req.setSpec(shallowCopyMap(parseJsonMap(snap.get("spec"))));
                 }
                 if (StringUtils.hasText(stringValue(snap.get("endpoint")))) {
-                    String ep = stringValue(snap.get("endpoint")).trim();
-                    Map<String, Object> sp = req.getSpec() == null ? new LinkedHashMap<>() : shallowCopyMap(req.getSpec());
-                    sp.put("url", ep);
-                    req.setSpec(sp);
+                    req.setUpstreamEndpoint(stringValue(snap.get("endpoint")).trim());
+                }
+                if (StringUtils.hasText(stringValue(snap.get("registrationProtocol")))) {
+                    req.setRegistrationProtocol(stringValue(snap.get("registrationProtocol")).trim().toLowerCase(Locale.ROOT));
+                } else if (StringUtils.hasText(stringValue(snap.get("invokeType")))) {
+                    req.setRegistrationProtocol(stringValue(snap.get("invokeType")).trim().toLowerCase(Locale.ROOT));
+                }
+                if (snap.containsKey("upstreamAgentId")) {
+                    req.setUpstreamAgentId(stringValue(snap.get("upstreamAgentId")));
+                }
+                if (snap.containsKey("credentialRef")) {
+                    req.setCredentialRef(stringValue(snap.get("credentialRef")));
+                }
+                if (snap.containsKey("transformProfile")) {
+                    req.setTransformProfile(stringValue(snap.get("transformProfile")));
+                }
+                if (StringUtils.hasText(stringValue(snap.get("modelAlias")))) {
+                    req.setModelAlias(stringValue(snap.get("modelAlias")).trim());
+                }
+                if (snap.containsKey("enabled")) {
+                    req.setEnabled(boolObject(snap.get("enabled")));
                 }
                 if (snap.containsKey("serviceDetailMd")) {
                     Object raw = snap.get("serviceDetailMd");
@@ -1492,19 +1522,19 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         qualityScore = Math.max(0, Math.min(100, qualityScore));
 
         List<Map<String, Object>> hc = jdbcTemplate.queryForList(
-                "SELECT health_status FROM t_resource_health_config WHERE resource_id = ? LIMIT 1",
+                "SELECT health_status FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1",
                 resourceId);
         String health = hc.isEmpty() ? "unknown" : stringValue(hc.get(0).get("health_status"));
         String circuitState;
         if (StringUtils.hasText(resourceType)) {
             String rt = resourceType.trim().toLowerCase(Locale.ROOT);
             List<Map<String, Object>> cb = jdbcTemplate.queryForList(
-                    "SELECT current_state FROM t_resource_circuit_breaker WHERE resource_id = ? AND resource_type = ? LIMIT 1",
+                    "SELECT current_state FROM t_resource_runtime_policy WHERE resource_id = ? AND resource_type = ? LIMIT 1",
                     resourceId, rt);
             circuitState = cb.isEmpty() ? "unknown" : stringValue(cb.get(0).get("current_state"));
         } else {
             List<Map<String, Object>> cb = jdbcTemplate.queryForList(
-                    "SELECT current_state FROM t_resource_circuit_breaker WHERE resource_id = ? LIMIT 1",
+                    "SELECT current_state FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1",
                     resourceId);
             circuitState = cb.isEmpty() ? "unknown" : stringValue(cb.get(0).get("current_state"));
         }
@@ -1527,7 +1557,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             Map<String, Object> li = lastInvokeRows.get(0);
             String st = stringValue(li.get("status"));
             if (StringUtils.hasText(st) && !"success".equalsIgnoreCase(st.trim())) {
-                // 不因单次历史失败覆盖 t_resource_health_config：否则 MCP 已恢复仍会一直显示「暂不可调用」
+                // 不因单次历史失败覆盖 t_resource_runtime_policy 健康状态：否则 MCP 已恢复仍会一直显示「暂不可调用」
                 // （前端 isCatalogMcpCallable 视 healthStatus=down 为禁入）。提示见 lastInvokeFailureHint。
                 String em = stringValue(li.get("error_message"));
                 if (StringUtils.hasText(em)) {
@@ -1600,9 +1630,11 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private void upsertAgentExt(Long resourceId, ResourceUpsertRequest request) {
         String serviceMd = resolveExtServiceDetailMd("t_resource_agent_ext", resourceId, request.getServiceDetailMd());
+        String encryptedCredentialRef = resolveCredentialRefForUpsert(resourceId, request.getCredentialRef());
         int updated = jdbcTemplate.update("""
                         UPDATE t_resource_agent_ext
-                        SET agent_type = ?, mode = ?, spec_json = CAST(? AS JSON), is_public = ?, hidden = ?, max_concurrency = ?, max_steps = ?, temperature = ?, system_prompt = ?, service_detail_md = ?
+                        SET agent_type = ?, mode = ?, spec_json = CAST(? AS JSON), is_public = ?, hidden = ?, max_concurrency = ?, max_steps = ?, temperature = ?, system_prompt = ?, service_detail_md = ?,
+                            registration_protocol = ?, upstream_endpoint = ?, upstream_agent_id = ?, credential_ref = ?, transform_profile = ?, model_alias = ?, enabled = ?
                         WHERE resource_id = ?
                         """,
                 request.getAgentType(),
@@ -1615,11 +1647,18 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 request.getTemperature(),
                 request.getSystemPrompt(),
                 serviceMd,
+                request.getRegistrationProtocol(),
+                request.getUpstreamEndpoint(),
+                request.getUpstreamAgentId(),
+                encryptedCredentialRef,
+                request.getTransformProfile(),
+                request.getModelAlias(),
+                toBoolNumber(request.getEnabled()),
                 resourceId);
         if (updated == 0) {
             jdbcTemplate.update("""
-                            INSERT INTO t_resource_agent_ext(resource_id, agent_type, mode, spec_json, is_public, hidden, max_concurrency, max_steps, temperature, system_prompt, service_detail_md, featured, rating_avg, rating_count)
-                            VALUES(?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, ?, ?, ?, 0, 0.00, 0)
+                            INSERT INTO t_resource_agent_ext(resource_id, agent_type, mode, spec_json, is_public, hidden, max_concurrency, max_steps, temperature, system_prompt, service_detail_md, registration_protocol, upstream_endpoint, upstream_agent_id, credential_ref, transform_profile, model_alias, enabled, featured, rating_avg, rating_count)
+                            VALUES(?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0.00, 0)
                             """,
                     resourceId,
                     request.getAgentType(),
@@ -1631,7 +1670,14 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     request.getMaxSteps(),
                     request.getTemperature(),
                     request.getSystemPrompt(),
-                    serviceMd);
+                    serviceMd,
+                    request.getRegistrationProtocol(),
+                    request.getUpstreamEndpoint(),
+                    request.getUpstreamAgentId(),
+                    encryptedCredentialRef,
+                    request.getTransformProfile(),
+                    request.getModelAlias(),
+                    toBoolNumber(request.getEnabled()));
         }
     }
 
@@ -1860,6 +1906,30 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 if (request.getSpec() == null || request.getSpec().isEmpty()) {
                     throw new BusinessException(ResultCode.PARAM_ERROR, "agent spec 不能为空");
                 }
+                String protocol = defaultString(request.getRegistrationProtocol(), "openai_compatible")
+                        .trim().toLowerCase(Locale.ROOT);
+                if (!AGENT_REG_PROTOCOLS.contains(protocol)) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR, "registrationProtocol 不支持: " + protocol);
+                }
+                request.setRegistrationProtocol(protocol);
+                if (!StringUtils.hasText(request.getUpstreamEndpoint())
+                        && request.getSpec() != null
+                        && StringUtils.hasText(stringValue(request.getSpec().get("url")))) {
+                    request.setUpstreamEndpoint(stringValue(request.getSpec().get("url")).trim());
+                }
+                requireText(request.getUpstreamEndpoint(), "upstreamEndpoint 不能为空");
+                if (!isHttpOrHttpsUrl(request.getUpstreamEndpoint().trim())) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR, "upstreamEndpoint 必须是 http(s) URL");
+                }
+                request.setUpstreamEndpoint(request.getUpstreamEndpoint().trim());
+                if (!StringUtils.hasText(request.getModelAlias()) && StringUtils.hasText(request.getResourceCode())) {
+                    request.setModelAlias(request.getResourceCode().trim());
+                }
+                requireText(request.getModelAlias(), "modelAlias 不能为空");
+                request.setModelAlias(request.getModelAlias().trim());
+                if (request.getEnabled() == null) {
+                    request.setEnabled(Boolean.TRUE);
+                }
             }
             case "skill" -> {
                 String exec = request.getExecutionMode() == null ? SKILL_EXEC_CONTEXT : request.getExecutionMode().trim().toLowerCase(Locale.ROOT);
@@ -1952,6 +2022,31 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
         if (count != null && count > 0) {
             throw new BusinessException(ResultCode.DUPLICATE_NAME, "同类型资源编码已存在");
+        }
+    }
+
+    private void ensureUniqueAgentModelAlias(Long ownerUserId, String modelAlias, Long excludeResourceId) {
+        if (!StringUtils.hasText(modelAlias) || ownerUserId == null) {
+            return;
+        }
+        String alias = modelAlias.trim();
+        Integer count = jdbcTemplate.queryForObject("""
+                        SELECT COUNT(1)
+                        FROM t_resource r
+                        JOIN t_resource_agent_ext ae ON ae.resource_id = r.id
+                        WHERE r.deleted = 0
+                          AND r.resource_type = 'agent'
+                          AND r.created_by = ?
+                          AND ae.model_alias = ?
+                          AND (? IS NULL OR r.id <> ?)
+                        """,
+                Integer.class,
+                ownerUserId,
+                alias,
+                excludeResourceId,
+                excludeResourceId);
+        if (count != null && count > 0) {
+            throw new BusinessException(ResultCode.DUPLICATE_NAME, "当前租户下 modelAlias 已存在");
         }
     }
 
@@ -2089,9 +2184,16 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         snapshot.put("accessPolicy", accessPolicy.wireValue());
         switch (type) {
             case "agent" -> {
-                snapshot.put("invokeType", "rest");
-                snapshot.put("endpoint", request.getSpec() == null ? null : request.getSpec().get("url"));
+                snapshot.put("invokeType", request.getRegistrationProtocol());
+                snapshot.put("endpoint", request.getUpstreamEndpoint());
                 snapshot.put("spec", defaultMap(request.getSpec()));
+                snapshot.put("registrationProtocol", request.getRegistrationProtocol());
+                snapshot.put("upstreamEndpoint", request.getUpstreamEndpoint());
+                snapshot.put("upstreamAgentId", request.getUpstreamAgentId());
+                snapshot.put("credentialRef", maskCredentialRef(request.getCredentialRef()));
+                snapshot.put("transformProfile", request.getTransformProfile());
+                snapshot.put("modelAlias", request.getModelAlias());
+                snapshot.put("enabled", request.getEnabled());
                 if (StringUtils.hasText(request.getServiceDetailMd())) {
                     snapshot.put("serviceDetailMd", request.getServiceDetailMd().trim());
                 }
@@ -2178,12 +2280,19 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         switch (type) {
             case "agent" -> {
                 Map<String, Object> ext = jdbcTemplate.queryForList(
-                                "SELECT spec_json, service_detail_md FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1", resourceId)
+                                "SELECT spec_json, service_detail_md, registration_protocol, upstream_endpoint, upstream_agent_id, credential_ref, transform_profile, model_alias, enabled FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1", resourceId)
                         .stream().findFirst().orElse(Map.of());
                 Map<String, Object> spec = parseJsonMap(ext.get("spec_json"));
-                snapshot.put("invokeType", "rest");
-                snapshot.put("endpoint", spec.get("url"));
+                snapshot.put("invokeType", stringValue(ext.get("registration_protocol")));
+                snapshot.put("endpoint", stringValue(ext.get("upstream_endpoint")));
                 snapshot.put("spec", spec);
+                snapshot.put("registrationProtocol", stringValue(ext.get("registration_protocol")));
+                snapshot.put("upstreamEndpoint", stringValue(ext.get("upstream_endpoint")));
+                snapshot.put("upstreamAgentId", stringValue(ext.get("upstream_agent_id")));
+                snapshot.put("credentialRef", maskCredentialRef(stringValue(ext.get("credential_ref"))));
+                snapshot.put("transformProfile", stringValue(ext.get("transform_profile")));
+                snapshot.put("modelAlias", stringValue(ext.get("model_alias")));
+                snapshot.put("enabled", boolObject(ext.get("enabled")));
                 if (StringUtils.hasText(stringValue(ext.get("service_detail_md")))) {
                     snapshot.put("serviceDetailMd", stringValue(ext.get("service_detail_md")).trim());
                 }
@@ -2374,7 +2483,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private void enrichAgentFields(ResourceManageVO vo, Long resourceId) {
         var rows = jdbcTemplate.queryForList("""
-                        SELECT agent_type, mode, spec_json, is_public, hidden, max_concurrency, max_steps, temperature, system_prompt, service_detail_md
+                        SELECT agent_type, mode, spec_json, is_public, hidden, max_concurrency, max_steps, temperature, system_prompt, service_detail_md,
+                               registration_protocol, upstream_endpoint, upstream_agent_id, credential_ref, transform_profile, model_alias, enabled
                         FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1
                         """,
                 resourceId);
@@ -2391,6 +2501,13 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         vo.setMaxSteps(intObject(r.get("max_steps")));
         vo.setTemperature(doubleObject(r.get("temperature")));
         vo.setSystemPrompt(stringValue(r.get("system_prompt")));
+        vo.setRegistrationProtocol(stringValue(r.get("registration_protocol")));
+        vo.setUpstreamEndpoint(stringValue(r.get("upstream_endpoint")));
+        vo.setUpstreamAgentId(stringValue(r.get("upstream_agent_id")));
+        vo.setCredentialRef(maskCredentialRef(stringValue(r.get("credential_ref"))));
+        vo.setTransformProfile(stringValue(r.get("transform_profile")));
+        vo.setModelAlias(stringValue(r.get("model_alias")));
+        vo.setEnabled(boolObject(r.get("enabled")));
         vo.setServiceDetailMd(stringValue(r.get("service_detail_md")));
     }
 
@@ -2472,6 +2589,48 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private List<String> toStringListFromJsonColumn(Object raw) {
         return parseJsonList(raw).stream().map(String::valueOf).toList();
+    }
+
+    private String encryptCredentialRef(String credentialRef) {
+        if (!StringUtils.hasText(credentialRef)) {
+            return null;
+        }
+        return sensitiveDataEncryptor.encrypt(credentialRef.trim());
+    }
+
+    private String resolveCredentialRefForUpsert(Long resourceId, String credentialRefRaw) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT credential_ref FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1",
+                resourceId);
+        String existing = rows.isEmpty() ? null : stringValue(rows.get(0).get("credential_ref"));
+        if (!StringUtils.hasText(credentialRefRaw)) {
+            return existing;
+        }
+        String v = credentialRefRaw.trim();
+        if (v.contains("****")) {
+            return existing;
+        }
+        return encryptCredentialRef(v);
+    }
+
+    private String maskCredentialRef(String encryptedCredentialRef) {
+        if (!StringUtils.hasText(encryptedCredentialRef)) {
+            return null;
+        }
+        String plain;
+        try {
+            plain = sensitiveDataEncryptor.decrypt(encryptedCredentialRef);
+        } catch (RuntimeException ex) {
+            plain = encryptedCredentialRef;
+        }
+        if (!StringUtils.hasText(plain)) {
+            return "****";
+        }
+        String p = plain.trim();
+        if (p.length() <= 8) {
+            return "****";
+        }
+        return p.substring(0, 4) + "****" + p.substring(p.length() - 2);
     }
 
     private static Boolean boolObject(Object o) {

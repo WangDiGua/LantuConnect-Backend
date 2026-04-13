@@ -36,7 +36,7 @@ public class ApiKeyScopeService {
         if (!StringUtils.hasText(rawApiKey)) {
             return null;
         }
-        String key = rawApiKey.trim();
+        String key = normalizeRawKey(rawApiKey);
         String hash = sha256Hex(key);
         ApiKey row = apiKeyMapper.selectOne(new LambdaQueryWrapper<ApiKey>().eq(ApiKey::getKeyHash, hash));
         if (row == null || !"active".equalsIgnoreCase(row.getStatus())) {
@@ -109,6 +109,13 @@ public class ApiKeyScopeService {
         if (StringUtils.hasText(type) && StringUtils.hasText(rid) && scopes.contains(action + ":id:" + type + ":" + rid)) {
             return true;
         }
+        if ("catalog".equals(action) && "agent".equals(type) && scopes.contains("models.read")) {
+            return true;
+        }
+        if ("invoke".equals(action) && "agent".equals(type)
+                && (scopes.contains("chat.invoke") || scopes.contains("responses.invoke") || scopes.contains("assistants.invoke"))) {
+            return true;
+        }
 
         // Backward-compatible broad scopes from existing role-like semantics.
         if ("agent".equals(type) && scopes.contains("agent:read")) return true;
@@ -124,6 +131,14 @@ public class ApiKeyScopeService {
         }
 
         return false;
+    }
+
+    private static String normalizeRawKey(String rawApiKey) {
+        String key = rawApiKey.trim();
+        if (key.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            return key.substring(7).trim();
+        }
+        return key;
     }
 
     private static String sha256Hex(String raw) {

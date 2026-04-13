@@ -16,6 +16,7 @@ import com.lantu.connect.dashboard.service.DashboardService;
 import com.lantu.connect.monitoring.entity.AlertRecord;
 import com.lantu.connect.monitoring.entity.CircuitBreaker;
 import com.lantu.connect.monitoring.entity.CallLog;
+import com.lantu.connect.monitoring.entity.HealthConfig;
 import com.lantu.connect.monitoring.mapper.AlertRecordMapper;
 import com.lantu.connect.monitoring.mapper.CallLogMapper;
 import com.lantu.connect.monitoring.mapper.CircuitBreakerMapper;
@@ -159,21 +160,22 @@ public class DashboardServiceImpl implements DashboardService {
      */
     @Override
     public Map<String, Object> healthSummary() {
-        long cfg = healthConfigMapper.selectCount(null);
+        long cfg = healthConfigMapper.selectCount(new LambdaQueryWrapper<HealthConfig>().isNotNull(HealthConfig::getCheckType));
         long open = circuitBreakerMapper.selectCount(
                 new LambdaQueryWrapper<CircuitBreaker>().eq(CircuitBreaker::getCurrentState, CircuitBreaker.STATE_OPEN));
         List<Map<String, Object>> checks = jdbcTemplate.queryForList(
                 "SELECT resource_id, resource_type, resource_code, display_name, health_status, last_check_time "
-                        + "FROM t_resource_health_config ORDER BY update_time DESC LIMIT 20");
+                        + "FROM t_resource_runtime_policy WHERE check_type IS NOT NULL ORDER BY update_time DESC LIMIT 20");
         List<Map<String, Object>> degraded = jdbcTemplate.queryForList(
                 "SELECT h.resource_id, h.resource_type, h.resource_code, h.display_name, h.health_status, "
                         + "COALESCE(cb.current_state, 'unknown') AS circuit_state "
-                        + "FROM t_resource_health_config h "
-                        + "LEFT JOIN t_resource_circuit_breaker cb ON cb.resource_id = h.resource_id "
-                        + "WHERE h.health_status <> 'healthy' OR cb.current_state = 'OPEN' "
+                        + "FROM t_resource_runtime_policy h "
+                        + "LEFT JOIN t_resource_runtime_policy cb ON cb.resource_id = h.resource_id "
+                        + "WHERE h.check_type IS NOT NULL AND (h.health_status <> 'healthy' OR cb.current_state = 'OPEN') "
                         + "ORDER BY h.update_time DESC LIMIT 20");
         List<Map<String, Object>> statusDistRows = jdbcTemplate.queryForList(
-                "SELECT health_status, COUNT(1) AS cnt FROM t_resource_health_config GROUP BY health_status");
+                "SELECT health_status, COUNT(1) AS cnt FROM t_resource_runtime_policy "
+                        + "WHERE check_type IS NOT NULL GROUP BY health_status");
         Map<String, Long> statusDistribution = new LinkedHashMap<>();
         for (Map<String, Object> row : statusDistRows) {
             statusDistribution.put(String.valueOf(row.get("health_status")),
@@ -671,7 +673,7 @@ public class DashboardServiceImpl implements DashboardService {
     private List<Map<String, Object>> buildSystemHealthForAdminOverview() {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT COALESCE(NULLIF(TRIM(display_name), ''), resource_code) AS name, health_status "
-                        + "FROM t_resource_health_config ORDER BY id ASC LIMIT 30");
+                        + "FROM t_resource_runtime_policy WHERE check_type IS NOT NULL ORDER BY id ASC LIMIT 30");
         List<Map<String, Object>> out = new ArrayList<>();
         for (Map<String, Object> row : rows) {
             String comp = String.valueOf(row.get("name"));

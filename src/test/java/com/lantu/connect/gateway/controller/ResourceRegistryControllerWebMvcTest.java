@@ -10,6 +10,7 @@ import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.util.JwtUtil;
 import com.lantu.connect.gateway.dto.ResourceManageVO;
 import com.lantu.connect.gateway.dto.ResourceVersionVO;
+import com.lantu.connect.gateway.security.AgentApiKeyService;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.service.McpConnectivityProbeService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
@@ -36,12 +37,14 @@ class ResourceRegistryControllerWebMvcTest {
     private ResourceRegistryService resourceRegistryService;
     private ApiKeyScopeService apiKeyScopeService;
     private McpConnectivityProbeService mcpConnectivityProbeService;
+    private AgentApiKeyService agentApiKeyService;
 
     @BeforeEach
     void setUp() {
         resourceRegistryService = mock(ResourceRegistryService.class);
         apiKeyScopeService = mock(ApiKeyScopeService.class);
         mcpConnectivityProbeService = mock(McpConnectivityProbeService.class);
+        agentApiKeyService = mock(AgentApiKeyService.class);
         JwtUtil jwtUtil = mock(JwtUtil.class);
         AccessTokenBlacklist blacklist = mock(AccessTokenBlacklist.class);
         SessionRevocationRegistry sessionRevocationRegistry = mock(SessionRevocationRegistry.class);
@@ -80,7 +83,7 @@ class ResourceRegistryControllerWebMvcTest {
 
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new ResourceRegistryController(
-                        resourceRegistryService, mcpConnectivityProbeService))
+                        resourceRegistryService, mcpConnectivityProbeService, agentApiKeyService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .addFilters(jwtFilter)
                 .build();
