@@ -23,6 +23,10 @@ public interface NotificationService {
     Page<Notification> listByUser(Long userId, int page, int pageSize, String type, Boolean isRead,
                                   LocalDateTime startTime, LocalDateTime endTime);
 
+    Page<Notification> listByUser(Long userId, int page, int pageSize, String type, String category,
+                                  String severity, String flowStatus, Boolean isRead,
+                                  LocalDateTime startTime, LocalDateTime endTime);
+
     Notification getById(Long userId, Long notificationId);
 
     long unreadCount(Long userId);

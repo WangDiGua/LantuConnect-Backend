@@ -239,6 +239,18 @@ public class RealtimePushService {
         m.put("sourceType", n.getSourceType());
         m.put("sourceId", n.getSourceId());
         m.put("isRead", n.getIsRead());
+        m.put("category", n.getCategory());
+        m.put("severity", n.getSeverity());
+        m.put("aggregateKey", n.getAggregateKey());
+        m.put("flowStatus", n.getFlowStatus());
+        m.put("currentStep", n.getCurrentStep());
+        m.put("totalSteps", n.getTotalSteps());
+        m.put("stepsJson", n.getStepsJson());
+        m.put("actionLabel", n.getActionLabel());
+        m.put("actionUrl", n.getActionUrl());
+        m.put("metadataJson", n.getMetadataJson());
+        m.put("lastEventTime", n.getLastEventTime());
+        m.put("updateTime", n.getUpdateTime());
         m.put("createTime", n.getCreateTime());
         return m;
     }

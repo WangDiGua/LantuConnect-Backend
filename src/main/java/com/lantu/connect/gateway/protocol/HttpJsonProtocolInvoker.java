@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
@@ -18,14 +17,18 @@ import java.util.Map;
 import java.util.Set;
 
 @Component
-@RequiredArgsConstructor
 public class HttpJsonProtocolInvoker implements GatewayProtocolInvoker {
 
     private static final Set<String> SUPPORTED = Set.of("http", "rest", "openapi", "webhook");
 
     private final ObjectMapper objectMapper;
-    @Qualifier("gatewayHttpClient")
     private final HttpClient httpClient;
+
+    public HttpJsonProtocolInvoker(ObjectMapper objectMapper,
+                                   @Qualifier("gatewayHttpClient") HttpClient httpClient) {
+        this.objectMapper = objectMapper;
+        this.httpClient = httpClient;
+    }
 
     @Override
     public boolean supports(String protocol) {

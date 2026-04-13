@@ -2,6 +2,7 @@ package com.lantu.connect.common.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
@@ -10,6 +11,7 @@ import java.time.Duration;
 public class GatewayHttpClientConfig {
 
     @Bean(name = "gatewayHttpClient")
+    @Primary
     public HttpClient gatewayHttpClient() {
         return HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(15))

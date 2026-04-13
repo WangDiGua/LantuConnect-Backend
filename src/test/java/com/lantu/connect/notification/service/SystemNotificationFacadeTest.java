@@ -1,7 +1,9 @@
 package com.lantu.connect.notification.service;
 
+import com.lantu.connect.notification.entity.Notification;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -9,6 +11,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -31,20 +36,22 @@ class SystemNotificationFacadeTest {
 
         facade.notifyOnboardingSubmitted(7L, 99L, "Acme", "接入 MCP");
 
-        verify(multiChannelNotificationService).sendAll(
-                eq(10L),
-                eq(NotificationEventCodes.ONBOARDING_SUBMITTED),
-                eq("入驻申请待审核"),
-                org.mockito.ArgumentMatchers.contains("申请人"),
-                eq("developer_application"),
-                eq("99"));
-        verify(multiChannelNotificationService).sendAll(
-                eq(11L),
-                eq(NotificationEventCodes.ONBOARDING_SUBMITTED),
-                eq("入驻申请待审核"),
-                org.mockito.ArgumentMatchers.contains("申请人"),
-                eq("developer_application"),
-                eq("99"));
+        ArgumentCaptor<Notification> cap = ArgumentCaptor.forClass(Notification.class);
+        verify(multiChannelNotificationService, org.mockito.Mockito.times(2)).sendAll(cap.capture());
+        Notification first = cap.getAllValues().get(0);
+        assertEquals(10L, first.getUserId());
+        assertEquals(NotificationEventCodes.ONBOARDING_SUBMITTED, first.getType());
+        assertEquals("入驻申请待审核", first.getTitle());
+        assertTrue(first.getBody().contains("申请人"));
+        assertEquals("developer_application", first.getSourceType());
+        assertEquals("99", first.getSourceId());
+        assertEquals("workflow", first.getCategory());
+        assertEquals("developer_application:99:onboarding", first.getAggregateKey());
+        assertEquals("running", first.getFlowStatus());
+        assertEquals(1, first.getCurrentStep());
+        assertEquals(2, first.getTotalSteps());
+        assertEquals("submitted", first.getStepKey());
+        assertEquals("提交入驻申请", first.getStepTitle());
     }
 
     @Test
@@ -53,13 +60,17 @@ class SystemNotificationFacadeTest {
 
         facade.notifyPasswordChanged(23L);
 
-        verify(multiChannelNotificationService).sendAll(
-                eq(23L),
-                eq(NotificationEventCodes.PASSWORD_CHANGED),
-                eq("账号密码已修改"),
-                org.mockito.ArgumentMatchers.contains("账号安全"),
-                eq("user"),
-                eq("23"));
+        ArgumentCaptor<Notification> cap = ArgumentCaptor.forClass(Notification.class);
+        verify(multiChannelNotificationService).sendAll(cap.capture());
+        Notification n = cap.getValue();
+        assertEquals(23L, n.getUserId());
+        assertEquals(NotificationEventCodes.PASSWORD_CHANGED, n.getType());
+        assertEquals("账号密码已修改", n.getTitle());
+        assertTrue(n.getBody().contains("账号安全"));
+        assertEquals("user", n.getSourceType());
+        assertEquals("23", n.getSourceId());
+        assertEquals("alert", n.getCategory());
+        assertNull(n.getAggregateKey());
     }
 
     @Test
@@ -68,13 +79,20 @@ class SystemNotificationFacadeTest {
 
         facade.notifyApiKeyChanged(5L, "k-1", "prod-key", false);
 
-        verify(multiChannelNotificationService).sendAll(
-                eq(5L),
-                eq(NotificationEventCodes.API_KEY_REVOKED),
-                eq("API Key 已撤销"),
-                org.mockito.ArgumentMatchers.contains("撤销成功"),
-                eq("api_key"),
-                eq("k-1"));
+        ArgumentCaptor<Notification> cap = ArgumentCaptor.forClass(Notification.class);
+        verify(multiChannelNotificationService).sendAll(cap.capture());
+        Notification n = cap.getValue();
+        assertEquals(5L, n.getUserId());
+        assertEquals(NotificationEventCodes.API_KEY_REVOKED, n.getType());
+        assertEquals("API Key 已撤销", n.getTitle());
+        assertTrue(n.getBody().contains("撤销成功"));
+        assertEquals("api_key", n.getSourceType());
+        assertEquals("k-1", n.getSourceId());
+        assertEquals("security", n.getCategory());
+        assertEquals("warning", n.getSeverity());
+        assertEquals("api_key:k-1:lifecycle", n.getAggregateKey());
+        assertEquals(3, n.getCurrentStep());
+        assertEquals("revoked", n.getStepKey());
     }
 
     @Test
@@ -85,15 +103,19 @@ class SystemNotificationFacadeTest {
 
         facade.notifyAlertTriggered("CPU", "high", "cpu_usage", "80", "95", "r-1");
 
-        verify(multiChannelNotificationService).sendAll(
-                eq(10L),
-                eq(NotificationEventCodes.ALERT_TRIGGERED),
-                eq("系统告警触发: CPU"),
-                org.mockito.ArgumentMatchers.contains("样本值: 95"),
-                eq("alert"),
-                eq(null));
+        ArgumentCaptor<Notification> cap = ArgumentCaptor.forClass(Notification.class);
+        verify(multiChannelNotificationService).sendAll(cap.capture());
+        Notification n = cap.getValue();
+        assertEquals(10L, n.getUserId());
+        assertEquals(NotificationEventCodes.ALERT_TRIGGERED, n.getType());
+        assertEquals("系统告警触发: CPU", n.getTitle());
+        assertTrue(n.getBody().contains("样本值: 95"));
+        assertEquals("alert", n.getSourceType());
+        assertNull(n.getSourceId());
+        assertEquals("alert", n.getCategory());
+        assertEquals("warning", n.getSeverity());
         verify(multiChannelNotificationService, never()).sendAll(
-                eq(0L), anyString(), anyString(), anyString(), anyString(), anyString());
+                org.mockito.ArgumentMatchers.argThat(item -> item != null && Long.valueOf(0L).equals(item.getUserId())));
     }
 
     @Test
@@ -104,12 +126,15 @@ class SystemNotificationFacadeTest {
 
         facade.notifySystemSecurityOperation(1L, NotificationEventCodes.SECURITY_SETTING_CHANGED, "修改安全配置", "jwt.secret");
 
-        verify(multiChannelNotificationService).sendAll(
-                eq(2L),
-                eq(NotificationEventCodes.SECURITY_SETTING_CHANGED),
-                eq("系统安全配置变更"),
-                org.mockito.ArgumentMatchers.contains("jwt.secret"),
-                eq("system-config"),
-                eq(null));
+        ArgumentCaptor<Notification> cap = ArgumentCaptor.forClass(Notification.class);
+        verify(multiChannelNotificationService).sendAll(cap.capture());
+        Notification n = cap.getValue();
+        assertEquals(2L, n.getUserId());
+        assertEquals(NotificationEventCodes.SECURITY_SETTING_CHANGED, n.getType());
+        assertEquals("系统安全配置变更", n.getTitle());
+        assertTrue(n.getBody().contains("jwt.secret"));
+        assertEquals("system-config", n.getSourceType());
+        assertNull(n.getSourceId());
+        assertEquals("alert", n.getCategory());
     }
 }

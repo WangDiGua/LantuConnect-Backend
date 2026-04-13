@@ -1,6 +1,7 @@
 package com.lantu.connect.notification.service;
 
 import lombok.RequiredArgsConstructor;
+import com.lantu.connect.notification.entity.Notification;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -27,7 +28,15 @@ public class SystemNotificationFacade {
         if (userId == null || userId <= 0L) {
             return;
         }
-        multiChannelNotificationService.sendAll(userId, type, title, body, sourceType, sourceId);
+        Notification notification = new Notification();
+        notification.setUserId(userId);
+        notification.setType(type);
+        notification.setTitle(title);
+        notification.setBody(body);
+        notification.setSourceType(sourceType);
+        notification.setSourceId(sourceId);
+        enrichFlowFields(notification);
+        multiChannelNotificationService.sendAll(notification);
     }
 
     public void notifyToUsers(List<Long> userIds, String type, String title, String body, String sourceType, Long sourceId) {
@@ -225,7 +234,7 @@ public class SystemNotificationFacade {
                 "系统告警触发: " + fallbackText(ruleName, "-"),
                 buildBody("监控告警", "触发", details, "请尽快检查监控面板并处理故障。"),
                 "alert",
-                null,
+                recordId == null ? null : Long.valueOf(recordId),
                 null);
     }
 
@@ -266,5 +275,141 @@ public class SystemNotificationFacade {
 
     private static String fallbackText(String text, String fallback) {
         return StringUtils.hasText(text) ? text.trim() : fallback;
+    }
+
+    private static void enrichFlowFields(Notification n) {
+        String type = n.getType() == null ? "" : n.getType().trim().toLowerCase(Locale.ROOT);
+        n.setCategory(defaultCategory(type));
+        n.setSeverity(defaultSeverity(type));
+
+        if (isResourcePublicationEvent(type) && StringUtils.hasText(n.getSourceId())) {
+            n.setCategory("workflow");
+            n.setAggregateKey("resource:" + n.getSourceId().trim() + ":publication");
+            n.setTotalSteps(4);
+            n.setActionLabel(NotificationEventCodes.RESOURCE_SUBMITTED.equals(type) ? "处理审核" : "查看资源");
+            n.setFlowStatus("running");
+            if (NotificationEventCodes.RESOURCE_SUBMITTED.equals(type)) {
+                setStep(n, 1, "submitted", "提交审核", "done", "资源已进入审核队列");
+            } else if (NotificationEventCodes.AUDIT_APPROVED.equals(type)) {
+                setStep(n, 2, "reviewed", "审核通过", "done", "资源已通过审核，等待测试灰度或发布上线");
+                n.setSeverity("success");
+            } else if (NotificationEventCodes.AUDIT_REJECTED.equals(type)) {
+                setStep(n, 2, "rejected", "审核驳回", "failed", "资源审核未通过，请查看原因后重新提交");
+                n.setFlowStatus("failed");
+                n.setSeverity("warning");
+            } else if (NotificationEventCodes.RESOURCE_PUBLISHED.equals(type)) {
+                setStep(n, 4, "published", "发布上线", "done", "资源已进入平台可用资源池");
+                n.setFlowStatus("success");
+                n.setSeverity("success");
+            }
+            return;
+        }
+
+        if (isResourceGovernanceEvent(type) && StringUtils.hasText(n.getSourceId())) {
+            n.setCategory("workflow");
+            n.setAggregateKey("resource:" + n.getSourceId().trim() + ":governance");
+            n.setTotalSteps(1);
+            n.setCurrentStep(1);
+            n.setActionLabel("查看资源");
+            if (NotificationEventCodes.RESOURCE_VERSION_SWITCHED.equals(type)) {
+                setStep(n, 1, "version_switched", "默认版本切换", "done", "资源默认版本已更新");
+                n.setFlowStatus("success");
+                n.setSeverity("info");
+            } else if (NotificationEventCodes.RESOURCE_WITHDRAWN.equals(type)) {
+                setStep(n, 1, "withdrawn", "撤回草稿", "done", "资源已撤回到草稿状态");
+                n.setFlowStatus("success");
+                n.setSeverity("info");
+            } else {
+                setStep(n, 1, "deprecated", "暂停开放", "warning", "资源已下架或暂停对外开放");
+                n.setFlowStatus("warning");
+                n.setSeverity("warning");
+            }
+            return;
+        }
+
+        if (type.startsWith("onboarding_") && StringUtils.hasText(n.getSourceId())) {
+            n.setCategory("workflow");
+            n.setAggregateKey("developer_application:" + n.getSourceId().trim() + ":onboarding");
+            n.setTotalSteps(2);
+            n.setActionLabel(NotificationEventCodes.ONBOARDING_SUBMITTED.equals(type) ? "处理入驻" : "查看入驻申请");
+            if (NotificationEventCodes.ONBOARDING_SUBMITTED.equals(type)) {
+                n.setFlowStatus("running");
+                setStep(n, 1, "submitted", "提交入驻申请", "done", "申请已进入平台审核队列");
+            } else if (NotificationEventCodes.ONBOARDING_APPROVED.equals(type)) {
+                n.setFlowStatus("success");
+                n.setSeverity("success");
+                setStep(n, 2, "reviewed", "入驻通过", "done", "开发者入驻申请已通过");
+            } else if (NotificationEventCodes.ONBOARDING_REJECTED.equals(type)) {
+                n.setFlowStatus("failed");
+                n.setSeverity("warning");
+                setStep(n, 2, "reviewed", "入驻驳回", "failed", "开发者入驻申请未通过");
+            }
+            return;
+        }
+
+        if (type.startsWith("api_key_") && StringUtils.hasText(n.getSourceId())) {
+            n.setCategory("security");
+            n.setAggregateKey("api_key:" + n.getSourceId().trim() + ":lifecycle");
+            n.setTotalSteps(3);
+            n.setActionLabel("查看 API Key");
+            if (NotificationEventCodes.API_KEY_CREATED.equals(type)) {
+                n.setFlowStatus("running");
+                setStep(n, 1, "created", "创建密钥", "done", "API Key 已创建");
+            } else if (NotificationEventCodes.API_KEY_ROTATED.equals(type)) {
+                n.setFlowStatus("running");
+                n.setSeverity("warning");
+                setStep(n, 2, "rotated", "轮换密钥", "warning", "旧密钥已失效，请更新集成配置");
+            } else if (NotificationEventCodes.API_KEY_REVOKED.equals(type)) {
+                n.setFlowStatus("success");
+                n.setSeverity("warning");
+                setStep(n, 3, "revoked", "撤销密钥", "done", "API Key 已撤销");
+            }
+        }
+    }
+
+    private static boolean isResourcePublicationEvent(String type) {
+        return NotificationEventCodes.RESOURCE_SUBMITTED.equals(type)
+                || NotificationEventCodes.AUDIT_APPROVED.equals(type)
+                || NotificationEventCodes.AUDIT_REJECTED.equals(type)
+                || NotificationEventCodes.RESOURCE_PUBLISHED.equals(type);
+    }
+
+    private static boolean isResourceGovernanceEvent(String type) {
+        return NotificationEventCodes.RESOURCE_DEPRECATED.equals(type)
+                || NotificationEventCodes.RESOURCE_WITHDRAWN.equals(type)
+                || NotificationEventCodes.RESOURCE_VERSION_SWITCHED.equals(type)
+                || NotificationEventCodes.PLATFORM_RESOURCE_FORCE_DEPRECATED.equals(type);
+    }
+
+    private static void setStep(Notification n, int currentStep, String key, String title, String status, String summary) {
+        n.setCurrentStep(currentStep);
+        n.setStepKey(key);
+        n.setStepTitle(title);
+        n.setStepStatus(status);
+        n.setStepSummary(summary);
+    }
+
+    private static String defaultCategory(String type) {
+        if (type.contains("password") || type.contains("session") || type.contains("security")
+                || type.contains("api_key") || type.contains("revoked") || type.contains("alert")) {
+            return "alert";
+        }
+        if (type.startsWith("system_")) {
+            return "system";
+        }
+        return "notice";
+    }
+
+    private static String defaultSeverity(String type) {
+        if (type.contains("rejected") || type.contains("revoked") || type.contains("deprecated")
+                || type.contains("killed") || type.contains("alert") || type.contains("security")
+                || type.contains("system_param")) {
+            return "warning";
+        }
+        if (type.contains("approved") || type.contains("published") || type.contains("created")
+                || type.contains("rotated")) {
+            return "success";
+        }
+        return "info";
     }
 }

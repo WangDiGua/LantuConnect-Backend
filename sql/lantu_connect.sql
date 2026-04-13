@@ -403,23 +403,38 @@ CREATE TABLE `t_notification`  (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `user_id` bigint NOT NULL COMMENT '接收用户ID, 0=广播',
   `type` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT 'notice / alert / system / 业务事件码',
+  `category` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'notice' COMMENT 'workflow / notice / alert / system / security',
+  `severity` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'info' COMMENT 'info / success / warning / error',
   `title` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `body` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
   `source_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '来源类型: audit / alert / system_announce',
   `source_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '来源资源ID',
+  `aggregate_key` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '同一用户内聚合流程主卡片的键',
+  `flow_status` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT 'running / success / failed / warning',
+  `current_step` int NULL DEFAULT NULL,
+  `total_steps` int NULL DEFAULT NULL,
+  `steps_json` json NULL,
+  `action_label` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
+  `action_url` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
+  `metadata_json` json NULL,
   `is_read` tinyint(1) NULL DEFAULT 0,
   `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` datetime NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `last_event_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_notification_user`(`user_id` ASC, `is_read` ASC) USING BTREE,
-  INDEX `idx_notification_time`(`create_time` ASC) USING BTREE
+  INDEX `idx_notification_time`(`create_time` ASC) USING BTREE,
+  INDEX `idx_notification_aggregate`(`user_id` ASC, `aggregate_key` ASC) USING BTREE,
+  INDEX `idx_notification_category`(`user_id` ASC, `category` ASC, `is_read` ASC) USING BTREE,
+  INDEX `idx_notification_last_event`(`user_id` ASC, `last_event_time` ASC) USING BTREE
 ) ENGINE = InnoDB AUTO_INCREMENT = 4 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '通知表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_notification
 -- ----------------------------
-INSERT INTO `t_notification` VALUES (1, 0, 'system', '系统维护公告', '兰智通平台将于2026年3月25日凌晨2:00-4:00进行系统维护升级，届时服务将暂停。', 'system_announce', NULL, 0, '2026-03-22 10:58:54');
-INSERT INTO `t_notification` VALUES (2, 3, 'notice', '您的 Agent「图像生成」已提交审核', '您提交的 Agent「图像生成」正在等待管理员审核，预计1-2个工作日内完成。', 'audit', '5', 0, '2026-03-22 10:58:54');
-INSERT INTO `t_notification` VALUES (3, 3, 'notice', '您的 Skill「OCR 文字识别」已提交审核', '您提交的 Skill「OCR 文字识别」正在等待审核。', 'audit', '8', 1, '2026-03-22 10:58:54');
+INSERT INTO `t_notification` (`id`, `user_id`, `type`, `category`, `severity`, `title`, `body`, `source_type`, `source_id`, `is_read`, `create_time`, `update_time`, `last_event_time`) VALUES (1, 0, 'system', 'system', 'info', '系统维护公告', '兰智通平台将于2026年3月25日凌晨2:00-4:00进行系统维护升级，届时服务将暂停。', 'system_announce', NULL, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_notification` (`id`, `user_id`, `type`, `category`, `severity`, `title`, `body`, `source_type`, `source_id`, `is_read`, `create_time`, `update_time`, `last_event_time`) VALUES (2, 3, 'notice', 'notice', 'info', '您的 Agent「图像生成」已提交审核', '您提交的 Agent「图像生成」正在等待管理员审核，预计1-2个工作日内完成。', 'audit', '5', 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_notification` (`id`, `user_id`, `type`, `category`, `severity`, `title`, `body`, `source_type`, `source_id`, `is_read`, `create_time`, `update_time`, `last_event_time`) VALUES (3, 3, 'notice', 'notice', 'info', '您的 Skill「OCR 文字识别」已提交审核', '您提交的 Skill「OCR 文字识别」正在等待审核。', 'audit', '8', 1, '2026-03-22 10:58:54', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
 
 -- ----------------------------
 -- Table structure for t_org_menu

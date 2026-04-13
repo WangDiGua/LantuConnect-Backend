@@ -31,10 +31,14 @@ public class NotificationController {
                                             @RequestParam(defaultValue = "1") int page,
                                             @RequestParam(defaultValue = "10") int pageSize,
                                             @RequestParam(required = false) String type,
+                                            @RequestParam(required = false) String category,
+                                            @RequestParam(required = false) String severity,
+                                            @RequestParam(required = false) String flowStatus,
                                             @RequestParam(required = false) Boolean isRead,
                                             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
                                             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
-        Page<Notification> data = notificationService.listByUser(userId, page, pageSize, type, isRead, startTime, endTime);
+        Page<Notification> data = notificationService.listByUser(
+                userId, page, pageSize, type, category, severity, flowStatus, isRead, startTime, endTime);
         return R.ok(PageResults.from(data));
     }
 

@@ -29,7 +29,33 @@ public class Notification {
     private String sourceType;
     private String sourceId;
     private Boolean isRead;
+    private String category;
+    private String severity;
+    private String aggregateKey;
+    private String flowStatus;
+    private Integer currentStep;
+    private Integer totalSteps;
+    private String stepsJson;
+    private String actionLabel;
+    private String actionUrl;
+    private String metadataJson;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
+
+    private LocalDateTime updateTime;
+
+    private LocalDateTime lastEventTime;
+
+    @TableField(exist = false)
+    private String stepKey;
+
+    @TableField(exist = false)
+    private String stepTitle;
+
+    @TableField(exist = false)
+    private String stepStatus;
+
+    @TableField(exist = false)
+    private String stepSummary;
 }

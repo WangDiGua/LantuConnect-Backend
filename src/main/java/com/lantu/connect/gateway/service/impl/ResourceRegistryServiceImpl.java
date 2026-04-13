@@ -24,7 +24,6 @@ import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.common.util.SensitiveDataEncryptor;
 import com.lantu.connect.notification.service.NotificationEventCodes;
-import com.lantu.connect.notification.service.NotificationService;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
 import com.lantu.connect.realtime.AuditPendingPushDebouncer;
 import lombok.RequiredArgsConstructor;
@@ -88,7 +87,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     private final ProtocolInvokerRegistry protocolInvokerRegistry;
     private final SensitiveDataEncryptor sensitiveDataEncryptor;
     private final UserDisplayNameResolver userDisplayNameResolver;
-    private final NotificationService notificationService;
     private final SystemNotificationFacade systemNotificationFacade;
     private final AuditPendingPushDebouncer auditPendingPushDebouncer;
     private final ResourceHealthService resourceHealthService;
@@ -2998,7 +2996,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 .map(r -> Long.valueOf(String.valueOf(r.get("user_id"))))
                 .toList();
         if (!reviewerIds.isEmpty()) {
-            notificationService.broadcast(reviewerIds, type, title, body, "resource", resourceId);
+            systemNotificationFacade.notifyToUsers(reviewerIds, type, title, body, "resource", resourceId);
         }
     }
 

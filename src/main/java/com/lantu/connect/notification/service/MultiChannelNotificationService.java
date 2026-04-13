@@ -36,13 +36,21 @@ public class MultiChannelNotificationService {
         n.setBody(body);
         n.setSourceType(sourceType);
         n.setSourceId(sourceId);
+        sendAll(n);
+    }
+
+    @Async
+    public void sendAll(Notification n) {
+        if (n == null) {
+            return;
+        }
         notificationService.send(n);
 
         for (NotificationChannel channel : channels) {
             try {
-                channel.deliver(userId, title, body);
+                channel.deliver(n.getUserId(), n.getTitle(), n.getBody());
             } catch (RuntimeException e) {
-                log.warn("Channel {} failed for user {}: {}", channel.channelName(), userId, e.getMessage());
+                log.warn("Channel {} failed for user {}: {}", channel.channelName(), n.getUserId(), e.getMessage());
             }
         }
     }
