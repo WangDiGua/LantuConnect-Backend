@@ -7,6 +7,7 @@ import com.lantu.connect.common.security.RequireRole;
 import com.lantu.connect.monitoring.dto.CircuitBreakerManualRequest;
 import com.lantu.connect.monitoring.dto.CircuitBreakerUpdateRequest;
 import com.lantu.connect.monitoring.dto.HealthConfigUpsertRequest;
+import com.lantu.connect.monitoring.dto.ResourceHealthSnapshotVO;
 import com.lantu.connect.monitoring.entity.CircuitBreaker;
 import com.lantu.connect.monitoring.entity.HealthConfig;
 import com.lantu.connect.monitoring.service.HealthService;
@@ -56,6 +57,39 @@ public class HealthController {
     @RequirePermission({"monitor:view"})
     public R<List<CircuitBreaker>> circuitBreakers() {
         return R.ok(healthService.listCircuitBreakers());
+    }
+
+    @GetMapping("/resources")
+    @RequirePermission({"monitor:view"})
+    public R<List<ResourceHealthSnapshotVO>> resources(@RequestParam(required = false) String resourceType,
+                                                       @RequestParam(required = false) String healthStatus,
+                                                       @RequestParam(required = false) String callabilityState) {
+        return R.ok(healthService.listResourceHealth(resourceType, healthStatus, callabilityState));
+    }
+
+    @GetMapping("/resources/{resourceId}")
+    @RequirePermission({"monitor:view"})
+    public R<ResourceHealthSnapshotVO> resource(@PathVariable Long resourceId) {
+        return R.ok(healthService.getResourceHealth(resourceId));
+    }
+
+    @PostMapping("/resources/{resourceId}/probe")
+    @RequireRole({"platform_admin"})
+    public R<ResourceHealthSnapshotVO> probeResource(@PathVariable Long resourceId) {
+        return R.ok(healthService.probeResourceHealth(resourceId));
+    }
+
+    @PostMapping("/resources/{resourceId}/break")
+    @RequireRole({"platform_admin"})
+    public R<ResourceHealthSnapshotVO> manualBreakResource(@PathVariable Long resourceId,
+                                                           @RequestParam(required = false) Integer openDurationSeconds) {
+        return R.ok(healthService.manualBreakResource(resourceId, openDurationSeconds));
+    }
+
+    @PostMapping("/resources/{resourceId}/recover")
+    @RequireRole({"platform_admin"})
+    public R<ResourceHealthSnapshotVO> manualRecoverResource(@PathVariable Long resourceId) {
+        return R.ok(healthService.manualRecoverResource(resourceId));
     }
 
     @PutMapping("/circuit-breakers/{id}")

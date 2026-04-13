@@ -26,6 +26,14 @@ public class ResourceCatalogItemVO {
     private String status;
 
     private String sourceType;
+    private String healthStatus;
+    private String circuitState;
+    private String callabilityState;
+    private String callabilityReason;
+    private Boolean callable;
+    private String probeStrategy;
+    private String lastFailureReason;
+    private Long probeLatencyMs;
 
     /** 历史字段 {@code t_resource.access_policy} 的回显；网关不再据其做 per-resource Grant 裁决。 */
     @Schema(

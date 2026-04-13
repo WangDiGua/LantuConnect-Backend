@@ -2,6 +2,7 @@ package com.lantu.connect.task;
 
 import com.lantu.connect.monitoring.ResourceCircuitHealthBridge;
 import com.lantu.connect.realtime.RealtimePushService;
+import com.lantu.connect.monitoring.service.ResourceHealthService;
 import com.lantu.connect.task.support.TaskDistributedLock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,7 @@ public class HealthCheckTask {
     private final JdbcTemplate jdbcTemplate;
     private final RealtimePushService realtimePushService;
     private final ResourceCircuitHealthBridge resourceCircuitHealthBridge;
+    private final ResourceHealthService resourceHealthService;
 
     @Scheduled(cron = "0 */1 * * * ?")
     public void run() {
@@ -45,7 +47,7 @@ public class HealthCheckTask {
                     "SELECT id, resource_id, resource_type, resource_code, display_name, check_type, check_url, timeout_sec, "
                             + "healthy_threshold, interval_sec, health_status FROM t_resource_runtime_policy "
                             + "WHERE check_url IS NOT NULL AND TRIM(check_url) <> '' "
-                            + "AND (check_type IS NULL OR LOWER(TRIM(check_type)) IN ('', 'http'))");
+                            + "AND (resource_type IN ('agent', 'skill') OR check_type IS NULL OR LOWER(TRIM(check_type)) IN ('', 'http'))");
             int healthy = 0, degraded = 0, down = 0;
             for (Map<String, Object> row : rows) {
                 Long id = ((Number) row.get("id")).longValue();
@@ -65,6 +67,18 @@ public class HealthCheckTask {
                 Object ht = row.get("healthy_threshold");
                 if (ht instanceof Number n) {
                     failThreshold = Math.max(1, Math.min(20, n.intValue()));
+                }
+                if ("agent".equalsIgnoreCase(resourceType) || "skill".equalsIgnoreCase(resourceType)) {
+                    var snapshot = resourceHealthService.probeAndPersist(resourceId);
+                    String status = snapshot == null ? "down" : String.valueOf(snapshot.getHealthStatus());
+                    if ("healthy".equalsIgnoreCase(status)) {
+                        healthy++;
+                    } else if ("degraded".equalsIgnoreCase(status)) {
+                        degraded++;
+                    } else {
+                        down++;
+                    }
+                    continue;
                 }
                 boolean ok = probe(url, timeoutSec);
                 String status;

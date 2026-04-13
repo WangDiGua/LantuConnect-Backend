@@ -1107,17 +1107,20 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             return;
         }
         Map<String, Object> row = queryOne(
-                "SELECT health_status FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1",
+                "SELECT health_status, callability_state, callability_reason FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1",
                 resourceId);
         if (row == null) {
             return;
         }
-        String hs = valueOf(row.get("health_status")).trim().toLowerCase(Locale.ROOT);
-        if ("down".equals(hs)) {
-            throw new BusinessException(ResultCode.RESOURCE_HEALTH_DOWN);
+        String callabilityState = valueOf(row.get("callability_state")).trim().toLowerCase(Locale.ROOT);
+        if (StringUtils.hasText(callabilityState) && !"callable".equals(callabilityState)) {
+            String reason = valueOf(row.get("callability_reason"));
+            throw new BusinessException(ResultCode.RESOURCE_HEALTH_DOWN,
+                    StringUtils.hasText(reason) ? reason : "资源当前不可调用");
         }
-        if ("disabled".equals(hs)) {
-            throw new BusinessException(ResultCode.RESOURCE_HEALTH_DOWN, "资源健康检查已关闭或未启用，暂不可调用");
+        String hs = valueOf(row.get("health_status")).trim().toLowerCase(Locale.ROOT);
+        if ("down".equals(hs) || "disabled".equals(hs) || "degraded".equals(hs)) {
+            throw new BusinessException(ResultCode.RESOURCE_HEALTH_DOWN, "资源健康状态不满足调用要求");
         }
     }
 
@@ -1133,9 +1136,13 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             return false;
         }
         Map<String, Object> healthRow = queryOne(
-                "SELECT health_status FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1",
+                "SELECT health_status, callability_state FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1",
                 resourceId);
         if (healthRow != null) {
+            String callabilityState = valueOf(healthRow.get("callability_state"));
+            if (StringUtils.hasText(callabilityState) && !"callable".equalsIgnoreCase(callabilityState.trim())) {
+                return false;
+            }
             String hs = valueOf(healthRow.get("health_status"));
             if (isHealthStatusExcludedFromCallableCatalog(hs)) {
                 return false;
@@ -1149,7 +1156,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             return false;
         }
         String h = raw.trim().toLowerCase(Locale.ROOT).replace('-', '_');
-        return "down".equals(h) || "disabled".equals(h);
+        return "down".equals(h) || "disabled".equals(h) || "degraded".equals(h);
     }
 
     /**
@@ -2205,6 +2212,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("healthStatus", "unknown");
         m.put("circuitState", "unknown");
+        m.put("callabilityState", "unknown");
+        m.put("callabilityReason", "");
         m.put("qualityScore", 0);
         m.put("successRate", 1.0D);
         m.put("avgLatencyMs", 0.0D);
@@ -2218,6 +2227,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("healthStatus", nzStr(quality.get("healthStatus")));
         m.put("circuitState", nzStr(quality.get("circuitState")));
+        m.put("callabilityState", nzStr(quality.get("callabilityState")));
+        m.put("callabilityReason", nzStr(quality.get("callabilityReason")));
         m.put("degradationCode", nzStr(quality.get("degradationCode")));
         m.put("degradationHint", nzStr(quality.get("degradationHint")));
         return m;
@@ -2265,6 +2276,11 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         String circuitState = valueOf(queryOne("SELECT current_state FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1", resourceId) == null
                 ? null
                 : queryOne("SELECT current_state FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1", resourceId).get("current_state"));
+        Map<String, Object> callabilityRow = queryOne(
+                "SELECT callability_state, callability_reason FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1",
+                resourceId);
+        String callabilityState = valueOf(callabilityRow == null ? null : callabilityRow.get("callability_state"));
+        String callabilityReason = valueOf(callabilityRow == null ? null : callabilityRow.get("callability_reason"));
         String degradationCode = null;
         String degradationHint = null;
         if ("OPEN".equalsIgnoreCase(circuitState)) {
@@ -2273,10 +2289,15 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         } else if ("degraded".equalsIgnoreCase(healthStatus)) {
             degradationCode = "HEALTH_DEGRADED";
             degradationHint = "当前资源响应不稳定，建议稍后再试";
+        } else if (StringUtils.hasText(callabilityState) && !"callable".equalsIgnoreCase(callabilityState)) {
+            degradationCode = "CALLABILITY_BLOCKED";
+            degradationHint = StringUtils.hasText(callabilityReason) ? callabilityReason : "当前资源不可调用";
         }
         return new LinkedHashMap<>(Map.of(
                 "healthStatus", healthStatus == null ? "unknown" : healthStatus,
                 "circuitState", circuitState == null ? "unknown" : circuitState,
+                "callabilityState", callabilityState == null ? "unknown" : callabilityState,
+                "callabilityReason", callabilityReason == null ? "" : callabilityReason,
                 "qualityScore", qualityScore,
                 "successRate", successRate,
                 "avgLatencyMs", avgLatency,

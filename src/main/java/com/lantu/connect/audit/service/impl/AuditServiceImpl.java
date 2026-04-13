@@ -23,6 +23,7 @@ import com.lantu.connect.gateway.security.AgentApiKeyService;
 import com.lantu.connect.notification.service.NotificationEventCodes;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
 import com.lantu.connect.realtime.AuditPendingPushDebouncer;
+import com.lantu.connect.monitoring.service.ResourceHealthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -72,6 +73,7 @@ public class AuditServiceImpl implements AuditService {
     private final AgentApiKeyService agentApiKeyService;
     private final CasbinAuthorizationService casbinAuthorizationService;
     private final ResourceRegistryService resourceRegistryService;
+    private final ResourceHealthService resourceHealthService;
     private final ObjectMapper objectMapper;
     private final AuditPendingPushDebouncer auditPendingPushDebouncer;
 
@@ -500,6 +502,9 @@ public class AuditServiceImpl implements AuditService {
                 newStatus, item.getTargetId(), item.getTargetType(), expectedCurrentStatus);
         if (n != 1) {
             throw new BusinessException(ResultCode.CONFLICT, "资源状态已变更，请刷新后重试");
+        }
+        if (STATUS_PUBLISHED.equalsIgnoreCase(newStatus)) {
+            resourceHealthService.ensurePolicyForResource(item.getTargetId());
         }
     }
 

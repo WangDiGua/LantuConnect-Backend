@@ -113,6 +113,17 @@ public class ResourceManageVO {
     // --- observability / quality summary (optional on list/detail) ---
     private String healthStatus;
     private String circuitState;
+    private String callabilityState;
+    private String callabilityReason;
+    private Boolean callable;
+    private LocalDateTime lastProbeAt;
+    private LocalDateTime lastSuccessAt;
+    private LocalDateTime lastFailureAt;
+    private String lastFailureReason;
+    private Long consecutiveSuccess;
+    private Long consecutiveFailure;
+    private Long probeLatencyMs;
+    private String probePayloadSummary;
     private String degradationCode;
     private String degradationHint;
     private Integer qualityScore;

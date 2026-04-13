@@ -8,6 +8,7 @@ import com.lantu.connect.gateway.dto.McpConnectivityProbeResult;
 import com.lantu.connect.gateway.service.McpConnectivityProbeService;
 import com.lantu.connect.monitoring.ResourceCircuitHealthBridge;
 import com.lantu.connect.realtime.RealtimePushService;
+import com.lantu.connect.monitoring.service.ResourceHealthService;
 import com.lantu.connect.task.support.TaskDistributedLock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,6 +49,7 @@ public class McpAutoHealthProbeTask {
     private final ObjectMapper objectMapper;
     private final RealtimePushService realtimePushService;
     private final ResourceCircuitHealthBridge resourceCircuitHealthBridge;
+    private final ResourceHealthService resourceHealthService;
 
     @Scheduled(cron = "0 */5 * * * ?")
     public void run() {
@@ -70,14 +72,10 @@ public class McpAutoHealthProbeTask {
                     continue;
                 }
                 String protoCol = trimToNull(row.get("protocol"));
-                if (protoCol != null && "stdio".equalsIgnoreCase(protoCol)) {
-                    skipped++;
-                    continue;
-                }
                 Map<String, Object> health = jdbcTemplate.queryForList(
-                                "SELECT id, check_type, health_status, healthy_threshold, timeout_sec "
-                                        + "FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1",
-                                resourceId)
+                        "SELECT id, check_type, health_status, healthy_threshold, timeout_sec "
+                                + "FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1",
+                        resourceId)
                         .stream().findFirst().orElse(null);
                 if (health != null) {
                     String hs = trimToNull(health.get("health_status"));
@@ -90,6 +88,18 @@ public class McpAutoHealthProbeTask {
                         skipped++;
                         continue;
                     }
+                }
+                if (protoCol != null && "stdio".equalsIgnoreCase(protoCol)) {
+                    var snapshot = resourceHealthService.probeAndPersist(resourceId);
+                    String status = snapshot == null ? "down" : String.valueOf(snapshot.getHealthStatus());
+                    if ("healthy".equalsIgnoreCase(status)) {
+                        ok++;
+                    } else if ("degraded".equalsIgnoreCase(status)) {
+                        degraded++;
+                    } else {
+                        down++;
+                    }
+                    continue;
                 }
                 int failThreshold = 3;
                 if (health != null) {

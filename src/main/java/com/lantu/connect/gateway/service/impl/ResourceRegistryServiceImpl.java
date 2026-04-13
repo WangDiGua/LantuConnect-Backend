@@ -18,6 +18,8 @@ import com.lantu.connect.gateway.model.ResourceAccessPolicy;
 import com.lantu.connect.gateway.protocol.McpOutboundHeaderBuilder;
 import com.lantu.connect.gateway.protocol.ProtocolInvokerRegistry;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
+import com.lantu.connect.monitoring.service.ResourceHealthService;
+import com.lantu.connect.monitoring.dto.ResourceHealthSnapshotVO;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.common.util.SensitiveDataEncryptor;
@@ -89,6 +91,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     private final NotificationService notificationService;
     private final SystemNotificationFacade systemNotificationFacade;
     private final AuditPendingPushDebouncer auditPendingPushDebouncer;
+    private final ResourceHealthService resourceHealthService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -127,6 +130,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "创建资源失败");
         }
         upsertExtension(type, resourceId, request);
+        resourceHealthService.ensurePolicyForResource(resourceId);
         syncAllBindings(resourceId, type, request);
         syncResourceTagRels(resourceId, type, request);
         upsertDefaultVersion(resourceId, snapshotForVersion(type, resourceId, request, true), true);
@@ -690,6 +694,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 accessPolicy.wireValue(),
                 resourceId);
         upsertExtension(normalizedType, resourceId, request);
+        resourceHealthService.ensurePolicyForResource(resourceId);
         syncAllBindings(resourceId, normalizedType, request);
         syncResourceTagRels(resourceId, normalizedType, request);
         upsertCurrentVersionSnapshot(resourceId, snapshotForVersion(normalizedType, resourceId, request, false));
@@ -1455,6 +1460,17 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         Map<String, Object> quality = computeQuality(vo.getId(), vo.getResourceType());
         vo.setHealthStatus(stringValue(quality.get("healthStatus")));
         vo.setCircuitState(stringValue(quality.get("circuitState")));
+        vo.setCallabilityState(stringValue(quality.get("callabilityState")));
+        vo.setCallabilityReason(stringValue(quality.get("callabilityReason")));
+        vo.setCallable(Boolean.valueOf(stringValue(quality.get("callable"))));
+        vo.setLastProbeAt(toDateTime(quality.get("lastProbeAt")));
+        vo.setLastSuccessAt(toDateTime(quality.get("lastSuccessAt")));
+        vo.setLastFailureAt(toDateTime(quality.get("lastFailureAt")));
+        vo.setLastFailureReason(stringValue(quality.get("lastFailureReason")));
+        vo.setConsecutiveSuccess(longValue(quality.get("consecutiveSuccess")));
+        vo.setConsecutiveFailure(longValue(quality.get("consecutiveFailure")));
+        vo.setProbeLatencyMs(longValue(quality.get("probeLatencyMs")));
+        vo.setProbePayloadSummary(stringValue(quality.get("probePayloadSummary")));
         vo.setQualityScore(intObject(quality.get("qualityScore")));
         Object qf = quality.get("qualityFactors");
         if (qf instanceof Map<?, ?> rawFactors) {
@@ -1498,6 +1514,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     }
 
     private Map<String, Object> computeQuality(Long resourceId, String resourceType) {
+        ResourceHealthSnapshotVO healthSnapshot = resourceHealthService.getSnapshot(resourceId);
         List<Map<String, Object>> callRows = jdbcTemplate.queryForList("""
                 SELECT
                     COUNT(1) AS totalCalls,
@@ -1521,23 +1538,10 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         int qualityScore = (int) Math.round(successRate * 70D + latencyFactor * 30D);
         qualityScore = Math.max(0, Math.min(100, qualityScore));
 
-        List<Map<String, Object>> hc = jdbcTemplate.queryForList(
-                "SELECT health_status FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1",
-                resourceId);
-        String health = hc.isEmpty() ? "unknown" : stringValue(hc.get(0).get("health_status"));
-        String circuitState;
-        if (StringUtils.hasText(resourceType)) {
-            String rt = resourceType.trim().toLowerCase(Locale.ROOT);
-            List<Map<String, Object>> cb = jdbcTemplate.queryForList(
-                    "SELECT current_state FROM t_resource_runtime_policy WHERE resource_id = ? AND resource_type = ? LIMIT 1",
-                    resourceId, rt);
-            circuitState = cb.isEmpty() ? "unknown" : stringValue(cb.get(0).get("current_state"));
-        } else {
-            List<Map<String, Object>> cb = jdbcTemplate.queryForList(
-                    "SELECT current_state FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1",
-                    resourceId);
-            circuitState = cb.isEmpty() ? "unknown" : stringValue(cb.get(0).get("current_state"));
-        }
+        String health = healthSnapshot == null ? "unknown" : stringValue(healthSnapshot.getHealthStatus());
+        String circuitState = healthSnapshot == null ? "unknown" : stringValue(healthSnapshot.getCircuitState());
+        String callabilityState = healthSnapshot == null ? "unknown" : stringValue(healthSnapshot.getCallabilityState());
+        String callabilityReason = healthSnapshot == null ? null : healthSnapshot.getCallabilityReason();
 
         Map<String, Object> factors = new LinkedHashMap<>();
         factors.put("successRate", successRate);
@@ -1578,9 +1582,23 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         Map<String, Object> qualityBlock = new LinkedHashMap<>();
         qualityBlock.put("healthStatus", health != null ? health : "unknown");
         qualityBlock.put("circuitState", circuitState != null ? circuitState : "unknown");
+        qualityBlock.put("callabilityState", callabilityState != null ? callabilityState : "unknown");
+        qualityBlock.put("callabilityReason", callabilityReason);
         qualityBlock.put("qualityScore", qualityScore);
         qualityBlock.put("qualityFactors", factors);
         qualityBlock.put("lastInvokeFailureHint", lastInvokeFailureHint);
+        if (healthSnapshot != null) {
+            qualityBlock.put("lastProbeAt", healthSnapshot.getLastProbeAt());
+            qualityBlock.put("lastSuccessAt", healthSnapshot.getLastSuccessAt());
+            qualityBlock.put("lastFailureAt", healthSnapshot.getLastFailureAt());
+            qualityBlock.put("lastFailureReason", healthSnapshot.getLastFailureReason());
+            qualityBlock.put("probeLatencyMs", healthSnapshot.getProbeLatencyMs());
+            qualityBlock.put("probePayloadSummary", healthSnapshot.getProbePayloadSummary());
+            qualityBlock.put("consecutiveSuccess", healthSnapshot.getConsecutiveSuccess());
+            qualityBlock.put("consecutiveFailure", healthSnapshot.getConsecutiveFailure());
+            qualityBlock.put("probeStrategy", healthSnapshot.getProbeStrategy());
+            qualityBlock.put("callable", healthSnapshot.getCallable());
+        }
         return qualityBlock;
     }
 

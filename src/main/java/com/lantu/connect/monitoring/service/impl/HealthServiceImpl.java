@@ -6,11 +6,13 @@ import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.monitoring.dto.CircuitBreakerManualRequest;
 import com.lantu.connect.monitoring.dto.CircuitBreakerUpdateRequest;
 import com.lantu.connect.monitoring.dto.HealthConfigUpsertRequest;
+import com.lantu.connect.monitoring.dto.ResourceHealthSnapshotVO;
 import com.lantu.connect.monitoring.entity.CircuitBreaker;
 import com.lantu.connect.monitoring.entity.HealthConfig;
 import com.lantu.connect.monitoring.mapper.CircuitBreakerMapper;
 import com.lantu.connect.monitoring.mapper.HealthConfigMapper;
 import com.lantu.connect.monitoring.service.HealthService;
+import com.lantu.connect.monitoring.service.ResourceHealthService;
 import com.lantu.connect.realtime.RealtimePushService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -35,6 +37,7 @@ public class HealthServiceImpl implements HealthService {
     private final CircuitBreakerMapper circuitBreakerMapper;
     private final JdbcTemplate jdbcTemplate;
     private final RealtimePushService realtimePushService;
+    private final ResourceHealthService resourceHealthService;
 
     @Override
     public List<HealthConfig> listConfigs() {
@@ -286,6 +289,47 @@ public class HealthServiceImpl implements HealthService {
             throw new BusinessException(ResultCode.NOT_FOUND);
         }
         recover(cb.getAgentName());
+    }
+
+    @Override
+    public List<ResourceHealthSnapshotVO> listResourceHealth(String resourceType, String healthStatus, String callabilityState) {
+        return resourceHealthService.listSnapshots(resourceType, healthStatus, callabilityState);
+    }
+
+    @Override
+    public ResourceHealthSnapshotVO getResourceHealth(Long resourceId) {
+        ResourceHealthSnapshotVO snapshot = resourceHealthService.getSnapshot(resourceId);
+        if (snapshot == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND);
+        }
+        return snapshot;
+    }
+
+    @Override
+    public ResourceHealthSnapshotVO probeResourceHealth(Long resourceId) {
+        ResourceHealthSnapshotVO snapshot = resourceHealthService.probeAndPersist(resourceId);
+        if (snapshot == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND);
+        }
+        return snapshot;
+    }
+
+    @Override
+    public ResourceHealthSnapshotVO manualBreakResource(Long resourceId, Integer openDurationSeconds) {
+        ResourceHealthSnapshotVO snapshot = resourceHealthService.manualBreak(resourceId, openDurationSeconds);
+        if (snapshot == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND);
+        }
+        return snapshot;
+    }
+
+    @Override
+    public ResourceHealthSnapshotVO manualRecoverResource(Long resourceId) {
+        ResourceHealthSnapshotVO snapshot = resourceHealthService.manualRecover(resourceId);
+        if (snapshot == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND);
+        }
+        return snapshot;
     }
 
     private ResourceRef findResourceByCode(String resourceCode) {
