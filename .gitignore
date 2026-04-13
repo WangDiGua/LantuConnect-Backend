@@ -58,3 +58,4 @@ skills_local_data/
 *.bak
 *.tmp
 *.temp
+.worktrees/
