@@ -143,7 +143,7 @@ public class OpenAiCompatService {
     public Map<String, Object> responses(ApiKey apiKey, Map<String, Object> body) {
         String model = requiredModel(body);
         Long agentId = resolveAgentIdByModelAlias(apiKey, model);
-        String input = body.get("input") == null ? "" : String.valueOf(body.get("input"));
+        String input = flattenResponsesInput(body == null ? null : body.get("input"));
         String text = invokeAgent(apiKey, agentId, input);
         String id = "resp_" + UUID.randomUUID().toString().replace("-", "");
         return Map.of(
@@ -339,10 +339,107 @@ public class OpenAiCompatService {
 
     private String requiredModel(Map<String, Object> body) {
         Object model = body == null ? null : body.get("model");
-        if (!StringUtils.hasText(String.valueOf(model))) {
+        String value = model == null ? "" : String.valueOf(model).trim();
+        if (!StringUtils.hasText(value)) {
+            model = body == null ? null : body.get("customized_model_id");
+        }
+        value = model == null ? "" : String.valueOf(model).trim();
+        if (!StringUtils.hasText(value)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "model 不能为空");
         }
-        return String.valueOf(model).trim();
+        return value;
+    }
+
+    private String flattenResponsesInput(Object rawInput) {
+        if (rawInput == null) {
+            return "";
+        }
+        if (rawInput instanceof String s) {
+            return s;
+        }
+        if (rawInput instanceof List<?> list) {
+            StringBuilder sb = new StringBuilder();
+            for (Object item : list) {
+                if (!(item instanceof Map<?, ?> map)) {
+                    String text = String.valueOf(item);
+                    if (StringUtils.hasText(text)) {
+                        sb.append(text).append('\n');
+                    }
+                    continue;
+                }
+                String role = str(map.get("role"));
+                if (!"user".equalsIgnoreCase(role)) {
+                    continue;
+                }
+                String line = extractResponsesContent(map.get("content"));
+                if (StringUtils.hasText(line)) {
+                    sb.append(line).append('\n');
+                }
+            }
+            return sb.toString().trim();
+        }
+        return extractResponsesContent(rawInput);
+    }
+
+    private String extractResponsesContent(Object content) {
+        if (content == null) {
+            return "";
+        }
+        if (content instanceof String s) {
+            return s;
+        }
+        if (content instanceof List<?> list) {
+            StringBuilder sb = new StringBuilder();
+            for (Object node : list) {
+                if (node instanceof Map<?, ?> map) {
+                    Object text = map.get("text");
+                    if (text instanceof String s && StringUtils.hasText(s)) {
+                        sb.append(s);
+                        continue;
+                    }
+                    Object nestedValue = null;
+                    if (text instanceof Map<?, ?> nested) {
+                        nestedValue = nested.get("value");
+                    }
+                    if (nestedValue != null) {
+                        sb.append(String.valueOf(nestedValue));
+                        continue;
+                    }
+                    Object inputText = map.get("input_text");
+                    if (inputText instanceof String s && StringUtils.hasText(s)) {
+                        sb.append(s);
+                        continue;
+                    }
+                    sb.append(extractResponsesContent(map));
+                } else if (node != null) {
+                    sb.append(node);
+                }
+            }
+            return sb.toString();
+        }
+        if (content instanceof Map<?, ?> map) {
+            Object prompt = map.get("prompt");
+            if (prompt instanceof String s && StringUtils.hasText(s)) {
+                return s;
+            }
+            Object text = map.get("text");
+            if (text instanceof String s && StringUtils.hasText(s)) {
+                return s;
+            }
+            Object inputText = map.get("input_text");
+            if (inputText instanceof String s && StringUtils.hasText(s)) {
+                return s;
+            }
+            Object parts = map.get("parts");
+            if (parts instanceof List<?> list) {
+                return extractResponsesContent(list);
+            }
+            Object messages = map.get("messages");
+            if (messages instanceof List<?> list) {
+                return flattenResponsesInput(list);
+            }
+        }
+        return String.valueOf(content);
     }
 
     private Long resolveAgentIdByModelAlias(ApiKey apiKey, String modelAlias) {

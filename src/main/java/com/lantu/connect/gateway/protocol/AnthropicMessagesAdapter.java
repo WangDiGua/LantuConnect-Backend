@@ -7,6 +7,7 @@ import org.springframework.util.StringUtils;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.net.URI;
 
 @Component
 public class AnthropicMessagesAdapter extends AbstractProviderProtocolAdapter {
@@ -17,12 +18,22 @@ public class AnthropicMessagesAdapter extends AbstractProviderProtocolAdapter {
 
     @Override
     public ProviderProtocolRequest buildRequest(String endpoint, Map<String, Object> payload, Map<String, Object> spec, String resolvedCredential, String traceId) {
+        String path = endpointPath(endpoint);
         String query = extractQuery(payload);
         String model = resolveModel(spec, "claude-3-5-sonnet-latest");
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
-        body.put("max_tokens", 1024);
-        body.put("messages", List.of(Map.of("role", "user", "content", query)));
+        body.put("max_tokens", payload != null && payload.get("max_tokens") != null ? payload.get("max_tokens") : 1024);
+        Object messages = payload == null ? null : payload.get("messages");
+        body.put("messages", messages == null ? buildOpenAiMessages(query) : messages);
+        if (payload != null && payload.containsKey("system")) {
+            body.put("system", payload.get("system"));
+        }
+        if (payload != null && payload.containsKey("stream")) {
+            body.put("stream", payload.get("stream"));
+        } else if (!path.contains("/messages")) {
+            body.put("stream", false);
+        }
 
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put("Content-Type", "application/json");
@@ -36,7 +47,22 @@ public class AnthropicMessagesAdapter extends AbstractProviderProtocolAdapter {
 
     @Override
     public String extractText(JsonNode upstreamJson) {
-        return upstreamJson.path("content").path(0).path("text").asText("");
+        JsonNode content = upstreamJson.path("content");
+        if (content.isArray() && content.size() > 0) {
+            String text = content.path(0).path("text").asText(null);
+            if (StringUtils.hasText(text)) {
+                return text;
+            }
+        }
+        return upstreamJson.path("completion").asText("");
+    }
+
+    private String endpointPath(String endpoint) {
+        try {
+            return URI.create(endpoint).getPath();
+        } catch (Exception ex) {
+            return endpoint == null ? "" : endpoint;
+        }
     }
 }
 
