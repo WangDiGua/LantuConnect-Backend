@@ -47,6 +47,7 @@ class AuthChainWebMvcTest {
     private DashboardService dashboardService;
 
     @BeforeEach
+    @SuppressWarnings("deprecation")
     void setUp() {
         jwtUtil = mock(JwtUtil.class);
         accessTokenBlacklist = mock(AccessTokenBlacklist.class);
@@ -57,9 +58,7 @@ class AuthChainWebMvcTest {
 
         SecurityProperties properties = new SecurityProperties();
         properties.setJwtEnabled(true);
-        @SuppressWarnings("deprecation")
-        SecurityProperties props = properties;
-        props.setAllowHeaderUserIdFallback(false);
+        properties.setAllowHeaderUserIdFallback(false);
         when(sessionRevocationRegistry.isRevoked(anyString())).thenReturn(false);
         ApiKeyScopeService apiKeyScopeService = mock(ApiKeyScopeService.class);
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(

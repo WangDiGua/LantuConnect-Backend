@@ -119,7 +119,7 @@ public class SdkGatewayController {
         if (!runtimeAppConfigService.gateway().isInvokeHttpStatusReflectsUpstream()) {
             return ResponseEntity.ok(body);
         }
-        return ResponseEntity.status(GatewayInvokeResponseSupport.toHttpStatus(data)).body(body);
+        return ResponseEntity.status(GatewayInvokeResponseSupport.toHttpStatus(data).value()).body(body);
     }
 
     @Operation(summary = "MCP 流式调用（SSE/原始流）", description = "等同 POST /invoke-stream，响应 Content-Type: text/event-stream。")

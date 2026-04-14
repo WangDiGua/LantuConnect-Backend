@@ -25,6 +25,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.Objects;
 import java.util.TimeZone;
 
 /**
@@ -56,9 +57,9 @@ public class JacksonConfig {
             builder.featuresToDisable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
             builder.featuresToDisable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
             SimpleDateFormat dateFormat = new SimpleDateFormat(DisplayDateTimeFormat.PATTERN);
-            dateFormat.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
+            dateFormat.setTimeZone(Objects.requireNonNull(TimeZone.getTimeZone("Asia/Shanghai")));
             builder.dateFormat(dateFormat);
-            builder.timeZone(TimeZone.getTimeZone("Asia/Shanghai"));
+            builder.timeZone(Objects.requireNonNull(TimeZone.getTimeZone("Asia/Shanghai")));
             builder.modules(lantuTime);
         };
     }

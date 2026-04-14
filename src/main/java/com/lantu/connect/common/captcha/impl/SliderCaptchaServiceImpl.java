@@ -18,6 +18,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -76,7 +77,7 @@ public class SliderCaptchaServiceImpl implements CaptchaService {
         String captchaId = UUID.randomUUID().toString().replace("-", "");
         String captchaCode = generateCaptchaCode();
         String key = CAPTCHA_PREFIX + captchaId;
-        redisTemplate.opsForValue().set(key, captchaCode, EXPIRE_MINUTES, TimeUnit.MINUTES);
+        redisTemplate.opsForValue().set(key, Objects.requireNonNull(captchaCode), EXPIRE_MINUTES, TimeUnit.MINUTES);
 
         CaptchaResult result = new CaptchaResult();
         result.setCaptchaId(captchaId);

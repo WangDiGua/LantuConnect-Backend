@@ -47,9 +47,7 @@ public class DashboardController {
         return R.ok(dashboardService.userWorkspace(userId));
     }
 
-    /**
-     * Owner 维度统计（网关 invoke / usage_record invoke / 技能包下载）。权限：本人、reviewer、platform_admin/admin。
-     */
+    /** Owner 维度统计（网关 invoke / usage_record invoke 对照）。权限：本人、reviewer、platform_admin/admin。 */
     @GetMapping("/owner-resource-stats")
     public R<OwnerDeveloperStatsVO> ownerResourceStats(
             @RequestHeader("X-User-Id") Long operatorUserId,

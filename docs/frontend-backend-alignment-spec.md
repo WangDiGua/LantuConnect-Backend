@@ -159,7 +159,7 @@
 | 个人资料/设置 | `/auth/profile`、`/auth/change-password`、`/auth/bind-phone`、`/auth/login-history` | 保留 | 同现状 |
 | Agent 管理、Agent 市场 | 旧 `/agents/**` | 下线 | 迁到 `/catalog/resources*` + `/catalog/resolve` + `/invoke` |
 | Agent 版本管理 | 旧 `/agents/{id}/versions`、`/versions/*` | 下线 | 迁到统一资源能力（网关/资源模型） |
-| Skill 管理、Skill 市场 | 旧 `/v1/skills/**` | 下线 | 迁到 `/catalog/resources*` + `/invoke` |
+| Skill 管理、Skill 市场 | 旧 `/v1/skills/**` | 下线 | 迁到 `/catalog/resources*` + `/catalog/resolve`（skill 不走统一 `/invoke`） |
 | MCP 管理页 | 旧 `/v1/mcp-servers/**` | 下线 | 迁到统一资源目录和解析调用 |
 | App 管理/市场 | 旧 `/v1/apps/**` | 下线 | 迁到统一资源目录和调用 |
 | Dataset 管理/市场 | 旧 `/v1/datasets/**` | 下线 | 迁到统一资源目录和调用 |
@@ -240,9 +240,9 @@
 | `quick-access` | 保留 | 当前主要本地态 |
 | `recent-use` | 保留 | `/user/recent-use` |
 | `agent-market` | 下线（旧调用） | 从 `/agents/**` 迁移到 `/catalog/resources` + `/invoke` |
-| `skill-market` | 下线（旧调用） | 从 `/v1/skills/**` 迁移到 `/catalog/resources` + `/invoke` |
-| `app-market` | 下线（旧调用） | 从 `/v1/apps/**` 迁移到 `/catalog/resources` + `/invoke` |
-| `dataset-market` | 下线（旧调用） | 从 `/v1/datasets/**` 迁移到 `/catalog/resources` + `/invoke` |
+| `skill-market` | 下线（旧调用） | 从 `/v1/skills/**` 迁移到 `/catalog/resources` + `/catalog/resolve` |
+| `app-market` | 下线（旧调用） | 从 `/v1/apps/**` 迁移到 `/catalog/resources` + `/catalog/resolve` / launch |
+| `dataset-market` | 下线（旧调用） | 从 `/v1/datasets/**` 迁移到 `/catalog/resources` + `/catalog/resolve` |
 | `my-agents-pub` | 迁移 | 当前占位页，迁移到统一资源“我的发布” |
 | `my-skills` | 保留（过渡） | `/user/my-skills` |
 | `submit-agent` | 下线 | 旧 Agent 提交流程已删除 |

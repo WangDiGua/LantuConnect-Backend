@@ -148,11 +148,11 @@ docker-compose up -d
 | 模块 | 路径前缀 | 说明 |
 |------|----------|------|
 | 资源目录 | `/regis/catalog/resources` | 资源目录列表、详情、解析、热门资源、搜索建议 |
-| 统一调用 | `/regis/invoke` | 统一调用入口（agent/mcp/hosted-skill） |
+| 统一调用 | `/regis/invoke` | 统一调用入口（agent/mcp；skill 为 Context 资源，不支持 invoke） |
 | 流式调用 | `/regis/invoke-stream` | MCP SSE 流式调用 |
 | SDK v1 | `/regis/sdk/v1/*` | SDK 稳定接口（与统一网关语义一致） |
 | MCP HTTP | `/regis/mcp/v1/resources/{type}/{id}/message` | MCP JSON-RPC 兼容入口 |
-| 资源中心 | `/regis/resource-center/resources` | 资源注册、审核、版本、技能包上传/分片 |
+| 资源中心 | `/regis/resource-center/resources` | 资源注册、审核、版本、生命周期与观测 |
 
 ### 管理接口
 

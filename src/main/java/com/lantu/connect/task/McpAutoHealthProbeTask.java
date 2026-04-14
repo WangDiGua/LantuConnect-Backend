@@ -146,7 +146,6 @@ public class McpAutoHealthProbeTask {
                 String resourceCode = valueOf(row.get("resource_code"));
                 String displayName = valueOf(row.get("display_name"));
                 String prevProbeStatus = health == null ? null : trimToNull(health.get("health_status"));
-                String currentState = health == null ? null : trimToNull(health.get("current_state"));
                 long prevSuccess = health == null ? 0L : longValue(health.get("consecutive_success"));
                 long prevFailure = health == null ? 0L : longValue(health.get("consecutive_failure"));
                 LocalDateTime prevLastSuccessAt = health == null ? null : toDateTime(health.get("last_success_at"));

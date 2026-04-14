@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.time.Duration;
+import java.util.Objects;
 
 /**
  * 按会话 ID 失效仍有效的 Access JWT（与 killSession / 服务端踢线配合，TTL 与 access token 一致）。
@@ -27,7 +28,7 @@ public class SessionRevocationRegistry {
             return;
         }
         redisTemplate.opsForValue().set(
-                REVOKED_PREFIX + sessionId, "1", Duration.ofSeconds(accessTokenExpirySeconds));
+                REVOKED_PREFIX + sessionId, "1", Objects.requireNonNull(Duration.ofSeconds(accessTokenExpirySeconds)));
     }
 
     public boolean isRevoked(String sessionId) {

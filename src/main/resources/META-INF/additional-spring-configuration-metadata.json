@@ -1,0 +1,79 @@
+{
+  "properties": [
+    {
+      "name": "jwt.secret",
+      "type": "java.lang.String",
+      "description": "JWT signing secret used for access and refresh token validation."
+    },
+    {
+      "name": "jwt.access-token-expiry",
+      "type": "java.lang.Long",
+      "description": "Access token lifetime in seconds."
+    },
+    {
+      "name": "jwt.refresh-token-expiry",
+      "type": "java.lang.Long",
+      "description": "Refresh token lifetime in seconds."
+    },
+    {
+      "name": "lantu.encryption.key",
+      "type": "java.lang.String",
+      "description": "Application-level symmetric encryption key for sensitive data."
+    },
+    {
+      "name": "lantu.security.encryption-key",
+      "type": "java.lang.String",
+      "description": "Security encryption key used by field encryptors and related security components."
+    },
+    {
+      "name": "lantu.system.integration-mock",
+      "type": "java.lang.Boolean",
+      "description": "Whether to enable local integration mock behavior."
+    },
+    {
+      "name": "lantu.gateway.binding-expansion.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Whether binding expansion is enabled."
+    },
+    {
+      "name": "lantu.gateway.binding-expansion.agent",
+      "type": "java.lang.Boolean",
+      "description": "Whether to expand MCP bindings for agent resources."
+    },
+    {
+      "name": "lantu.gateway.binding-expansion.merge-active-skill-mcps",
+      "type": "java.lang.Boolean",
+      "description": "Whether invoke requests merge MCPs from active skills."
+    },
+    {
+      "name": "lantu.gateway.capabilities.max-mcps-per-aggregate",
+      "type": "java.lang.Integer",
+      "description": "Maximum MCP count allowed in an aggregate tools response."
+    },
+    {
+      "name": "lantu.gateway.capabilities.max-tools-per-response",
+      "type": "java.lang.Integer",
+      "description": "Maximum tool count returned in a capabilities response."
+    },
+    {
+      "name": "file.upload-dir",
+      "type": "java.lang.String",
+      "description": "Local directory used for uploaded files."
+    },
+    {
+      "name": "cors.allow-all-origins",
+      "type": "java.lang.Boolean",
+      "description": "Whether to allow all origins."
+    },
+    {
+      "name": "cors.relax-localhost",
+      "type": "java.lang.Boolean",
+      "description": "Whether localhost origins are allowed when explicit origins are not configured."
+    },
+    {
+      "name": "cors.allowed-origins",
+      "type": "java.lang.String",
+      "description": "Comma-separated list of allowed origins."
+    }
+  ]
+}

@@ -19,6 +19,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -83,7 +84,7 @@ public class GatewayGovernanceService {
             String key = "gw:rate:" + str(rule.get("id")) + ":" + subject + ":" + bucket;
             Long count = stringRedisTemplate.opsForValue().increment(key);
             if (count != null && count == 1L) {
-                stringRedisTemplate.expire(key, Duration.ofMillis(windowMs + 1000L));
+                stringRedisTemplate.expire(key, Objects.requireNonNull(Duration.ofMillis(windowMs + 1000L)));
             }
             if (count != null && count > maxRequests) {
                 throw new BusinessException(ResultCode.RATE_LIMITED, "触发限流规则: " + str(rule.get("id")));
@@ -113,7 +114,7 @@ public class GatewayGovernanceService {
         String key = CONCURRENT_PREFIX + resourceType.trim().toLowerCase(Locale.ROOT) + ":" + resourceId;
         Long current = stringRedisTemplate.opsForValue().increment(key, effectiveTokens);
         if (current != null && current == effectiveTokens) {
-            stringRedisTemplate.expire(key, Duration.ofMillis(CONCURRENT_TTL_MS));
+            stringRedisTemplate.expire(key, Objects.requireNonNull(Duration.ofMillis(CONCURRENT_TTL_MS)));
         }
         if (current != null && current > limit) {
             try {

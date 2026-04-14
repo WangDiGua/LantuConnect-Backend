@@ -46,8 +46,10 @@ class GatewayGovernanceServiceTest {
         GatewayInvokeProperties properties = new GatewayInvokeProperties();
         properties.getCapabilities().setDefaultMaxConcurrentPerResource(2);
         service = new GatewayGovernanceService(platformRoleMapper, stringRedisTemplate, jdbcTemplate, properties);
-        valueOperations = mock(ValueOperations.class);
-        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> mockedValueOperations = mock(ValueOperations.class);
+        valueOperations = mockedValueOperations;
+        when(stringRedisTemplate.opsForValue()).thenReturn(mockedValueOperations);
     }
 
     @Test

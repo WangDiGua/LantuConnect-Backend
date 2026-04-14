@@ -8,7 +8,7 @@
 
 **企业内部 / 高校的「数字化资产与能力门户」**：统一登记、审核发布、目录发现、按权消费；条目不全是「可被 RPC 的微服务」，也包括应用入口、数据目录、开发者技能包等。
 
-**一句话定位**：统一注册与目录的**数字化资产与可调用能力**——应用与数据以**发现与接入**为主，智能体与 MCP 以**统一网关调用**为主，~~技能包以**制品分发与开发赋能（如 vibe-coding）**为主（已废弃，当前仅支持 Hosted 模式）~~。
+**一句话定位**：统一注册与目录的**数字化资产与可调用能力**——应用与数据以**发现与接入**为主，智能体与 MCP 以**统一网关调用**为主，技能以**Context 规范与编排辅助**为主。
 
 ---
 
@@ -20,7 +20,7 @@
 | 工具与集成 / 协议化远程服务 | `mcp`（及 agent 的 HTTP/REST 类） | 典型「工具」形态；网关代连上游 MCP 等，走 **`invoke` / `invoke-stream`**。 |
 | 应用资产 / 轻应用 | `app` | 打开或嵌入页面；**`resolve`** 侧重 `launchUrl` / `launchToken`；需要时 **`invoke`** 走 **redirect** 语义，非普通业务 JSON-RPC。 |
 | 数据资产 | `dataset` | **目录与元数据**（类型、格式、规模、标签等）；以 **`resolve`** 为主；**不是**通用远程执行资源（无统一 `invoke` endpoint）。 |
-| 规范与制品 / 开发赋能 | `skill` | **托管技能（`execution_mode=hosted`）** 由平台保存提示模板并 **允许** `invoke`（代调 LLM，见 `lantu.hosted-llm`）。远程可执行工具仍应注册 **`mcp`。~~技能包（`execution_mode=pack`）已废弃（V35 清理），当前仅支持 Hosted 模式~~。** |
+| 规范与编排辅助 / 开发赋能 | `skill` | **Context 技能（`execution_mode=context`）** 由平台保存规范正文 `contextPrompt`、`parametersSchema` 与可选绑定 MCP；仅通过目录与 **`resolve`** 消费，**不支持** `invoke`。远程可执行工具仍应注册 **`mcp`**。 |
 
 ---
 
@@ -29,18 +29,18 @@
 | 类型 | 统一网关 `invoke` | 其他典型消费方式 |
 |------|-------------------|------------------|
 | `agent` | 支持（需 `published`、合法 endpoint、协议受支持） | `resolve` 查看协议与端点 |
-| `skill`（pack） | ~~不支持（已废弃 V35）~~ | ~~`resolve` + **制品下载**；宿主侧加载~~ |
-| `skill`（hosted） | **支持**（`published`、Hosted LLM 已配置） | `resolve` 查看参数/schema；**无**上游 endpoint |
-| `mcp` | 支持；流式用 `invoke-stream`（MCP）；可配置 **前置 Hosted Skill** 洗参 | `resolve` 查看 endpoint 与鉴权 spec |
+| `skill` | **不支持** | **`resolve` 读取 Context 规范**、`contextPrompt`、`parametersSchema` 与绑定 MCP |
+| `mcp` | 支持；流式用 `invoke-stream`（MCP） | `resolve` 查看 endpoint 与鉴权 spec |
 | `app` | 支持，但为 **redirect/票据** 语义 | **`resolve` 获取 launch 信息**；浏览器打开/嵌入 |
 | `dataset` | **不支持**（无 invoke endpoint） | **`resolve` 读元数据**；若需申请/下载数据文件，由**独立能力或扩展**承载 |
 
-### 3.1 绑定与 invoke 展开（Agent / MCP / Hosted Skill）
+### 3.1 绑定与 invoke 展开（Agent / Skill / MCP）
 
 - **无绑定**：`invoke` 行为与未登记关联边时一致，请求体不会被网关附加绑定信息。
-- **`agent` + `agent_depends_mcp`**：用户仅 `POST /catalog/invoke`（或 SDK 同源路径）调用 Agent 时，网关在对上游 Agent `endpoint` 转发前，对**已绑定且当前 Key 可 invoke** 的各 MCP 执行与「聚合工具」一致的 **`tools/list`**，将结果写入请求 JSON 保留命名空间 **`_lantu.bindingExpansion`**（含 `entry`、`openAiTools`、`routes`、`warnings`）。**不**代上游自动执行 `tools/call`；Agent 实现自行决定是否消费 tools。开关见 `lantu.gateway.binding-expansion`。
-- **单独 `mcp` invoke**：**不会**根据绑定反向拉起 Agent；若登记 **`mcp_depends_skill`**，仍在网关内先跑前置 Hosted Skill 链（与既有行为一致）。
-- **`skill`（hosted）+ `mcp_depends_skill`（MCP→Skill）**：逆查绑定到该技能的 MCP；对它们做同上 **`tools/list`** 聚合并写入 **`_lantu.bindingExpansion`** 后再进入 Hosted LLM **单次** chat。**当前阶段不**实现 Hosted LLM 的多轮 `tool_calls` 自动回环；与「仅 MCP 侧执行前置 Skill 链」形成产品上的 Skill↔MCP 互补说明。
+- **`agent` + `agent_depends_mcp`**：用户调用 Agent 时，网关在转发到上游 Agent 前，对**已绑定且当前 Key 可 invoke** 的各 MCP 执行与「聚合工具」一致的 **`tools/list`**，将结果写入请求 JSON 保留命名空间 **`_lantu.bindingExpansion`**（含 `entry`、`openAiTools`、`routes`、`warnings`）。**不**代上游自动执行 `tools/call`；Agent 实现自行决定是否消费 tools。开关见 `lantu.gateway.binding-expansion`。
+- **`agent` + `activeSkillIds`**：当请求体顶层或 `_lantu` 内声明 `activeSkillIds` 时，网关可在开启 `merge-active-skill-mcps` 后，将这些 Skill 上的 **`skill_depends_mcp`** 一并合并进 `bindingExpansion`；Skill 本身仍**不是** invoke 目标。
+- **单独 `mcp` invoke**：**不会**根据绑定反向拉起 Agent，也不会把 Skill 当作独立 invoke 资源参与执行；MCP 仍按自身 `resolve` 结果直接调用。
+- **`skill` 在绑定模型中的职责**：Skill 通过 **`skill_depends_mcp`** 参与目录闭包、`resolve` 展示以及 Agent 调用时的可选 MCP 合并；Skill 自身仅提供 Context 规范，不进入统一网关 `invoke` / `invoke-stream`。
 - **权限**：展开涉及的每个 MCP 均须在当前 **X-Api-Key** 的 scope 内具备 **invoke** 能力，否则对应 MCP 记入 `warnings` 而非阻断整个请求（与聚合工具 BFF 一致）。
 
 ---
@@ -70,9 +70,9 @@
 | **数据集文件下载**（若走独立文件/数据集接口） | **当前不等同于 invoke 统计**；是否另有 AccessLog/审计视具体接口而定 |
 | **`app` 仅用浏览器打开 `launchUrl`，未走 `invoke`** | **通常不进** `CallLog`（可能仅有 **AccessLog** 等 HTTP 层日志，与「网关调用统计」不是一张表） |
 
-因此：**数字上的「调用量」≠ 门户内全部数字化资产的使用量**。平台技能为 **hosted-only**；**`GET /dashboard/owner-resource-stats`** 当前汇总 **`t_call_log`** 与 **`t_usage_record`（`action=invoke`）**（详见实现代码与历史设计文档）。
+因此：**数字上的「调用量」≠ 门户内全部数字化资产的使用量**。**`GET /dashboard/owner-resource-stats`** 当前汇总 **`t_call_log`** 与 **`t_usage_record`（`action=invoke`）**（详见实现代码与历史设计文档）；这更贴近 Agent / MCP / App redirect 等统一网关调用统计。
 
-部分界面用 `UsageRecord.type=skill` 推断「最近使用」：**hosted skill** 的 `invoke` 会产生记录。
+`skill` 为 **Context-only** 资源，当前**不会**直接产生 `/invoke` / `/invoke-stream` 调用记录。若产品需要展示「最近使用技能」或 Skill 参与度，应基于目录/resolve/编排侧独立事件解释，而不应再沿用 hosted-skill invoke 口径。
 
 ---
 

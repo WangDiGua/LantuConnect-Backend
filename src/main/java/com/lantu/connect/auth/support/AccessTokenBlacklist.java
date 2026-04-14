@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.HexFormat;
+import java.util.Objects;
 
 /**
  * Access Token 登出黑名单（Redis），与 JWT 过滤器共用同一 key 规则。
@@ -34,7 +35,7 @@ public class AccessTokenBlacklist {
             return;
         }
         redisTemplate.opsForValue().set(
-                BLACKLIST_PREFIX + sha256(rawToken), "1", Duration.ofSeconds(accessTokenExpirySeconds));
+                BLACKLIST_PREFIX + sha256(rawToken), "1", Objects.requireNonNull(Duration.ofSeconds(accessTokenExpirySeconds)));
     }
 
     public boolean contains(String rawToken) {
@@ -55,7 +56,7 @@ public class AccessTokenBlacklist {
                 ScanOptions options = ScanOptions.scanOptions().match(BLACKLIST_PREFIX + "*").count(200).build();
                 try (Cursor<byte[]> cursor = connection.scan(options)) {
                     while (cursor.hasNext()) {
-                        byte[] key = cursor.next();
+                        byte[] key = Objects.requireNonNull(cursor.next());
                         long ttl = connection.ttl(key);
                         if (ttl == -1) {
                             connection.del(key);

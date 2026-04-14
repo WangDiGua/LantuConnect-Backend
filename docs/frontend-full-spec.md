@@ -536,7 +536,7 @@
 | Service | 旧路径 | 现状 |
 |---|---|---|
 | `agentService` | `/agents/**` | 读操作走 `resourceCatalogService`；写操作抛 410 |
-| `skillService` | `/v1/skills/**`、`/v1/mcp-servers/**` | 读操作走 `resourceCatalogService`；写操作抛 410；invoke 走 `invokeService` |
+| `skillService` | `/v1/skills/**`、`/v1/mcp-servers/**` | 读操作走 `resourceCatalogService`；写操作抛 410；使用走 `POST /catalog/resolve`，不走统一 `invoke` |
 | `smartAppService` | `/v1/apps/**` | 读操作走 `resourceCatalogService`；写操作抛 410 |
 | `datasetService` | `/v1/datasets/**` | 读操作走 `resourceCatalogService`；写操作抛 410 |
 | `providerService` | `/v1/providers/**` | 读操作走 `resourceCatalogService`；写操作抛 410 |

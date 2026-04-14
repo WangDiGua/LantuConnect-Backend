@@ -16,11 +16,13 @@
 
 **`skill` 与 `mcp`（硬语义）**
 
-- **`skill`**：Anthropic 式**技能内容包**（`artifactUri`、可选 `manifest`、`entryDoc`；注册字段 `skillType` 仅为包格式：`anthropic_v1`、`folder_v1`）。**不支持**统一网关 `POST /invoke` / `invoke-stream`；`resolve` 返回 `invokeType: artifact` 与包元数据。
+- **`skill`**：**Context 技能**（`executionMode=context`、`skillType=context_v1`、`contextPrompt`、可选 `parametersSchema` / `relatedMcpResourceIds`）。**不支持**统一网关 `POST /invoke` / `invoke-stream`；`resolve` 返回 `invokeType=portal_context`、`contextPrompt`、`parametersSchema` 与绑定 MCP。
 - **`mcp`**：**可远程调用的 MCP/HTTP 工具**（`t_resource_mcp_ext`：`endpoint`、`protocol`、`authConfig`）。目录 `type=mcp` **仅** `resource_type='mcp'`，不再与前述 `skill` 混排。
 - 禁止将 `skillType` 注册为 `mcp` / `http_api`；此类能力必须新建 `resourceType=mcp` 资源。
 
-**Skill 包 zip（Anthropic 子集）**
+**Skill 包 zip（历史归档，当前实现不适用）**
+
+> 以下表格用于解释历史迁移字段，不应再作为当前 Skill 契约使用；当前真值以上一节的 Context Skill 定义为准。
 
 | 语义 | 说明 |
 |------|------|
@@ -40,7 +42,7 @@
 | 语义 | 允许值（节选） |
 |------|----------------|
 | `agentType` | `mcp`, `http_api`, `builtin` |
-| Skill 包格式 `skillType`（仅 `resourceType=skill`） | `anthropic_v1`, `folder_v1` |
+| Skill 类型 `skillType`（仅 `resourceType=skill`） | `context_v1` |
 | `sourceType` | `internal`, `partner`, `cloud` |
 | Agent 等资源状态 | `draft`, `pending_review`, `testing`, `published`, `rejected`, `deprecated`（以各资源为准） |
 | Provider `providerType` | `internal`, `partner`, `cloud` |
@@ -82,7 +84,7 @@
 | `duration` | 可选。持续时间窗口，如 `5m`、`1h`。省略时默认 `5m`。 |
 | `conditionExpr` | 可选。仍写入实体 `description` 列（说明文案），与算子字段独立。 |
 
-**调用日志 `resource_type`（网关写入）**：`t_call_log.resource_type` 为网关 `POST /invoke`、`POST /invoke-stream` 写入的目标资源类型（小写，如 `agent`、`skill`）。历史数据可能为 `NULL`。
+**调用日志 `resource_type`（网关写入）**：`t_call_log.resource_type` 为网关 `POST /invoke`、`POST /invoke-stream` 写入的目标资源类型（小写，如 `agent`、`mcp`、`app`）。当前 `skill` 为 Context-only，不应再视作新的统一调用目标；历史数据可能为 `NULL`。
 
 **质量历史** `GET /monitoring/resources/{type}/{id}/quality-history`：按 `agent_id` = 资源主键字符串、且 `resource_type` 与路径 `{type}`（小写）一致聚合；**兼容**：`resource_type IS NULL` 的旧行仅在路径 `{type}` 为 `agent` 时纳入（与历史仅按 `agent_id` 统计的行为一致）。
 

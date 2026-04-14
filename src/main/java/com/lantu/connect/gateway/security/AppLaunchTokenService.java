@@ -14,6 +14,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -45,7 +46,10 @@ public class AppLaunchTokenService {
             throw new BusinessException(ResultCode.INTERNAL_ERROR, "应用启动令牌生成失败");
         }
         long ttl = Math.max(30L, Math.min(1800L, runtimeAppConfigService.integration().getAppLaunchTokenTtlSeconds()));
-        stringRedisTemplate.opsForValue().set(KEY_PREFIX + token, payload, Duration.ofSeconds(ttl));
+        stringRedisTemplate.opsForValue().set(
+                KEY_PREFIX + token,
+                Objects.requireNonNull(payload),
+                Objects.requireNonNull(Duration.ofSeconds(ttl)));
         return new LaunchTicket(token, ServletContextPathUtil.join(servletContextPath, "/catalog/apps/launch") + "?token=" + token);
     }
 

@@ -36,6 +36,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -91,7 +92,7 @@ public class McpHttpGatewayController {
             return ResponseEntity.ok()
                     .header(HttpHeaders.CACHE_CONTROL, "no-store")
                     .header("X-Accel-Buffering", "no")
-                    .contentType(MediaType.TEXT_EVENT_STREAM)
+                    .contentType(Objects.requireNonNull(MediaType.TEXT_EVENT_STREAM))
                     .body(streamBody);
         }
 
@@ -101,11 +102,11 @@ public class McpHttpGatewayController {
             String json = toJsonRpcResultBody(jsonRpcId, resolvedTraceId, data);
             int httpStatus = httpStatusForInvoke(data);
             return ResponseEntity.status(httpStatus)
-                    .contentType(MediaType.APPLICATION_JSON)
+                    .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
                     .body(json);
         } catch (BusinessException e) {
             String json = objectMapper.writeValueAsString(jsonRpcErrorMap(jsonRpcId, mcpErrorCode(e), e.getMessage()));
-            return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(json);
+            return ResponseEntity.ok().contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON)).body(json);
         }
     }
 
@@ -199,7 +200,7 @@ public class McpHttpGatewayController {
     private ResponseEntity<String> unauthorizedJsonRpc(Object jsonRpcId) throws JsonProcessingException {
         String json = objectMapper.writeValueAsString(
                 jsonRpcErrorMap(jsonRpcId, -32010, "需要有效的 X-Api-Key"));
-        return ResponseEntity.status(401).contentType(MediaType.APPLICATION_JSON).body(json);
+        return ResponseEntity.status(401).contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON)).body(json);
     }
 
     private static int mcpErrorCode(BusinessException e) {

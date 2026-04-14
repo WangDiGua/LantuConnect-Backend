@@ -55,9 +55,7 @@ public interface ResourceRegistryService {
 
     ResourceManageVO getById(Long operatorUserId, Long resourceId);
 
-    /**
-     * 根据 DB 中当前扩展表重建默认版本快照（用于技能包上传等与请求体无关的变更）。
-     */
+    /** 根据 DB 中当前扩展表重建默认版本快照（用于与请求体无关的扩展表变更同步）。 */
     void recomputeCurrentVersionSnapshot(Long operatorUserId, Long resourceId);
 
     LifecycleTimelineVO lifecycleTimeline(Long operatorUserId, Long resourceId);

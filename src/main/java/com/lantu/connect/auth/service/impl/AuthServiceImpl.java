@@ -57,6 +57,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -254,7 +255,7 @@ public class AuthServiceImpl implements AuthService {
 
         boolean markedUsed = false;
         try {
-            Boolean firstUse = redisTemplate.opsForValue().setIfAbsent(usedKey, "1", Duration.ofDays(7));
+            Boolean firstUse = redisTemplate.opsForValue().setIfAbsent(usedKey, "1", Objects.requireNonNull(Duration.ofDays(7)));
             if (!Boolean.TRUE.equals(firstUse)) {
                 TokenResponse waited = waitForConcurrentRefreshPair(pairKey);
                 if (waited != null) {
@@ -271,7 +272,10 @@ public class AuthServiceImpl implements AuthService {
                     .refreshToken(newRefreshToken)
                     .build();
             try {
-                redisTemplate.opsForValue().set(pairKey, objectMapper.writeValueAsString(out), Duration.ofSeconds(120));
+                redisTemplate.opsForValue().set(
+                        pairKey,
+                        Objects.requireNonNull(objectMapper.writeValueAsString(out)),
+                        Objects.requireNonNull(Duration.ofSeconds(120)));
             } catch (JsonProcessingException e) {
                 throw new BusinessException(ResultCode.INTERNAL_ERROR, "Token 序列化失败");
             }
@@ -309,7 +313,7 @@ public class AuthServiceImpl implements AuthService {
                 Thread.currentThread().interrupt();
                 break;
             }
-            String cached = redisTemplate.opsForValue().get(pairKey);
+            String cached = redisTemplate.opsForValue().get(Objects.requireNonNull(pairKey));
             if (StringUtils.hasText(cached)) {
                 TokenResponse parsed = parseCachedRefreshPair(cached);
                 if (parsed != null) {

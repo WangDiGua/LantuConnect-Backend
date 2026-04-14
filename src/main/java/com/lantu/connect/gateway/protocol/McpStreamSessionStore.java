@@ -11,6 +11,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -30,7 +31,7 @@ public class McpStreamSessionStore {
             return Optional.empty();
         }
         String v = stringRedisTemplate.opsForValue().get(cacheKey(apiKeyId, endpoint));
-        return StringUtils.hasText(v) ? Optional.of(v) : Optional.empty();
+        return Optional.ofNullable(v).filter(StringUtils::hasText);
     }
 
     public void saveSessionId(String apiKeyId, String endpoint, String sessionId) {
@@ -40,7 +41,7 @@ public class McpStreamSessionStore {
         int sessionTtlMinutes = runtimeAppConfigService.integration().getMcpSessionTtlMinutes();
         int minutes = Math.max(5, Math.min(24 * 60, sessionTtlMinutes));
         stringRedisTemplate.opsForValue().set(cacheKey(apiKeyId, endpoint), sessionId.trim(),
-                Duration.ofMinutes(minutes));
+                Objects.requireNonNull(Duration.ofMinutes(minutes)));
     }
 
     /**

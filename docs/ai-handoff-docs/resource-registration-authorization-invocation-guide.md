@@ -13,8 +13,8 @@
 - 上架不是一步：**`approve` 不等于上架**，必须再执行 `publish` 才到 `published`。
 - 统一网关：**`API Key + Scope + published`**；**每资源 Grant 表对 invoke 已下线**（见 `ResourceInvokeGrantService`）。~~已废弃（2026-04-09 下线）~~；替代方案：API Key + Scope + `published` 状态。
 - 五类资源都能注册，但"使用方式"不同：
-  - `agent` / `mcp`：`POST /invoke`（MCP 可 `invoke-stream`）；`mcp` 支持前置 Hosted Skill 链。
-  - `skill`：**pack** 禁止 `invoke`；**hosted** 可 `invoke`。
+  - `agent` / `mcp`：`POST /invoke`（MCP 可 `invoke-stream`）。
+  - `skill`：**Context-only**；通过目录与 `POST /catalog/resolve` 消费，**不支持** `invoke`。
   - `app`：主要是解析后拿 URL 跳转/嵌入（`invokeType=redirect`）。
   - `dataset`：主要是元数据消费（`invokeType=metadata`），不是 HTTP 远程执行型。
 
@@ -372,9 +372,9 @@ flowchart TD
 
 ## 9.3 Skill
 
-- 目标：工具型能力（HTTP/MCP 子能力）
-- 同样可 resolve + invoke
-- **Skill Pack**：~~已废弃（V35 清理）~~，当前仅支持 Hosted 模式
+- 目标：Context 规范与编排辅助
+- 通过目录详情与 `POST /catalog/resolve` 获取 `contextPrompt`、`parametersSchema` 与绑定 MCP
+- 不走统一 `POST /invoke`
 
 ## 9.4 Dataset
 
@@ -466,7 +466,8 @@ flowchart TD
 
 - 统一先 resolve
 - 再按类型分流：
-  - `mcp/agent/skill` -> invoke
+  - `mcp/agent` -> invoke
+  - `skill` -> resolve 并展示 Context 规范 / 绑定闭包
   - `app` -> URL 打开/嵌入
   - `dataset` -> 展示 metadata/spec
 

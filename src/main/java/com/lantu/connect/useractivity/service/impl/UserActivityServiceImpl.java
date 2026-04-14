@@ -150,8 +150,8 @@ public class UserActivityServiceImpl implements UserActivityService {
     @Override
     public List<Map<String, Object>> mySkills(Long userId) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT r.id, r.resource_code, r.display_name, r.status, r.update_time, ext.skill_type "
-                        + "FROM t_resource r LEFT JOIN t_resource_skill_ext ext ON r.id = ext.resource_id "
+                "SELECT r.id, r.resource_code, r.display_name, r.status, r.update_time "
+                        + "FROM t_resource r "
                         + "WHERE r.deleted = 0 AND r.resource_type = 'skill' AND r.created_by = ? ORDER BY r.update_time DESC",
                 userId);
         List<Map<String, Object>> out = new ArrayList<>();
@@ -161,7 +161,6 @@ public class UserActivityServiceImpl implements UserActivityService {
             r.put("agentName", row.get("resource_code"));
             r.put("displayName", row.get("display_name"));
             r.put("status", row.get("status"));
-            r.put("packFormat", row.get("skill_type"));
             r.put("agentType", "context_skill");
             r.put("updateTime", toDateTime(row.get("update_time")));
             out.add(r);
@@ -178,12 +177,12 @@ public class UserActivityServiceImpl implements UserActivityService {
         int safePageSize = Math.max(1, Math.min(pageSize, 100));
 
         List<Map<String, Object>> ownRows = jdbcTemplate.queryForList(
-                "SELECT r.id, r.resource_code, r.display_name, r.description, r.status, r.update_time, ext.skill_type "
-                        + "FROM t_resource r LEFT JOIN t_resource_skill_ext ext ON r.id = ext.resource_id "
+                "SELECT r.id, r.resource_code, r.display_name, r.description, r.status, r.update_time "
+                        + "FROM t_resource r "
                         + "WHERE r.deleted = 0 AND r.resource_type = 'skill' AND r.created_by = ? ORDER BY r.update_time DESC",
                 userId);
         List<Map<String, Object>> publicRows = jdbcTemplate.queryForList(
-                "SELECT r.id, r.resource_code, r.display_name, r.description, r.status, r.update_time, ext.skill_type "
+                "SELECT r.id, r.resource_code, r.display_name, r.description, r.status, r.update_time "
                         + "FROM t_resource r LEFT JOIN t_resource_skill_ext ext ON r.id = ext.resource_id "
                         + "WHERE r.deleted = 0 AND r.resource_type = 'skill' AND COALESCE(ext.is_public,0)=1 AND r.status='published' ORDER BY r.update_time DESC");
 
@@ -260,14 +259,12 @@ public class UserActivityServiceImpl implements UserActivityService {
     }
 
     private static AuthorizedSkillVO toAuthorizedSkillVO(Map<String, Object> row, String source, LocalDateTime lastUsedTime) {
-        String packFmt = str(row.get("skill_type"));
         return AuthorizedSkillVO.builder()
                 .id(longValue(row.get("id")))
                 .agentName(str(row.get("resource_code")))
                 .displayName(str(row.get("display_name")))
                 .description(str(row.get("description")))
                 .agentType("context_skill")
-                .packFormat(packFmt)
                 .status(str(row.get("status")))
                 .source(source)
                 .updateTime(toDateTime(row.get("update_time")))

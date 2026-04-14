@@ -12,6 +12,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -38,7 +39,7 @@ public class SessionTrackerService {
         String userSessionsKey = USER_SESSIONS_PREFIX + userId;
         String sessionUserKey = SESSION_USER_PREFIX + sessionId;
         stringRedisTemplate.opsForSet().add(userSessionsKey, sessionId);
-        stringRedisTemplate.opsForValue().set(sessionUserKey, String.valueOf(userId), SESSION_TIMEOUT);
+        stringRedisTemplate.opsForValue().set(sessionUserKey, String.valueOf(userId), Objects.requireNonNull(SESSION_TIMEOUT));
         stringRedisTemplate.expire(userSessionsKey, SESSION_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
         log.debug("追踪会话: userId={}, sessionId={}", userId, sessionId);
     }
@@ -70,7 +71,7 @@ public class SessionTrackerService {
 
     public Map<String, String> getSessionMeta(String sessionId) {
         String metaKey = SESSION_META_PREFIX + sessionId;
-        Map<Object, Object> raw = stringRedisTemplate.opsForHash().entries(metaKey);
+        Map<Object, Object> raw = Objects.requireNonNull(stringRedisTemplate.opsForHash().entries(metaKey));
         if (raw.isEmpty()) {
             return Collections.emptyMap();
         }

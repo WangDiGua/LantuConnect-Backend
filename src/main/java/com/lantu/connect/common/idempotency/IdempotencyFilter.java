@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 @Component
@@ -50,7 +51,7 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         String key = PREFIX + (StringUtils.hasText(uid) ? uid.trim() : "anonymous") + ":" + uri + ":" + idemKey.trim();
 
         Boolean locked = redisTemplate.opsForValue().setIfAbsent(
-                key, "processing", Duration.ofSeconds(Math.max(1, properties.getProcessingTtlSeconds())));
+                key, "processing", Objects.requireNonNull(Duration.ofSeconds(Math.max(1, properties.getProcessingTtlSeconds()))));
         if (Boolean.FALSE.equals(locked)) {
             writeDuplicate(response);
             return;
@@ -63,7 +64,7 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         } finally {
             if (status >= 200 && status < 300) {
                 redisTemplate.opsForValue().set(
-                        key, "success", Duration.ofSeconds(Math.max(60, properties.getSuccessTtlSeconds())));
+                        key, "success", Objects.requireNonNull(Duration.ofSeconds(Math.max(60, properties.getSuccessTtlSeconds()))));
             } else {
                 redisTemplate.delete(key);
             }

@@ -317,7 +317,7 @@
 | GET | `/catalog/resources/{type}/{id}` | path:`type,id`；query:`include` 可含 `closure`/`bindings` | `X-User-Id?`,`X-Api-Key?` | 保留 |
 | GET | `/catalog/capabilities/tools` | query:`entryResourceType,entryResourceId` | `X-Api-Key` 必填 | 可选：闭包 MCP `tools/list` 聚合 |
 | POST | `/catalog/resolve` | body:`ResourceResolveRequest` | `X-User-Id?`,`X-Api-Key?` | 保留 |
-| POST | `/invoke` | body:`InvokeRequest` | `X-Api-Key` 必填，`X-User-Id?`,`X-Trace-Id?` | 保留；hosted skill / MCP 前置 skill 见实现 |
+| POST | `/invoke` | body:`InvokeRequest` | `X-Api-Key` 必填，`X-User-Id?`,`X-Trace-Id?` | 保留；仅 agent/mcp 等可调用资源，skill 为 Context-only 不支持 invoke |
 
 ## 4.2.1 ~~资源调用授权管理与工单~~（已整体下线）
 
@@ -657,11 +657,9 @@
 | `description` | String | 否 | 描述 |
 | `sourceType/providerId/categoryId` | String/Long | 否 | 来源与归属 |
 | `agentType/spec` | String/Object | agent 必填 | Agent 扩展 |
-| `skillType` / `artifactUri` / `manifest` / `entryDoc` / `skillRootPath` / `spec` / `parametersSchema` / `serviceDetailMd` / `isPublic` | 各类 | skill **pack** | `skillType` 常用 `anthropic_v1` / `folder_v1`；制品上传走 `/resource-center/resources/skills/package-upload*`；`executionMode` 省略或 `pack` |
-| `executionMode` / `hostedSystemPrompt` / `hostedUserTemplate` / `hostedDefaultModel` / `hostedOutputSchema` / `hostedTemperature` | 部分 | skill **hosted** | `executionMode=hosted`，建议 `skillType=hosted_v1`；走 `POST /invoke` |
+| `executionMode` / `skillType` / `contextPrompt` / `spec` / `parametersSchema` / `serviceDetailMd` / `isPublic` | 部分 | skill **context** | `executionMode=context`；`skillType=context_v1`；`contextPrompt` 必填；通过目录与 `POST /catalog/resolve` 消费，不走 `POST /invoke` |
 | `relatedResourceIds` | List&lt;Long&gt; | agent 可选 | `agent_depends_skill` |
-| `relatedMcpResourceIds` | List&lt;Long&gt; | agent 可选 | `agent_depends_mcp` |
-| `relatedPreSkillResourceIds` | List&lt;Long&gt; | mcp 可选 | `mcp_depends_skill`（有序前置链，`invoke(mcp)` 前归一化 JSON） |
+| `relatedMcpResourceIds` | List&lt;Long&gt; | agent/skill 可选 | agent 为 `agent_depends_mcp`；skill 为 `skill_depends_mcp` |
 | （兼容入参，已废弃）`mode`、`parentResourceId`、`displayTemplate`、`maxConcurrency` | — | skill | **服务端忽略**，写入扩展表时统一清空；管理 VO **不返回**上述 skill 字段 |
 | `endpoint/protocol/authType/authConfig` | String/Object | mcp: endpoint 必填 | MCP 扩展；`protocol` 必须后端可调用 |
 | `appUrl/embedType` | String | app 必填 | App 扩展 |

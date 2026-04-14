@@ -24,6 +24,7 @@ import java.time.Duration;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -97,9 +98,9 @@ public class Oauth2ClientCredentialsTokenService {
             }
             long expiresInSec = root.path("expires_in").asLong(3600L);
             long expMs = System.currentTimeMillis() + Math.max(60L, expiresInSec) * 1000L;
-            String payload = objectMapper.writeValueAsString(Map.of("token", access, "exp", expMs));
+            String payload = Objects.requireNonNull(objectMapper.writeValueAsString(Map.of("token", access, "exp", expMs)));
             long ttlSec = Math.max(60L, expiresInSec - 60);
-            stringRedisTemplate.opsForValue().set(cacheKey, payload, Duration.ofSeconds(ttlSec));
+            stringRedisTemplate.opsForValue().set(cacheKey, payload, Objects.requireNonNull(Duration.ofSeconds(ttlSec)));
             return access;
         } catch (BusinessException e) {
             throw e;

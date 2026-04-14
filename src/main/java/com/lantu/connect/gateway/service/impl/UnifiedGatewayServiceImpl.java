@@ -259,7 +259,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     }
 
     /**
-     * 市场卡片：调用量（呼叫日志）、应用使用量（usage_record）、技能下载量（技能包下载事件）。
+     * 市场卡片：调用量（呼叫日志）与应用使用量（usage_record）。
      * 浏览量在 SQL 主查询中随 {@code t_resource.view_count} 返回，并在详情 GET 成功路径上增量更新。
      */
     private void attachCatalogEngagementMetrics(List<ResourceCatalogItemVO> items) {
@@ -1351,12 +1351,6 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             return null;
         }
         return longValue(row.get("id"));
-    }
-
-    private static String specUrl(Map<String, Object> spec) {
-        if (spec == null) return null;
-        Object v = spec.get("url");
-        return v == null ? null : String.valueOf(v);
     }
 
     private static String normalizeProtocol(Object raw, String defaultProtocol) {

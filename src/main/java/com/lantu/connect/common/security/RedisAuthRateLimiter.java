@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.time.Duration;
+import java.util.Objects;
 
 /**
  * 认证类接口的 Redis 滑动窗口限流（按 IP / 用户名），补 Resilience4j 单机令牌桶无法区分来源的问题。
@@ -80,7 +81,7 @@ public class RedisAuthRateLimiter {
             return;
         }
         if (n == 1L) {
-            redisTemplate.expire(key, ttl);
+            redisTemplate.expire(key, Objects.requireNonNull(ttl));
         }
         if (n > max) {
             throw new BusinessException(ResultCode.RATE_LIMITED, message);

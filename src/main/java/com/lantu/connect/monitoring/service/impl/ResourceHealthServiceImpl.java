@@ -2,7 +2,6 @@ package com.lantu.connect.monitoring.service.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lantu.connect.gateway.dto.ResourceResolveVO;
 import com.lantu.connect.gateway.dto.McpConnectivityProbeRequest;
 import com.lantu.connect.gateway.dto.McpConnectivityProbeResult;
 import com.lantu.connect.gateway.protocol.ProtocolInvokeContext;
@@ -365,8 +364,6 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
         row.policyId = policy == null ? null : longObject(policy.get("id"));
         row.healthStatus = policy == null ? null : str(policy.get("health_status"));
         row.currentState = policy == null ? null : str(policy.get("current_state"));
-        row.callabilityState = policy == null ? null : str(policy.get("callability_state"));
-        row.callabilityReason = policy == null ? null : str(policy.get("callability_reason"));
         row.lastProbeAt = policy == null ? null : toDateTime(policy.get("last_probe_at"));
         row.lastSuccessAt = policy == null ? null : toDateTime(policy.get("last_success_at"));
         row.lastFailureAt = policy == null ? null : toDateTime(policy.get("last_failure_at"));
@@ -737,14 +734,6 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
         return StringUtils.hasText(s) ? s : null;
     }
 
-    private static String normalizeToken(Object raw) {
-        if (raw == null) {
-            return null;
-        }
-        String s = String.valueOf(raw).trim();
-        return StringUtils.hasText(s) ? s : null;
-    }
-
     private static String normalizeHealthStatus(Object raw) {
         if (raw == null) {
             return "unknown";
@@ -885,8 +874,6 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
         Long policyId;
         String healthStatus;
         String currentState;
-        String callabilityState;
-        String callabilityReason;
         LocalDateTime lastProbeAt;
         LocalDateTime lastSuccessAt;
         LocalDateTime lastFailureAt;

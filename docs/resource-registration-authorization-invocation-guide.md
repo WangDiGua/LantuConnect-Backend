@@ -13,8 +13,8 @@
 - 上架不是一步：**`approve` 不等于上架**，必须再执行 `publish` 才到 `published`。
 - 统一网关消费：**`API Key + Scope + published（及资源可见性）`** 为主；**每资源 Grant 表对 invoke/目录已不做拦截**（实现见 `ResourceInvokeGrantService` 注释）。
 - 五类资源都能注册，但“使用方式”不同（与 `PRODUCT_DEFINITION.md` §2–§3 一致）：
-  - `agent` / `mcp`：可走统一调用 `POST /invoke`（MCP 流式用 `invoke-stream`）。`mcp` 可登记 **前置 Hosted Skill**，网关内在转发上游前按链归一化 JSON（见 `docs/改造计划/platform-transformation-spec-freeze.md`）。
-  - `skill`：**技能包（`execution_mode=pack`）** 仍禁止 `POST /invoke`；**托管技能（`execution_mode=hosted`）** 可走 `invoke`（平台代调 LLM）。远程工具请登记 `mcp`。
+  - `agent` / `mcp`：可走统一调用 `POST /invoke`（MCP 流式用 `invoke-stream`）。
+  - `skill`：**Context 技能（`execution_mode=context`）** 通过目录与 `POST /catalog/resolve` 消费；返回 `contextPrompt`、`parametersSchema` 与绑定 MCP，**不支持** `POST /invoke`。远程工具请登记 `mcp`。
   - `app`：主要是 `resolve` 后拿 URL 跳转/嵌入；`invoke` 多为 redirect/票据语义。
   - `dataset`：主要是元数据消费（`invokeType=metadata` 等），**无**通用统一 `invoke` 执行模型。
 
@@ -84,7 +84,7 @@
 - `GET /catalog/resources/{type}/{id}` 按类型详情解析；`include` 可含 **`closure` 或 `bindings`**，响应 `bindingClosure` 为绑定无向闭包资源摘要。
 - `POST /catalog/resolve` 统一解析
 - `GET /catalog/capabilities/tools?entryResourceType=&entryResourceId=` **（可选 BFF）** 对闭包内 MCP 聚合 `tools/list`，返回 OpenAI tools 形态与 `routes` 映射（须 `X-Api-Key`，入口 resolve scope + 各 MCP invoke scope）。
-- `POST /invoke` 统一调用（必须 `X-Api-Key`）。**绑定展开**：若 `resourceType=agent` 且登记了 `agent_depends_mcp`，或 `resourceType=skill`（hosted）且存在指向该技能的 `mcp_depends_skill`，网关在转发/代调前会对相关 MCP 拉取 `tools/list`，将 `openAiTools`、`routes`、`warnings`、`entry` 合并进 **`payload._lantu.bindingExpansion`**（仅覆盖该子键，保留调用方在 `_lantu` 下的其它扩展）。**单独 invoke `mcp` 不会**反向追加 Agent。各 MCP 须当前 Key **invoke** scope；无权限的 MCP 记入 `warnings`。开关：`lantu.gateway.binding-expansion`（`enabled` / `agent` / `hosted-skill`）。
+- `POST /invoke` 统一调用（必须 `X-Api-Key`）。**绑定展开**：若 `resourceType=agent` 且登记了 `agent_depends_mcp`，网关在转发前会对相关 MCP 拉取 `tools/list`，将 `openAiTools`、`routes`、`warnings`、`entry` 合并进 **`payload._lantu.bindingExpansion`**（仅覆盖该子键，保留调用方在 `_lantu` 下的其它扩展）。调用方还可在 `payload.activeSkillIds` 或 `payload._lantu.activeSkillIds` 声明 Skill 资源 id；当开启 `merge-active-skill-mcps` 时，网关会把这些 Skill 上的 `skill_depends_mcp` 一并合并。**单独 invoke `mcp` 不会**反向追加 Agent，也不会把 Skill 当作独立 invoke 目标。各 MCP 须当前 Key **invoke** scope；无权限的 MCP 记入 `warnings`。开关：`lantu.gateway.binding-expansion`（`enabled` / `agent` / `merge-active-skill-mcps`）。
 
 **`X-Api-Key` 填什么（与列表里看到的不同）**
 
@@ -98,13 +98,13 @@
 ### 3.4.1 绑定字段（注册 JSON）
 
 - **Agent**：`relatedResourceIds`（`agent_depends_skill`，历史）、`relatedMcpResourceIds`（`agent_depends_mcp`）。**invoke 侧**：仅调 Agent 时，网关可将绑定 MCP 的工具聚合写入上游请求体 `_lantu.bindingExpansion`（见上），**不会**在仅调 MCP 时反向拉起 Agent。
-- **MCP**：`relatedPreSkillResourceIds`（`mcp_depends_skill`，顺序为前置链）。**invoke 侧**：转发 MCP 前仍按链跑前置 Hosted Skill；不追加 Agent。
-- **Skill**：`executionMode`：`pack` | `hosted`；hosted 须 `hostedSystemPrompt` 等（见 `ResourceUpsertRequest` / Swagger）。**invoke 侧**：若有 MCP 通过 `mcp_depends_skill` 绑定到该技能，网关在 Hosted LLM 调用前将同源工具聚合写入 **`payload._lantu.bindingExpansion`**（与 Agent 展开字段一致；当前仍为单次 chat，不自动代执行 `tools/call`）。
+- **MCP**：当前无独立的 Skill 前置执行链；核心仍是 `endpoint/protocol/authType/authConfig` 与网关直连调用。
+- **Skill**：`executionMode=context`、`skillType=context_v1`、`contextPrompt`、`parametersSchema`、可选 `relatedMcpResourceIds`（`skill_depends_mcp`）。**使用侧**：通过目录与 `resolve` 消费；若 Agent 调用携带 `activeSkillIds`，网关可把这些 Skill 绑定的 MCP 合并进 `_lantu.bindingExpansion`，但 Skill 自身**不参与**统一网关 `invoke`。
 
 ## 3.5 开发者 owner 维度统计
 
 - `GET /dashboard/owner-resource-stats?ownerUserId=&periodDays=7`：**须** `X-User-Id`。默认统计当前用户名下资源；部门管理员可传 **本部门开发者** 的 `ownerUserId`；平台管理员可查任意 owner。
-- 指标：`t_call_log` 网关调用总量/成功量、按资源类型拆分；`t_usage_record` 中 `action=invoke` 且可归因到该 owner 资源的条数（可能与 call_log 重复，仅供对照）；`t_skill_pack_download_event` 技能包成功下载次数（下载接口流式完成后写入）。
+- 指标：`t_call_log` 网关调用总量/成功量、按资源类型拆分；`t_usage_record` 中 `action=invoke` 且可归因到该 owner 资源的条数（可能与 call_log 重复，仅供对照）。`skill` 为 Context-only 资源，不再按“技能包下载”或“hosted invoke”口径计入统一调用统计。
 
 ---
 
@@ -203,9 +203,10 @@ flowchart TD
 
 ## 5.4 Skill 必填字段
 
-- `skillType`（必填）
-- `spec`（必填，通常包含 `url`）
-- 可选：`mode/parametersSchema/parentResourceId/displayTemplate/isPublic/maxConcurrency`
+- `executionMode=context`（固定）
+- `skillType=context_v1`（固定）
+- `contextPrompt`（必填）
+- 可选：`spec/parametersSchema/serviceDetailMd/isPublic/relatedMcpResourceIds`
 
 ## 5.5 Dataset 必填字段
 
@@ -293,7 +294,7 @@ flowchart TD
     adminPublish --> catalogList["GET /catalog/resources?resourceType=...&status=published"]
     catalogList --> resolveRes["POST /catalog/resolve"]
     resolveRes --> useByType{"resourceType"}
-    useByType -->|agent/skill/mcp| invokeCall["POST /invoke"]
+    useByType -->|agent/mcp| invokeCall["POST /invoke"]
     useByType -->|app| openUrl["open endpoint / embed"]
     useByType -->|dataset| showMeta["show metadata/spec"]
 ```
@@ -348,13 +349,14 @@ flowchart TD
 
 ## 9.2 Agent
 
-- 目标：子智能体/HTTP Agent 服务
-- 走法与 MCP 类似，主要差异在 `spec` 结构与 `agentType`
+- 目标：子智能体 / HTTP Agent 服务
+- 走法与 MCP 类似，差异主要在 `spec.agentType`
 
 ## 9.3 Skill
 
-- 目标：工具型能力（HTTP/MCP 子能力）
-- 同样可 resolve + invoke
+- 目标：Context 规范与编排辅助
+- 通过目录详情与 `POST /catalog/resolve` 获取 `contextPrompt`、`parametersSchema` 与绑定 MCP
+- 不走统一 `POST /invoke`
 
 ## 9.4 Dataset
 
@@ -446,7 +448,8 @@ flowchart TD
 
 - 统一先 resolve
 - 再按类型分流：
-  - `mcp/agent/skill` -> invoke
+  - `mcp/agent` -> invoke
+  - `skill` -> resolve 并展示 Context 规范 / 绑定闭包
   - `app` -> URL 打开/嵌入
   - `dataset` -> 展示 metadata/spec
 

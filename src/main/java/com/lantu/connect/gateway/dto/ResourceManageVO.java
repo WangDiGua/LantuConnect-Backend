@@ -62,9 +62,9 @@ public class ResourceManageVO {
     private String skillType;
     private Map<String, Object> manifest;
     private String entryDoc;
-    /** skill：已废弃，API 恒为 null（技能包不挂载 MCP）。 */
+    /** skill：已废弃，Context Skill 不使用父级资源。 */
     private Long parentResourceId;
-    /** skill：已废弃，API 恒为 null。 */
+    /** skill：已废弃，Context Skill 不使用展示模板。 */
     private String displayTemplate;
     private Map<String, Object> parametersSchema;
 

@@ -42,7 +42,7 @@ public class GlobalExceptionHandler {
                 TraceLogging.traceIdOrDash(),
                 request.getRequestURI(),
                 e.getMessage());
-        return ResponseEntity.status(resolveHttpStatus(e.getCode()))
+        return ResponseEntity.status(resolveHttpStatus(e.getCode()).value())
                 .body(R.fail(e.getCode(), e.getMessage()));
     }
 
@@ -106,21 +106,14 @@ public class GlobalExceptionHandler {
         return R.fail(ResultCode.NOT_FOUND);
     }
 
-    /**
-     * 常见原因：仅注册了 multipart 的后端版本上却以 application/json 调用；或反向。
-     * 当前技能包上传同时支持 multipart 与 JSON（Base64），仍不匹配时请核对路径与 Content-Type。
-     */
-    /**
-     * 常见于前端误将 multipart 发成 JSON（如 file 被序列化为空对象），或字段类型与 DTO 不符。
-     */
+    /** 常见于 JSON 结构错误、字段类型与 DTO 不匹配，或请求体与接口约定不一致。 */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public R<Void> handleMessageNotReadable(HttpMessageNotReadableException e, HttpServletRequest request) {
         log.warn("HTTP message not readable traceId={} uri={}: {}",
                 TraceLogging.traceIdOrDash(), request.getRequestURI(), abbreviateLogMessage(e.getMessage(), 500));
-        String msg = "请求体无法解析。技能包上传请使用 multipart/form-data（字段 file 为文件二进制），"
-                + "或使用 application/json 且字段 file / fileBase64 为 Base64 字符串；勿将 file 传为 JSON 对象。";
-        return R.fail(ResultCode.PARAM_ERROR, msg);
+        String normalizedMsg = "请求体无法解析。请检查 JSON 结构、字段类型，以及请求体是否与接口 DTO 匹配。";
+        return R.fail(ResultCode.PARAM_ERROR, normalizedMsg);
     }
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
@@ -128,9 +121,8 @@ public class GlobalExceptionHandler {
                                                               HttpServletRequest request) {
         log.warn("Unsupported media type traceId={} uri={}: {}",
                 TraceLogging.traceIdOrDash(), request.getRequestURI(), e.getMessage());
-        String msg = "Content-Type 与接口不匹配。技能包上传请用 multipart/form-data（字段 file），"
-                + "或 application/json（字段 file / fileBase64 为文件 Base64）；并确保后端已更新至支持 JSON 的版本。";
-        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(R.fail(ResultCode.PARAM_ERROR, msg));
+        String normalizedMsg = "Content-Type 与接口不匹配。请按接口声明使用 application/json、multipart/form-data 等正确类型。";
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE.value()).body(R.fail(ResultCode.PARAM_ERROR, normalizedMsg));
     }
 
     @ExceptionHandler(DataAccessException.class)

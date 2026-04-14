@@ -60,7 +60,7 @@
 | admin | `tag-management/security-settings/quota-management/rate-limit-policy/access-control/audit-log/sensitive-words/announcements` | 系统治理 | `/tags*`、`/system-config*`、`/quotas*`、`/rate-limits*`、`/sensitive-words*` |
 | admin | `api-docs/sdk-download/api-playground/developer-statistics` | 开发者门户 | `/catalog/*`、`/sdk/v1/*`、`/developer/my-statistics` |
 | user | `hub/workspace` | 用户看板与探索 | `/dashboard/explore-hub`、`/dashboard/user-workspace` |
-| user | `agent-market/skill-market/mcp-market/app-market/dataset-market` | 五市场检索与详情 | `/catalog/resources*`、`/catalog/resolve`、`/invoke` |
+| user | `agent-market/skill-market/mcp-market/app-market/dataset-market` | 五市场检索与详情 | `/catalog/resources*`、`/catalog/resolve`、`/invoke`（仅 agent/mcp；skill 走 resolve，app/dataset 以 resolve 为主） |
 | user | `my-agents-pub/resource-center/agent-list/skill-list/mcp-server-list/app-list/dataset-list` | 我的发布管理 | `/resource-center/resources*` |
 | user | `agent-register/skill-register/mcp-register/app-register/dataset-register` | 用户侧资源注册 | `POST|PUT /resource-center/resources*` |
 | user | `my-agents/my-skills/authorized-skills/recent-use/my-favorites/usage-records/usage-stats` | 用户活动与资产 | `/user/*` |

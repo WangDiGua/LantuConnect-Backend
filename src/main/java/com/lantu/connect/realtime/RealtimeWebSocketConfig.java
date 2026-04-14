@@ -4,6 +4,7 @@ import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import com.lantu.connect.common.config.CorsBootstrapProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.lang.NonNull;
 import org.springframework.util.StringUtils;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
@@ -29,7 +30,7 @@ public class RealtimeWebSocketConfig implements WebSocketConfigurer {
     private final RuntimeAppConfigService runtimeAppConfigService;
 
     @Override
-    public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+    public void registerWebSocketHandlers(@NonNull WebSocketHandlerRegistry registry) {
         String[] patterns = resolveAllowedOriginPatterns().toArray(String[]::new);
         registry.addHandler(userPushWebSocketHandler, "/ws/push")
                 .addInterceptors(handshakeInterceptor)

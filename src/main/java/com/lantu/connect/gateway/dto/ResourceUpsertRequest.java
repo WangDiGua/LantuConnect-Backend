@@ -68,11 +68,9 @@ public class ResourceUpsertRequest {
     private Map<String, Object> manifest;
     /** 入口文档相对路径（可选）。 */
     private String entryDoc;
-    /**
-     * 已废弃：技能仅为技能包资源，不再挂载 MCP；服务端对 resourceType=skill 忽略此字段。
-     */
+    /** 已废弃：Context Skill 不使用父级资源；服务端对 resourceType=skill 忽略此字段。 */
     private Long parentResourceId;
-    /** 已废弃：技能包资源不使用；服务端对 skill 忽略。 */
+    /** 已废弃：Context Skill 不使用展示模板；服务端对 skill 忽略。 */
     private String displayTemplate;
     private Map<String, Object> parametersSchema;
 
@@ -121,7 +119,7 @@ public class ResourceUpsertRequest {
      */
     private String executionMode;
 
-    /** skill：规范/提示词正文（落库 {@code t_resource_skill_ext.hosted_system_prompt}） */
+    /** skill：Context 规范正文（底层落库 {@code t_resource_skill_ext.hosted_system_prompt}） */
     private String contextPrompt;
 }
 

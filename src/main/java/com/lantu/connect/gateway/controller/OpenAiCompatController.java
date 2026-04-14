@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/openai/v1")
@@ -39,7 +40,7 @@ public class OpenAiCompatController {
         if (openAiCompatService.isStreamRequested(body)) {
             StreamingResponseBody stream = outputStream -> openAiCompatService.chatCompletionsStream(apiKey, body, outputStream);
             return ResponseEntity.ok()
-                    .contentType(MediaType.TEXT_EVENT_STREAM)
+                    .contentType(Objects.requireNonNull(MediaType.TEXT_EVENT_STREAM))
                     .header(HttpHeaders.CACHE_CONTROL, "no-store")
                     .header("X-Accel-Buffering", "no")
                     .body(stream);

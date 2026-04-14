@@ -187,7 +187,7 @@ public class ResourceCatalogController {
         if (!runtimeAppConfigService.gateway().isInvokeHttpStatusReflectsUpstream()) {
             return ResponseEntity.ok(body);
         }
-        return ResponseEntity.status(GatewayInvokeResponseSupport.toHttpStatus(data)).body(body);
+        return ResponseEntity.status(GatewayInvokeResponseSupport.toHttpStatus(data).value()).body(body);
     }
 
     /**
