@@ -32,10 +32,10 @@ if (Test-Path $configFile) {
     }
 }
 
-$pid = Get-ListenerPid -TargetPort $Port
-if ($null -ne $pid) {
-    Write-Host "Stopping existing process on port $Port: PID=$pid"
-    Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+$listenerPid = Get-ListenerPid -TargetPort $Port
+if ($null -ne $listenerPid) {
+    Write-Host "Stopping existing process on port ${Port}: PID=$listenerPid"
+    Stop-Process -Id $listenerPid -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
 }
 

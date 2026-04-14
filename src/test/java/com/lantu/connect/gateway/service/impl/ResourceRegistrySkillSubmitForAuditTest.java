@@ -6,6 +6,7 @@ import com.lantu.connect.common.util.DeptScopeHelper;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.gateway.protocol.ProtocolInvokerRegistry;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
+import com.lantu.connect.monitoring.service.ResourceHealthService;
 import com.lantu.connect.notification.service.NotificationService;
 import com.lantu.connect.realtime.AuditPendingPushDebouncer;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
@@ -51,6 +52,8 @@ class ResourceRegistrySkillSubmitForAuditTest {
     private SystemNotificationFacade systemNotificationFacade;
     @Mock
     private AuditPendingPushDebouncer auditPendingPushDebouncer;
+    @Mock
+    private ResourceHealthService resourceHealthService;
 
     @InjectMocks
     private ResourceRegistryServiceImpl resourceRegistryService;

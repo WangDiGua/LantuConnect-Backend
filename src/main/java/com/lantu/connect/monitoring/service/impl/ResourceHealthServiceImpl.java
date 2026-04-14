@@ -313,6 +313,7 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
                             callability_state = ?,
                             callability_reason = ?,
                             last_probe_at = ?,
+                            last_check_time = ?,
                             last_success_at = ?,
                             last_failure_at = ?,
                             last_failure_reason = ?,
@@ -326,6 +327,7 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
                 outcome.healthStatus,
                 outcome.callabilityState,
                 outcome.callabilityReason,
+                now,
                 now,
                 healthy ? now : row.lastSuccessAt,
                 healthy ? row.lastFailureAt : now,
@@ -392,7 +394,7 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
             row.modelAlias = str(ext.get("model_alias"));
         } else if (TYPE_SKILL.equalsIgnoreCase(resourceType)) {
             row.executionMode = str(ext.get("execution_mode"));
-            row.contextPrompt = str(ext.get("context_prompt"));
+            row.contextPrompt = str(ext.get("hosted_system_prompt"));
         } else if (TYPE_MCP.equalsIgnoreCase(resourceType)) {
             row.endpoint = str(ext.get("endpoint"));
             row.protocol = str(ext.get("protocol"));
@@ -426,7 +428,7 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
                     LIMIT 1
                     """, resourceId);
             case TYPE_SKILL -> jdbcTemplate.queryForList("""
-                    SELECT execution_mode, context_prompt
+                    SELECT execution_mode, hosted_system_prompt
                     FROM t_resource_skill_ext
                     WHERE resource_id = ?
                     LIMIT 1

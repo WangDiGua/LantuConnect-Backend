@@ -1919,8 +1919,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         switch (type) {
             case "agent" -> {
                 requireText(request.getAgentType(), "agentType 不能为空");
-                if (request.getSpec() == null || request.getSpec().isEmpty()) {
-                    throw new BusinessException(ResultCode.PARAM_ERROR, "agent spec 不能为空");
+                if (request.getSpec() == null) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR, "agent spec 不能为 null（可传 {}）");
                 }
                 String protocol = defaultString(request.getRegistrationProtocol(), "openai_compatible")
                         .trim().toLowerCase(Locale.ROOT);

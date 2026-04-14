@@ -73,7 +73,8 @@ public class McpAutoHealthProbeTask {
                 }
                 String protoCol = trimToNull(row.get("protocol"));
                 Map<String, Object> health = jdbcTemplate.queryForList(
-                        "SELECT id, check_type, health_status, healthy_threshold, timeout_sec "
+                        "SELECT id, check_type, health_status, current_state, consecutive_success, consecutive_failure, "
+                                + "last_success_at, last_failure_at, last_failure_reason, healthy_threshold, timeout_sec "
                                 + "FROM t_resource_runtime_policy WHERE resource_id = ? LIMIT 1",
                         resourceId)
                         .stream().findFirst().orElse(null);
@@ -145,11 +146,18 @@ public class McpAutoHealthProbeTask {
                 String resourceCode = valueOf(row.get("resource_code"));
                 String displayName = valueOf(row.get("display_name"));
                 String prevProbeStatus = health == null ? null : trimToNull(health.get("health_status"));
+                String currentState = health == null ? null : trimToNull(health.get("current_state"));
+                long prevSuccess = health == null ? 0L : longValue(health.get("consecutive_success"));
+                long prevFailure = health == null ? 0L : longValue(health.get("consecutive_failure"));
+                LocalDateTime prevLastSuccessAt = health == null ? null : toDateTime(health.get("last_success_at"));
+                LocalDateTime prevLastFailureAt = health == null ? null : toDateTime(health.get("last_failure_at"));
                 if (health == null) {
                     jdbcTemplate.update(
                             "INSERT INTO t_resource_runtime_policy (resource_id, resource_type, resource_code, display_name, "
-                                    + "check_type, check_url, interval_sec, healthy_threshold, timeout_sec, health_status, last_check_time) "
-                                    + "VALUES (?, ?, ?, ?, ?, ?, 300, ?, ?, ?, ?)",
+                                    + "check_type, check_url, interval_sec, healthy_threshold, timeout_sec, health_status, current_state, "
+                                    + "last_check_time, last_probe_at, last_success_at, last_failure_at, last_failure_reason, "
+                                    + "consecutive_success, consecutive_failure, probe_latency_ms, probe_payload_summary) "
+                                    + "VALUES (?, ?, ?, ?, ?, ?, 300, ?, ?, ?, 'CLOSED', ?, ?, ?, ?, ?, 0, 0, ?, ?)",
                             resourceId,
                             TYPE_MCP,
                             resourceCode,
@@ -159,17 +167,39 @@ public class McpAutoHealthProbeTask {
                             failThreshold,
                             DEFAULT_PROBE_TIMEOUT_SEC,
                             status,
-                            now);
+                            now,
+                            now,
+                            probeOk ? now : null,
+                            probeOk ? null : now,
+                            probeOk ? null : probeRes.getMessage(),
+                            probeRes.getLatencyMs(),
+                            probeRes.getBodyPreview());
                 } else {
                     Long hid = ((Number) health.get("id")).longValue();
                     jdbcTemplate.update(
-                            "UPDATE t_resource_runtime_policy SET health_status = ?, last_check_time = ?, check_url = ?, "
+                            "UPDATE t_resource_runtime_policy SET health_status = ?, last_check_time = ?, last_probe_at = ?, "
+                                    + "last_success_at = ?, last_failure_at = ?, last_failure_reason = ?, consecutive_success = ?, "
+                                    + "consecutive_failure = ?, probe_latency_ms = ?, probe_payload_summary = ?, check_url = ?, "
                                     + "check_type = ?, healthy_threshold = ? WHERE id = ?",
-                            status, now, endpoint.trim(), CHECK_TYPE_MCP, failThreshold, hid);
+                            status,
+                            now,
+                            now,
+                            probeOk ? now : prevLastSuccessAt,
+                            probeOk ? prevLastFailureAt : now,
+                            probeOk ? null : probeRes.getMessage(),
+                            probeOk ? prevSuccess + 1L : 0L,
+                            probeOk ? 0L : prevFailure + 1L,
+                            probeRes.getLatencyMs(),
+                            probeRes.getBodyPreview(),
+                            endpoint.trim(),
+                            CHECK_TYPE_MCP,
+                            failThreshold,
+                            hid);
                 }
                 if ("healthy".equalsIgnoreCase(status)) {
                     resourceCircuitHealthBridge.resetOpenOrHalfOpenAfterHealthyProbe(TYPE_MCP, resourceId);
                 }
+                resourceHealthService.refreshCallability(resourceId);
                 String typeCol = valueOf(row.get("resource_type"));
                 if (!normHealthStatus(prevProbeStatus).equals(normHealthStatus(status))) {
                     realtimePushService.pushHealthProbeStatusChanged(
@@ -244,5 +274,30 @@ public class McpAutoHealthProbeTask {
 
     private static String normHealthStatus(String s) {
         return s == null ? "" : s.trim().toLowerCase();
+    }
+
+    private static long longValue(Object value) {
+        if (value instanceof Number n) {
+            return n.longValue();
+        }
+        try {
+            return value == null ? 0L : Long.parseLong(String.valueOf(value).trim());
+        } catch (Exception ex) {
+            return 0L;
+        }
+    }
+
+    private static LocalDateTime toDateTime(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof LocalDateTime ldt) {
+            return ldt;
+        }
+        try {
+            return LocalDateTime.parse(String.valueOf(value).replace(' ', 'T'));
+        } catch (Exception ex) {
+            return null;
+        }
     }
 }
