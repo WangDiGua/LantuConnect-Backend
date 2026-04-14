@@ -18,10 +18,7 @@ public class OpenAiCompatibleAdapter extends AbstractProviderProtocolAdapter {
     @Override
     public ProviderProtocolRequest buildRequest(String endpoint, Map<String, Object> payload, Map<String, Object> spec, String resolvedCredential, String traceId) {
         String query = extractQuery(payload);
-        String model = asText(spec == null ? null : spec.get("upstreamAgentId"));
-        if (!StringUtils.hasText(model)) {
-            model = "default";
-        }
+        String model = resolveModel(spec, "default");
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         body.put("messages", List.of(Map.of("role", "user", "content", query)));

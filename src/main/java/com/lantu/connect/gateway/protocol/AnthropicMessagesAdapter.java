@@ -18,10 +18,7 @@ public class AnthropicMessagesAdapter extends AbstractProviderProtocolAdapter {
     @Override
     public ProviderProtocolRequest buildRequest(String endpoint, Map<String, Object> payload, Map<String, Object> spec, String resolvedCredential, String traceId) {
         String query = extractQuery(payload);
-        String model = asText(spec == null ? null : spec.get("upstreamAgentId"));
-        if (!StringUtils.hasText(model)) {
-            model = "claude-3-5-sonnet-latest";
-        }
+        String model = resolveModel(spec, "claude-3-5-sonnet-latest");
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         body.put("max_tokens", 1024);

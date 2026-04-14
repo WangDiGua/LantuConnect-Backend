@@ -25,6 +25,18 @@ abstract class AbstractProviderProtocolAdapter implements ProviderProtocolAdapte
         return payload.toString();
     }
 
+    protected String resolveModel(Map<String, Object> spec, String fallback) {
+        String modelAlias = asText(spec == null ? null : spec.get("modelAlias"));
+        if (StringUtils.hasText(modelAlias)) {
+            return modelAlias.trim();
+        }
+        String upstreamAgentId = asText(spec == null ? null : spec.get("upstreamAgentId"));
+        if (StringUtils.hasText(upstreamAgentId)) {
+            return upstreamAgentId.trim();
+        }
+        return fallback;
+    }
+
     protected String asText(Object value) {
         return value == null ? null : String.valueOf(value);
     }
