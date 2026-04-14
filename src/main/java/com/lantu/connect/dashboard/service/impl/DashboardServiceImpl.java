@@ -79,7 +79,7 @@ public class DashboardServiceImpl implements DashboardService {
         Long todayCalls = callLogMapper.selectTodayCount();
         summary.put("callLogsToday", todayCalls != null ? todayCalls : 0L);
         Long pending = auditItemMapper.selectCount(
-                new LambdaQueryWrapper<AuditItem>().eq(AuditItem::getStatus, "pending"));
+                new LambdaQueryWrapper<AuditItem>().eq(AuditItem::getStatus, "pending_review"));
         summary.put("pendingAudits", pending != null ? pending : 0L);
 
         List<Map<String, Object>> charts = new ArrayList<>();
@@ -736,7 +736,7 @@ public class DashboardServiceImpl implements DashboardService {
                         + "GROUP BY DATE(create_time) ORDER BY day");
 
         Long pendingAudits = auditItemMapper.selectCount(
-                new LambdaQueryWrapper<AuditItem>().eq(AuditItem::getStatus, "pending"));
+                new LambdaQueryWrapper<AuditItem>().eq(AuditItem::getStatus, "pending_review"));
         if (pendingAudits == null) pendingAudits = 0L;
 
         Long activeAlerts = alertRecordMapper.selectCount(

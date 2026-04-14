@@ -289,8 +289,22 @@ public class AuditServiceImpl implements AuditService {
         }
     }
 
+    private AuditItem resolvePreferredAuditItem(Long pathId, String expectedTargetType, String requiredStatus) {
+        if (pathId == null) {
+            return null;
+        }
+        AuditItem byId = auditItemMapper.selectById(pathId);
+        if (byId != null) {
+            if (StringUtils.hasText(expectedTargetType) && !expectedTargetType.equals(byId.getTargetType())) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "目标类型不匹配");
+            }
+            return requiredStatus.equals(byId.getStatus()) ? byId : null;
+        }
+        return resolveAuditItemByPathId(pathId, expectedTargetType, requiredStatus);
+    }
+
     private AuditItem requirePending(Long id, String expectedTargetType) {
-        AuditItem item = resolveAuditItemByPathId(id, expectedTargetType, STATUS_PENDING);
+        AuditItem item = resolvePreferredAuditItem(id, expectedTargetType, STATUS_PENDING);
         if (item == null) {
             throw new BusinessException(ResultCode.NOT_FOUND, "审核项不存在");
         }
@@ -330,7 +344,7 @@ public class AuditServiceImpl implements AuditService {
     }
 
     private void publish(Long id, String expectedTargetType, Long reviewerId) {
-        AuditItem item = resolveAuditItemByPathId(id, expectedTargetType, STATUS_TESTING);
+        AuditItem item = resolvePreferredAuditItem(id, expectedTargetType, STATUS_TESTING);
         if (item == null) {
             AuditItem hint = auditItemMapper.selectOne(new LambdaQueryWrapper<AuditItem>()
                     .eq(AuditItem::getTargetId, id)

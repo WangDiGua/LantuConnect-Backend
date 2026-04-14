@@ -1,25 +1,34 @@
 package com.lantu.connect.notification.service;
 
-import lombok.RequiredArgsConstructor;
 import com.lantu.connect.notification.entity.Notification;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
 /**
- * 统一系统通知门面：封装接收人计算、事件编码与消息内容结构。
+ * Unified notification facade for workflow/system notifications.
  */
 @Service
 @RequiredArgsConstructor
 public class SystemNotificationFacade {
 
     private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final List<String> PLATFORM_ADMIN_ROLE_CODES = List.of("platform_admin", "admin");
+    private static final List<String> AUDIT_AUDIENCE_ROLE_CODES = List.of(
+            "platform_admin",
+            "admin",
+            "reviewer",
+            "dept_admin",
+            "department_admin",
+            "auditor");
 
     private final MultiChannelNotificationService multiChannelNotificationService;
     private final JdbcTemplate jdbcTemplate;
@@ -35,8 +44,7 @@ public class SystemNotificationFacade {
         notification.setBody(body);
         notification.setSourceType(sourceType);
         notification.setSourceId(sourceId);
-        enrichFlowFields(notification);
-        multiChannelNotificationService.sendAll(notification);
+        dispatch(notification);
     }
 
     public void notifyToUsers(List<Long> userIds, String type, String title, String body, String sourceType, Long sourceId) {
@@ -50,40 +58,141 @@ public class SystemNotificationFacade {
     }
 
     public void notifyPlatformAdmins(String type, String title, String body, String sourceType, Long sourceId, Long excludeUserId) {
-        List<Long> ids = findRoleUserIds("platform_admin");
-        if (excludeUserId != null) {
-            ids = ids.stream().filter(id -> !excludeUserId.equals(id)).toList();
-        }
+        List<Long> ids = filterExcluded(findPlatformAdminUserIds(), excludeUserId);
         notifyToUsers(ids, type, title, body, sourceType, sourceId);
     }
 
+    public void notifyAuditAudience(
+            String type,
+            String title,
+            String body,
+            String sourceType,
+            Long sourceId,
+            Long excludeUserId,
+            String actionUrl,
+            String actionLabel) {
+        String normalizedSourceId = sourceId == null ? null : String.valueOf(sourceId);
+        for (Long userId : filterExcluded(findAuditAudienceUserIds(), excludeUserId)) {
+            Notification notification = new Notification();
+            notification.setUserId(userId);
+            notification.setType(type);
+            notification.setTitle(title);
+            notification.setBody(body);
+            notification.setSourceType(sourceType);
+            notification.setSourceId(normalizedSourceId);
+            notification.setActionUrl(actionUrl);
+            notification.setActionLabel(actionLabel);
+            dispatch(notification);
+        }
+    }
+
+    public void notifyResourceSubmitted(
+            Long submitterId,
+            Long resourceId,
+            String resourceType,
+            String displayName,
+            boolean publishedUpdate) {
+        String normalizedType = normalizeResourceType(resourceType);
+        String title = publishedUpdate ? "已发布资源变更已提交审核" : "资源已提交审核";
+        String submitterBody = buildBody(
+                publishedUpdate ? "已发布资源变更提审" : "资源提审",
+                "待审核",
+                String.format(
+                        Locale.ROOT,
+                        "资源: %s/%s%n名称: %s",
+                        fallbackText(normalizedType, "-"),
+                        safeId(resourceId),
+                        fallbackText(displayName, "-")),
+                publishedUpdate
+                        ? "审核通过后将合并到线上默认版本。"
+                        : "可在资源中心查看审核进度。");
+        Notification submitterNotification = new Notification();
+        submitterNotification.setUserId(submitterId);
+        submitterNotification.setType(NotificationEventCodes.RESOURCE_SUBMITTED);
+        submitterNotification.setTitle(title);
+        submitterNotification.setBody(submitterBody);
+        submitterNotification.setSourceType(normalizedType);
+        submitterNotification.setSourceId(resourceId == null ? null : String.valueOf(resourceId));
+        submitterNotification.setActionUrl(buildResourceActionUrl(normalizedType, resourceId));
+        submitterNotification.setActionLabel("查看资源");
+        dispatch(submitterNotification);
+
+        String auditBody = buildBody(
+                publishedUpdate ? "已发布资源变更提审" : "资源提审",
+                "待处理",
+                String.format(
+                        Locale.ROOT,
+                        "提交人: %s%n资源: %s/%s%n名称: %s",
+                        safeId(submitterId),
+                        fallbackText(normalizedType, "-"),
+                        safeId(resourceId),
+                        fallbackText(displayName, "-")),
+                "请前往审核列表处理。");
+        notifyAuditAudience(
+                NotificationEventCodes.RESOURCE_SUBMITTED,
+                publishedUpdate ? "已发布资源变更待审核" : "新资源待审核",
+                auditBody,
+                normalizedType,
+                resourceId,
+                null,
+                "/c/resource-audit",
+                "处理审核");
+    }
+
     public void notifyOnboardingSubmitted(Long applicantId, Long applicationId, String companyName, String reason) {
-        String details = String.format(
+        String applicantDetails = String.format(
                 Locale.ROOT,
-                "申请人: %s\n公司: %s\n申请理由: %s",
+                "申请人: %s%n公司: %s%n申请理由: %s",
                 safeId(applicantId),
                 fallbackText(companyName, "-"),
                 fallbackText(reason, "-"));
-        notifyPlatformAdmins(
+        Notification applicantNotification = new Notification();
+        applicantNotification.setUserId(applicantId);
+        applicantNotification.setType(NotificationEventCodes.ONBOARDING_SUBMITTED);
+        applicantNotification.setTitle("入驻申请已提交");
+        applicantNotification.setBody(buildBody("开发者入驻", "待审核", applicantDetails, "可在入驻申请页查看处理进度。"));
+        applicantNotification.setSourceType("developer_application");
+        applicantNotification.setSourceId(applicationId == null ? null : String.valueOf(applicationId));
+        applicantNotification.setActionUrl("/c/developer-onboarding");
+        applicantNotification.setActionLabel("查看我的申请");
+        dispatch(applicantNotification);
+
+        String reviewerDetails = String.format(
+                Locale.ROOT,
+                "申请人: %s%n公司: %s%n申请理由: %s",
+                safeId(applicantId),
+                fallbackText(companyName, "-"),
+                fallbackText(reason, "-"));
+        notifyAuditAudience(
                 NotificationEventCodes.ONBOARDING_SUBMITTED,
                 "入驻申请待审核",
-                buildBody("入驻申请", "待处理", details, "请前往入驻审核列表处理。"),
+                buildBody("开发者入驻", "待处理", reviewerDetails, "请前往入驻审批列表处理。"),
                 "developer_application",
                 applicationId,
-                null);
+                null,
+                "/c/developer-applications",
+                "处理入驻");
     }
 
     public void notifyOnboardingReviewed(Long applicantId, Long applicationId, boolean approved, Long reviewerId, String comment) {
         String type = approved ? NotificationEventCodes.ONBOARDING_APPROVED : NotificationEventCodes.ONBOARDING_REJECTED;
-        String title = approved ? "入驻申请已通过" : "入驻申请被驳回";
+        String title = approved ? "入驻申请已通过" : "入驻申请已驳回";
         String result = approved ? "审核通过" : "审核驳回";
         String details = String.format(
                 Locale.ROOT,
-                "审核人: %s\n审批意见: %s",
+                "审核人: %s%n审核意见: %s",
                 safeId(reviewerId),
                 fallbackText(comment, approved ? "审核通过" : "-"));
-        notifyToUser(applicantId, type, title, buildBody("入驻申请", result, details, "可在入驻申请记录中查看详情。"),
-                "developer_application", applicationId == null ? null : String.valueOf(applicationId));
+        Notification notification = new Notification();
+        notification.setUserId(applicantId);
+        notification.setType(type);
+        notification.setTitle(title);
+        notification.setBody(buildBody("开发者入驻", result, details, "可在入驻申请页查看详情。"));
+        notification.setSourceType("developer_application");
+        notification.setSourceId(applicationId == null ? null : String.valueOf(applicationId));
+        notification.setActionUrl("/c/developer-onboarding");
+        notification.setActionLabel("查看我的申请");
+        dispatch(notification);
     }
 
     public void notifyPasswordChanged(Long userId) {
@@ -108,13 +217,13 @@ public class SystemNotificationFacade {
         String type = created ? NotificationEventCodes.API_KEY_CREATED : NotificationEventCodes.API_KEY_REVOKED;
         String title = created ? "API Key 已创建" : "API Key 已撤销";
         String result = created ? "创建成功" : "撤销成功";
-        String details = String.format(Locale.ROOT, "Key ID: %s\nKey 名称: %s", fallbackText(keyId, "-"), fallbackText(keyName, "-"));
+        String details = String.format(Locale.ROOT, "Key ID: %s%nKey 名称: %s", fallbackText(keyId, "-"), fallbackText(keyName, "-"));
         notifyToUser(userId, type, title, buildBody("API Key 管理", result, details, "请妥善保管密钥并定期轮换。"),
                 "api_key", keyId);
     }
 
     public void notifyApiKeyRotated(Long userId, String keyId, String keyName) {
-        String details = String.format(Locale.ROOT, "Key ID: %s\nKey 名称: %s", fallbackText(keyId, "-"), fallbackText(keyName, "-"));
+        String details = String.format(Locale.ROOT, "Key ID: %s%nKey 名称: %s", fallbackText(keyId, "-"), fallbackText(keyName, "-"));
         notifyToUser(userId,
                 NotificationEventCodes.API_KEY_ROTATED,
                 "API Key 已轮换",
@@ -126,7 +235,7 @@ public class SystemNotificationFacade {
     public void notifyUserStatusChanged(Long targetUserId, Long operatorUserId, String oldStatus, String newStatus) {
         String details = String.format(
                 Locale.ROOT,
-                "操作人: %s\n状态变更: %s -> %s",
+                "操作人: %s%n状态变更: %s -> %s",
                 safeId(operatorUserId),
                 fallbackText(oldStatus, "-"),
                 fallbackText(newStatus, "-"));
@@ -141,7 +250,7 @@ public class SystemNotificationFacade {
     public void notifyUserDeleted(Long targetUserId, Long operatorUserId, String username) {
         String details = String.format(
                 Locale.ROOT,
-                "操作人: %s\n账号: %s",
+                "操作人: %s%n账号: %s",
                 safeId(operatorUserId),
                 fallbackText(username, "-"));
         notifyPlatformAdmins(
@@ -156,7 +265,7 @@ public class SystemNotificationFacade {
     public void notifyRoleChanged(Long operatorUserId, Long roleId, String roleCode, String operation) {
         String details = String.format(
                 Locale.ROOT,
-                "操作人: %s\n角色: %s (%s)",
+                "操作人: %s%n角色: %s (%s)",
                 safeId(operatorUserId),
                 fallbackText(roleCode, "-"),
                 fallbackText(roleId == null ? null : String.valueOf(roleId), "-"));
@@ -172,7 +281,7 @@ public class SystemNotificationFacade {
     public void notifyResourceGrantChanged(Long operatorUserId, String eventType, String resourceType, Long resourceId, String apiKeyId) {
         String details = String.format(
                 Locale.ROOT,
-                "操作人: %s\n资源: %s/%s\nAPI Key: %s",
+                "操作人: %s%n资源: %s/%s%nAPI Key: %s",
                 safeId(operatorUserId),
                 fallbackText(resourceType, "-"),
                 fallbackText(resourceId == null ? null : String.valueOf(resourceId), "-"),
@@ -190,7 +299,7 @@ public class SystemNotificationFacade {
     public void notifyResourceStateChange(Long operatorUserId, String type, String title, String resourceType, Long resourceId, String extra) {
         String details = String.format(
                 Locale.ROOT,
-                "操作人: %s\n资源: %s/%s\n详情: %s",
+                "操作人: %s%n资源: %s/%s%n详情: %s",
                 safeId(operatorUserId),
                 fallbackText(resourceType, "-"),
                 fallbackText(resourceId == null ? null : String.valueOf(resourceId), "-"),
@@ -207,7 +316,7 @@ public class SystemNotificationFacade {
     public void notifySystemSecurityOperation(Long operatorUserId, String type, String action, String key) {
         String details = String.format(
                 Locale.ROOT,
-                "操作人: %s\n操作: %s\n配置项: %s",
+                "操作人: %s%n操作: %s%n配置项: %s",
                 safeId(operatorUserId),
                 fallbackText(action, "-"),
                 fallbackText(key, "-"));
@@ -223,7 +332,7 @@ public class SystemNotificationFacade {
     public void notifyAlertTriggered(String ruleName, String severity, String metric, String threshold, String sample, String recordId) {
         String details = String.format(
                 Locale.ROOT,
-                "规则: %s\n级别: %s\n指标: %s\n阈值: %s\n样本值: %s",
+                "规则: %s%n级别: %s%n指标: %s%n阈值: %s%n样本值: %s",
                 fallbackText(ruleName, "-"),
                 fallbackText(severity, "-"),
                 fallbackText(metric, "-"),
@@ -234,7 +343,7 @@ public class SystemNotificationFacade {
                 "系统告警触发: " + fallbackText(ruleName, "-"),
                 buildBody("监控告警", "触发", details, "请尽快检查监控面板并处理故障。"),
                 "alert",
-                recordId == null ? null : Long.valueOf(recordId),
+                parseLongOrNull(recordId),
                 null);
     }
 
@@ -245,12 +354,66 @@ public class SystemNotificationFacade {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT ur.user_id FROM t_user_role_rel ur JOIN t_platform_role r ON ur.role_id = r.id WHERE r.role_code = ?",
                 roleCode.trim().toLowerCase(Locale.ROOT));
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
         return rows.stream()
                 .map(item -> item.get("user_id"))
                 .filter(v -> v != null)
                 .map(v -> Long.valueOf(String.valueOf(v)))
                 .distinct()
                 .toList();
+    }
+
+    private void dispatch(Notification notification) {
+        if (notification == null || notification.getUserId() == null || notification.getUserId() <= 0L) {
+            return;
+        }
+        enrichFlowFields(notification);
+        multiChannelNotificationService.sendAll(notification);
+    }
+
+    private List<Long> findPlatformAdminUserIds() {
+        LinkedHashSet<Long> userIds = new LinkedHashSet<>();
+        PLATFORM_ADMIN_ROLE_CODES.forEach(code -> userIds.addAll(findRoleUserIds(code)));
+        return List.copyOf(userIds);
+    }
+
+    private List<Long> findAuditAudienceUserIds() {
+        LinkedHashSet<Long> userIds = new LinkedHashSet<>();
+        AUDIT_AUDIENCE_ROLE_CODES.forEach(code -> userIds.addAll(findRoleUserIds(code)));
+        return List.copyOf(userIds);
+    }
+
+    private static List<Long> filterExcluded(List<Long> userIds, Long excludeUserId) {
+        if (userIds == null || userIds.isEmpty()) {
+            return List.of();
+        }
+        if (excludeUserId == null) {
+            return userIds.stream().filter(id -> id != null && id > 0L).distinct().toList();
+        }
+        return userIds.stream()
+                .filter(id -> id != null && id > 0L)
+                .filter(id -> !excludeUserId.equals(id))
+                .distinct()
+                .toList();
+    }
+
+    private static String buildResourceActionUrl(String resourceType, Long resourceId) {
+        if (resourceId == null) {
+            return "/c/resource-center";
+        }
+        return switch (normalizeResourceType(resourceType)) {
+            case "skill" -> "/c/skills-center/" + resourceId;
+            case "mcp" -> "/c/mcp-center/" + resourceId;
+            case "dataset" -> "/c/dataset-center/" + resourceId;
+            case "app" -> "/c/apps-center/" + resourceId;
+            default -> "/c/agents-center/" + resourceId;
+        };
+    }
+
+    private static String normalizeResourceType(String resourceType) {
+        return resourceType == null ? "agent" : resourceType.trim().toLowerCase(Locale.ROOT);
     }
 
     private static String buildBody(String event, String result, String details, String suggestion) {
@@ -277,6 +440,17 @@ public class SystemNotificationFacade {
         return StringUtils.hasText(text) ? text.trim() : fallback;
     }
 
+    private static Long parseLongOrNull(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        try {
+            return Long.valueOf(value.trim());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
     private static void enrichFlowFields(Notification n) {
         String type = n.getType() == null ? "" : n.getType().trim().toLowerCase(Locale.ROOT);
         n.setCategory(defaultCategory(type));
@@ -286,7 +460,9 @@ public class SystemNotificationFacade {
             n.setCategory("workflow");
             n.setAggregateKey("resource:" + n.getSourceId().trim() + ":publication");
             n.setTotalSteps(4);
-            n.setActionLabel(NotificationEventCodes.RESOURCE_SUBMITTED.equals(type) ? "处理审核" : "查看资源");
+            if (!StringUtils.hasText(n.getActionLabel())) {
+                n.setActionLabel(NotificationEventCodes.RESOURCE_SUBMITTED.equals(type) ? "处理审核" : "查看资源");
+            }
             n.setFlowStatus("running");
             if (NotificationEventCodes.RESOURCE_SUBMITTED.equals(type)) {
                 setStep(n, 1, "submitted", "提交审核", "done", "资源已进入审核队列");
@@ -310,7 +486,9 @@ public class SystemNotificationFacade {
             n.setAggregateKey("resource:" + n.getSourceId().trim() + ":governance");
             n.setTotalSteps(1);
             n.setCurrentStep(1);
-            n.setActionLabel("查看资源");
+            if (!StringUtils.hasText(n.getActionLabel())) {
+                n.setActionLabel("查看资源");
+            }
             if (NotificationEventCodes.RESOURCE_VERSION_SWITCHED.equals(type)) {
                 setStep(n, 1, "version_switched", "默认版本切换", "done", "资源默认版本已更新");
                 n.setFlowStatus("success");
@@ -331,7 +509,9 @@ public class SystemNotificationFacade {
             n.setCategory("workflow");
             n.setAggregateKey("developer_application:" + n.getSourceId().trim() + ":onboarding");
             n.setTotalSteps(2);
-            n.setActionLabel(NotificationEventCodes.ONBOARDING_SUBMITTED.equals(type) ? "处理入驻" : "查看入驻申请");
+            if (!StringUtils.hasText(n.getActionLabel())) {
+                n.setActionLabel(NotificationEventCodes.ONBOARDING_SUBMITTED.equals(type) ? "处理入驻" : "查看入驻申请");
+            }
             if (NotificationEventCodes.ONBOARDING_SUBMITTED.equals(type)) {
                 n.setFlowStatus("running");
                 setStep(n, 1, "submitted", "提交入驻申请", "done", "申请已进入平台审核队列");
@@ -351,7 +531,9 @@ public class SystemNotificationFacade {
             n.setCategory("security");
             n.setAggregateKey("api_key:" + n.getSourceId().trim() + ":lifecycle");
             n.setTotalSteps(3);
-            n.setActionLabel("查看 API Key");
+            if (!StringUtils.hasText(n.getActionLabel())) {
+                n.setActionLabel("查看 API Key");
+            }
             if (NotificationEventCodes.API_KEY_CREATED.equals(type)) {
                 n.setFlowStatus("running");
                 setStep(n, 1, "created", "创建密钥", "done", "API Key 已创建");

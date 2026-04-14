@@ -1,6 +1,7 @@
 package com.lantu.connect.onboarding.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lantu.connect.auth.entity.PlatformRole;
 import com.lantu.connect.auth.entity.UserRoleRel;
@@ -12,13 +13,14 @@ import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
+import com.lantu.connect.notification.service.SystemNotificationFacade;
 import com.lantu.connect.onboarding.dto.DeveloperApplicationCreateRequest;
 import com.lantu.connect.onboarding.dto.DeveloperApplicationQueryRequest;
 import com.lantu.connect.onboarding.entity.DeveloperApplication;
 import com.lantu.connect.onboarding.mapper.DeveloperApplicationMapper;
 import com.lantu.connect.onboarding.service.DeveloperApplicationService;
-import com.lantu.connect.notification.service.SystemNotificationFacade;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -33,6 +35,8 @@ public class DeveloperApplicationServiceImpl implements DeveloperApplicationServ
     private static final String STATUS_PENDING = "pending";
     private static final String STATUS_APPROVED = "approved";
     private static final String STATUS_REJECTED = "rejected";
+    private static final String MSG_PENDING_DUPLICATE = "已有待审核申请，请勿重复提交";
+    private static final String MSG_REVIEW_CONFLICT = "该申请已被其他审核员处理，请刷新列表";
 
     private final DeveloperApplicationMapper developerApplicationMapper;
     private final PlatformRoleMapper platformRoleMapper;
@@ -48,7 +52,7 @@ public class DeveloperApplicationServiceImpl implements DeveloperApplicationServ
                         .eq(DeveloperApplication::getUserId, userId)
                         .eq(DeveloperApplication::getStatus, STATUS_PENDING));
         if (pendingCount > 0) {
-            throw new BusinessException(ResultCode.CONFLICT, "已有待审核申请，请勿重复提交");
+            throw new BusinessException(ResultCode.CONFLICT, MSG_PENDING_DUPLICATE);
         }
 
         DeveloperApplication row = new DeveloperApplication();
@@ -60,7 +64,11 @@ public class DeveloperApplicationServiceImpl implements DeveloperApplicationServ
         row.setStatus(STATUS_PENDING);
         row.setCreateTime(LocalDateTime.now());
         row.setUpdateTime(LocalDateTime.now());
-        developerApplicationMapper.insert(row);
+        try {
+            developerApplicationMapper.insert(row);
+        } catch (DataIntegrityViolationException ex) {
+            throw new BusinessException(ResultCode.CONFLICT, MSG_PENDING_DUPLICATE);
+        }
         row.setUserName(userDisplayNameResolver.resolveDisplayName(userId));
         systemNotificationFacade.notifyOnboardingSubmitted(
                 userId,
@@ -146,12 +154,25 @@ public class DeveloperApplicationServiceImpl implements DeveloperApplicationServ
             userRoleRelMapper.insert(rel);
         }
 
+        String normalizedComment = StringUtils.hasText(reviewComment) ? reviewComment.trim() : "审核通过";
+        LocalDateTime now = LocalDateTime.now();
+        int updated = developerApplicationMapper.update(null, new UpdateWrapper<DeveloperApplication>()
+                .eq("id", id)
+                .eq("status", STATUS_PENDING)
+                .set("status", STATUS_APPROVED)
+                .set("review_comment", normalizedComment)
+                .set("reviewed_by", reviewerId)
+                .set("reviewed_at", now)
+                .set("update_time", now));
+        if (updated != 1) {
+            throw new BusinessException(ResultCode.CONFLICT, MSG_REVIEW_CONFLICT);
+        }
+
         row.setStatus(STATUS_APPROVED);
-        row.setReviewComment(StringUtils.hasText(reviewComment) ? reviewComment.trim() : "审核通过");
+        row.setReviewComment(normalizedComment);
         row.setReviewedBy(reviewerId);
-        row.setReviewedAt(LocalDateTime.now());
-        row.setUpdateTime(LocalDateTime.now());
-        developerApplicationMapper.updateById(row);
+        row.setReviewedAt(now);
+        row.setUpdateTime(now);
         systemNotificationFacade.notifyOnboardingReviewed(
                 row.getUserId(),
                 row.getId(),
@@ -181,12 +202,25 @@ public class DeveloperApplicationServiceImpl implements DeveloperApplicationServ
         if (!StringUtils.hasText(reviewComment)) {
             throw new BusinessException(ResultCode.REJECT_REASON_REQUIRED, "驳回原因不能为空");
         }
+
+        LocalDateTime now = LocalDateTime.now();
+        int updated = developerApplicationMapper.update(null, new UpdateWrapper<DeveloperApplication>()
+                .eq("id", id)
+                .eq("status", STATUS_PENDING)
+                .set("status", STATUS_REJECTED)
+                .set("review_comment", reviewComment.trim())
+                .set("reviewed_by", reviewerId)
+                .set("reviewed_at", now)
+                .set("update_time", now));
+        if (updated != 1) {
+            throw new BusinessException(ResultCode.CONFLICT, MSG_REVIEW_CONFLICT);
+        }
+
         row.setStatus(STATUS_REJECTED);
         row.setReviewComment(reviewComment.trim());
         row.setReviewedBy(reviewerId);
-        row.setReviewedAt(LocalDateTime.now());
-        row.setUpdateTime(LocalDateTime.now());
-        developerApplicationMapper.updateById(row);
+        row.setReviewedAt(now);
+        row.setUpdateTime(now);
         systemNotificationFacade.notifyOnboardingReviewed(
                 row.getUserId(),
                 row.getId(),

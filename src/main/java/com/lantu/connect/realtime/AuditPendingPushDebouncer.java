@@ -1,5 +1,6 @@
 package com.lantu.connect.realtime;
 
+import com.lantu.connect.common.tx.TransactionCommitExecutor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -32,6 +33,10 @@ public class AuditPendingPushDebouncer {
      * 在事务提交后由调用方触发；多次调用会在安静 2s 后最多发送一条 pending_changed。
      */
     public synchronized void requestFlush() {
+        TransactionCommitExecutor.runAfterCommitOrNow(this::scheduleFlush);
+    }
+
+    private synchronized void scheduleFlush() {
         if (pending != null) {
             pending.cancel(false);
         }

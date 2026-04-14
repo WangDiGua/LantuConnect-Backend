@@ -71,7 +71,7 @@ class ResourceRegistrySkillSubmitForAuditTest {
         resourceRegistryService.submitForAudit(uid, rid);
 
         verify(jdbcTemplate, atLeastOnce()).update(
-                contains("UPDATE t_resource SET status"),
+                contains("LOWER(status) IN ('draft', 'rejected', 'deprecated')"),
                 eq(ResourceLifecycleStateMachine.STATUS_PENDING_REVIEW),
                 eq(rid));
     }

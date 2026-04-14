@@ -27,6 +27,7 @@ import com.lantu.connect.notification.service.NotificationEventCodes;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
 import com.lantu.connect.realtime.AuditPendingPushDebouncer;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -220,6 +221,20 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
             if (AUDIT_TIER_LOW.equals(tier) && mayAutoApplyLowTierPublishedUpdate(operatorUserId)) {
                 applyPublishedUpdateFromAudit(operatorUserId, resourceId, freezeSnap);
+                systemNotificationFacade.notifyAuditAudience(
+                        NotificationEventCodes.RESOURCE_SUBMITTED,
+                        "已发布资源变更已自动生效（低风险）",
+                        """
+                                事件: 已发布资源变更（自动合并）
+                                时间: %s
+                                资源: %s/%s
+                                说明: 低风险修改已由具备权限的管理员直接合并上线，线上默认版本已更新。
+                                """.formatted(LocalDateTime.now(), row.resourceType(), resourceId),
+                        row.resourceType(),
+                        resourceId,
+                        null,
+                        "/c/resource-audit",
+                        "查看审核");
                 notifyReviewers(
                         NotificationEventCodes.RESOURCE_SUBMITTED,
                         "已发布资源变更已自动生效（低风险）",
@@ -233,21 +248,25 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 return getById(operatorUserId, resourceId);
             }
 
-            jdbcTemplate.update("""
-                            INSERT INTO t_audit_item(target_type, target_id, display_name, agent_name, description, \
-                            agent_type, source_type, audit_kind, payload_json, submitter, submit_time, status, create_time) \
-                            VALUES(?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), ?, NOW(), 'pending_review', NOW())
-                            """,
-                    row.resourceType(),
-                    resourceId,
-                    merged.getDisplayName() != null ? merged.getDisplayName() : row.displayName(),
-                    merged.getResourceCode() != null ? merged.getResourceCode() : row.resourceCode(),
-                    merged.getDescription() != null ? merged.getDescription() : row.description(),
-                    row.resourceType(),
-                    row.sourceType(),
-                    AUDIT_KIND_PUBLISHED_UPDATE,
-                    writeJson(freezeSnap),
-                    String.valueOf(operatorUserId));
+            try {
+                jdbcTemplate.update("""
+                                INSERT INTO t_audit_item(target_type, target_id, display_name, agent_name, description, \
+                                agent_type, source_type, audit_kind, payload_json, submitter, submit_time, status, create_time) \
+                                VALUES(?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), ?, NOW(), 'pending_review', NOW())
+                                """,
+                        row.resourceType(),
+                        resourceId,
+                        merged.getDisplayName() != null ? merged.getDisplayName() : row.displayName(),
+                        merged.getResourceCode() != null ? merged.getResourceCode() : row.resourceCode(),
+                        merged.getDescription() != null ? merged.getDescription() : row.description(),
+                        row.resourceType(),
+                        row.sourceType(),
+                        AUDIT_KIND_PUBLISHED_UPDATE,
+                        writeJson(freezeSnap),
+                        String.valueOf(operatorUserId));
+            } catch (DataIntegrityViolationException ex) {
+                throw new BusinessException(ResultCode.DUPLICATE_SUBMIT, "该资源已有待审核的已发布变更，请等待审结或撤回");
+            }
             deleteWorkingDraft(resourceId);
 
             notifyReviewers(NotificationEventCodes.RESOURCE_SUBMITTED,
@@ -266,6 +285,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                             resourceId,
                             merged.getDisplayName() != null ? merged.getDisplayName() : row.displayName()),
                     resourceId);
+            systemNotificationFacade.notifyResourceSubmitted(
+                    operatorUserId,
+                    resourceId,
+                    row.resourceType(),
+                    merged.getDisplayName() != null ? merged.getDisplayName() : row.displayName(),
+                    true);
             auditPendingPushDebouncer.requestFlush();
             return getById(operatorUserId, resourceId);
         }
@@ -289,21 +314,33 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             }
         }
 
-        jdbcTemplate.update("UPDATE t_resource SET status = ?, update_time = NOW() WHERE id = ? AND deleted = 0",
-                ResourceLifecycleStateMachine.STATUS_PENDING_REVIEW, resourceId);
-        jdbcTemplate.update("""
-                        INSERT INTO t_audit_item(target_type, target_id, display_name, agent_name, description, agent_type, source_type, audit_kind, submitter, submit_time, status, create_time)
-                        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'pending_review', NOW())
+        int updated = jdbcTemplate.update("""
+                        UPDATE t_resource
+                        SET status = ?, update_time = NOW()
+                        WHERE id = ? AND deleted = 0 AND LOWER(status) IN ('draft', 'rejected', 'deprecated')
                         """,
-                row.resourceType(),
-                resourceId,
-                row.displayName(),
-                row.resourceCode(),
-                row.description(),
-                row.resourceType(),
-                row.sourceType(),
-                AUDIT_KIND_INITIAL,
-                String.valueOf(operatorUserId));
+                ResourceLifecycleStateMachine.STATUS_PENDING_REVIEW,
+                resourceId);
+        if (updated != 1) {
+            throw new BusinessException(ResultCode.CONFLICT, "资源状态已变更，请刷新后重试");
+        }
+        try {
+            jdbcTemplate.update("""
+                            INSERT INTO t_audit_item(target_type, target_id, display_name, agent_name, description, agent_type, source_type, audit_kind, submitter, submit_time, status, create_time)
+                            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'pending_review', NOW())
+                            """,
+                    row.resourceType(),
+                    resourceId,
+                    row.displayName(),
+                    row.resourceCode(),
+                    row.description(),
+                    row.resourceType(),
+                    row.sourceType(),
+                    AUDIT_KIND_INITIAL,
+                    String.valueOf(operatorUserId));
+        } catch (DataIntegrityViolationException ex) {
+            throw new BusinessException(ResultCode.DUPLICATE_SUBMIT, "该资源已有待审核记录");
+        }
 
         notifyReviewers(NotificationEventCodes.RESOURCE_SUBMITTED,
                 "新资源待审核",
@@ -323,6 +360,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                         resourceId,
                         row.displayName()),
                 resourceId);
+        systemNotificationFacade.notifyResourceSubmitted(
+                operatorUserId,
+                resourceId,
+                row.resourceType(),
+                row.displayName(),
+                false);
         auditPendingPushDebouncer.requestFlush();
         return findResource(resourceId);
     }
@@ -2215,7 +2258,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 }
             }
             case "skill" -> {
-                snapshot.put("packFormat", request.getSkillType().trim().toLowerCase(Locale.ROOT));
                 snapshot.put("invokeType", "portal_context");
                 snapshot.put("endpoint", null);
                 snapshot.put("executionMode", SKILL_EXEC_CONTEXT);
@@ -2320,7 +2362,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                                 FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
                                 """, resourceId)
                         .stream().findFirst().orElse(Map.of());
-                snapshot.put("packFormat", stringValue(ext.get("skill_type")));
                 snapshot.put("invokeType", "portal_context");
                 snapshot.put("endpoint", null);
                 snapshot.put("executionMode", SKILL_EXEC_CONTEXT);
@@ -2990,14 +3031,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     /** 向所有审核员推送通知（不按部门过滤；待审项不独占派给某人，全体 reviewer 共用同一全平台队列）。 */
     private void notifyReviewers(String type, String title, String body, Long resourceId) {
-        String sql = "SELECT ur.user_id FROM t_user_role_rel ur JOIN t_platform_role r ON ur.role_id = r.id WHERE r.role_code = 'reviewer'";
-        java.util.List<java.util.Map<String, Object>> reviewers = jdbcTemplate.queryForList(sql);
-        java.util.List<Long> reviewerIds = reviewers.stream()
-                .map(r -> Long.valueOf(String.valueOf(r.get("user_id"))))
-                .toList();
-        if (!reviewerIds.isEmpty()) {
-            systemNotificationFacade.notifyToUsers(reviewerIds, type, title, body, "resource", resourceId);
-        }
+        // legacy shim: audit submission notifications are now routed through
+        // SystemNotificationFacade so submitters and all audit recipients share
+        // the same after-commit delivery path.
     }
 
     private record ResourceRow(Long id, String resourceType, String resourceCode, String displayName, String description,

@@ -34,8 +34,7 @@ public class RealtimePushRecipientResolver {
             WHERE COALESCE(u.deleted, 0) = 0
             AND JSON_CONTAINS(pr.permissions, '"monitor:view"', '$')
             AND (
-                pr.role_code = 'platform_admin'
-                OR pr.role_code = 'reviewer'
+                pr.role_code IN ('platform_admin', 'admin', 'reviewer', 'dept_admin', 'department_admin', 'auditor')
                 OR (? IS NOT NULL AND u.school_id <=> ?)
             )
             """;
@@ -50,7 +49,7 @@ public class RealtimePushRecipientResolver {
             INNER JOIN t_user u ON u.user_id = ur.user_id
             WHERE COALESCE(u.deleted, 0) = 0
             AND JSON_CONTAINS(pr.permissions, '"monitor:view"', '$')
-            AND pr.role_code IN ('platform_admin', 'reviewer')
+            AND pr.role_code IN ('platform_admin', 'admin', 'reviewer', 'dept_admin', 'department_admin', 'auditor')
             """;
 
     private final JdbcTemplate jdbcTemplate;

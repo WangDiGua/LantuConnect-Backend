@@ -13,7 +13,8 @@ import com.lantu.connect.notification.mapper.NotificationMapper;
 import com.lantu.connect.notification.service.NotificationService;
 import com.lantu.connect.realtime.RealtimePushService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -38,9 +39,9 @@ public class NotificationServiceImpl implements NotificationService {
     private final NotificationMapper notificationMapper;
     private final RealtimePushService realtimePushService;
     private final ObjectMapper objectMapper;
+    private final JdbcTemplate jdbcTemplate;
 
     @Override
-    @Async
     @Transactional(rollbackFor = Exception.class)
     public void send(Notification notification) {
         if (notification == null || notification.getUserId() == null) {
@@ -168,34 +169,57 @@ public class NotificationServiceImpl implements NotificationService {
 
     private void sendAggregated(Notification incoming) {
         LocalDateTime now = LocalDateTime.now();
-        Notification existing = notificationMapper.selectOne(new LambdaQueryWrapper<Notification>()
-                .eq(Notification::getUserId, incoming.getUserId())
-                .eq(Notification::getAggregateKey, incoming.getAggregateKey())
-                .last("LIMIT 1"));
+        Notification existing = lockAggregateNotification(incoming.getUserId(), incoming.getAggregateKey());
         if (existing == null) {
-            if (incoming.getIsRead() == null) {
-                incoming.setIsRead(false);
+            prepareNewAggregate(incoming, now);
+            try {
+                notificationMapper.insert(incoming);
+                publishCreated(incoming);
+                return;
+            } catch (DataIntegrityViolationException ex) {
+                existing = lockAggregateNotification(incoming.getUserId(), incoming.getAggregateKey());
+                if (existing == null) {
+                    throw ex;
+                }
             }
-            if (!StringUtils.hasText(incoming.getCategory())) {
-                incoming.setCategory("workflow");
-            }
-            if (!StringUtils.hasText(incoming.getSeverity())) {
-                incoming.setSeverity("info");
-            }
-            if (!StringUtils.hasText(incoming.getFlowStatus())) {
-                incoming.setFlowStatus("running");
-            }
-            incoming.setStepsJson(mergeSteps(null, incoming, now));
-            incoming.setLastEventTime(now);
-            incoming.setUpdateTime(now);
-            notificationMapper.insert(incoming);
-            publishCreated(incoming);
-            return;
         }
 
         mergeIncoming(existing, incoming, now);
         notificationMapper.updateById(existing);
         publishCreated(existing);
+    }
+
+    private Notification lockAggregateNotification(Long userId, String aggregateKey) {
+        if (userId == null || !StringUtils.hasText(aggregateKey)) {
+            return null;
+        }
+        List<Long> ids = jdbcTemplate.query(
+                "SELECT id FROM t_notification WHERE user_id = ? AND aggregate_key = ? ORDER BY id DESC LIMIT 1 FOR UPDATE",
+                (rs, rowNum) -> rs.getLong("id"),
+                userId,
+                aggregateKey.trim());
+        if (ids.isEmpty()) {
+            return null;
+        }
+        return notificationMapper.selectById(ids.get(0));
+    }
+
+    private void prepareNewAggregate(Notification incoming, LocalDateTime now) {
+        if (incoming.getIsRead() == null) {
+            incoming.setIsRead(false);
+        }
+        if (!StringUtils.hasText(incoming.getCategory())) {
+            incoming.setCategory("workflow");
+        }
+        if (!StringUtils.hasText(incoming.getSeverity())) {
+            incoming.setSeverity("info");
+        }
+        if (!StringUtils.hasText(incoming.getFlowStatus())) {
+            incoming.setFlowStatus("running");
+        }
+        incoming.setStepsJson(mergeSteps(null, incoming, now));
+        incoming.setLastEventTime(now);
+        incoming.setUpdateTime(now);
     }
 
     private void mergeIncoming(Notification target, Notification incoming, LocalDateTime now) {
