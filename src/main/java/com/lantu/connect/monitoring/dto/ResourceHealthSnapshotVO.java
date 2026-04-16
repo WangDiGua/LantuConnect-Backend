@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -41,4 +42,7 @@ public class ResourceHealthSnapshotVO {
     private Integer healthyThreshold;
     private Integer timeoutSec;
     private Map<String, Object> probeEvidence;
+    private Map<String, Object> lastProbeEvidence;
+    private ResourceHealthPolicyVO policy;
+    private List<ResourceHealthDependencyVO> dependencies;
 }

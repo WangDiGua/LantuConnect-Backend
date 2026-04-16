@@ -6,6 +6,7 @@ import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.monitoring.dto.CircuitBreakerManualRequest;
 import com.lantu.connect.monitoring.dto.CircuitBreakerUpdateRequest;
 import com.lantu.connect.monitoring.dto.HealthConfigUpsertRequest;
+import com.lantu.connect.monitoring.dto.ResourceHealthPolicyUpdateRequest;
 import com.lantu.connect.monitoring.dto.ResourceHealthSnapshotVO;
 import com.lantu.connect.monitoring.entity.CircuitBreaker;
 import com.lantu.connect.monitoring.entity.HealthConfig;
@@ -292,13 +293,22 @@ public class HealthServiceImpl implements HealthService {
     }
 
     @Override
-    public List<ResourceHealthSnapshotVO> listResourceHealth(String resourceType, String healthStatus, String callabilityState) {
-        return resourceHealthService.listSnapshots(resourceType, healthStatus, callabilityState);
+    public List<ResourceHealthSnapshotVO> listResourceHealth(String resourceType, String healthStatus, String callabilityState, String probeStrategy) {
+        return resourceHealthService.listSnapshots(resourceType, healthStatus, callabilityState, probeStrategy);
     }
 
     @Override
     public ResourceHealthSnapshotVO getResourceHealth(Long resourceId) {
         ResourceHealthSnapshotVO snapshot = resourceHealthService.getSnapshot(resourceId);
+        if (snapshot == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND);
+        }
+        return snapshot;
+    }
+
+    @Override
+    public ResourceHealthSnapshotVO updateResourcePolicy(Long resourceId, ResourceHealthPolicyUpdateRequest request) {
+        ResourceHealthSnapshotVO snapshot = resourceHealthService.updatePolicy(resourceId, request);
         if (snapshot == null) {
             throw new BusinessException(ResultCode.NOT_FOUND);
         }

@@ -1,6 +1,5 @@
 package com.lantu.connect.monitoring.dto;
 
-import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -11,6 +10,7 @@ import java.math.BigDecimal;
 @Data
 public class AlertRuleDryRunRequest {
 
-    @NotNull
     private BigDecimal sampleValue;
+
+    private String mode;
 }

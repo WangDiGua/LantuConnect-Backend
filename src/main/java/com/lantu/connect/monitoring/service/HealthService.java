@@ -3,6 +3,7 @@ package com.lantu.connect.monitoring.service;
 import com.lantu.connect.monitoring.dto.CircuitBreakerManualRequest;
 import com.lantu.connect.monitoring.dto.CircuitBreakerUpdateRequest;
 import com.lantu.connect.monitoring.dto.HealthConfigUpsertRequest;
+import com.lantu.connect.monitoring.dto.ResourceHealthPolicyUpdateRequest;
 import com.lantu.connect.monitoring.dto.ResourceHealthSnapshotVO;
 import com.lantu.connect.monitoring.entity.CircuitBreaker;
 import com.lantu.connect.monitoring.entity.HealthConfig;
@@ -35,9 +36,11 @@ public interface HealthService {
 
     void recoverById(Long id);
 
-    List<ResourceHealthSnapshotVO> listResourceHealth(String resourceType, String healthStatus, String callabilityState);
+    List<ResourceHealthSnapshotVO> listResourceHealth(String resourceType, String healthStatus, String callabilityState, String probeStrategy);
 
     ResourceHealthSnapshotVO getResourceHealth(Long resourceId);
+
+    ResourceHealthSnapshotVO updateResourcePolicy(Long resourceId, ResourceHealthPolicyUpdateRequest request);
 
     ResourceHealthSnapshotVO probeResourceHealth(Long resourceId);
 

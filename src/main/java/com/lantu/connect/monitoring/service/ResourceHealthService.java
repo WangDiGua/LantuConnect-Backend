@@ -1,5 +1,6 @@
 package com.lantu.connect.monitoring.service;
 
+import com.lantu.connect.monitoring.dto.ResourceHealthPolicyUpdateRequest;
 import com.lantu.connect.monitoring.dto.ResourceHealthSnapshotVO;
 
 import java.util.List;
@@ -23,5 +24,7 @@ public interface ResourceHealthService {
 
     ResourceHealthSnapshotVO getSnapshot(Long resourceId);
 
-    List<ResourceHealthSnapshotVO> listSnapshots(String resourceType, String healthStatus, String callabilityState);
+    ResourceHealthSnapshotVO updatePolicy(Long resourceId, ResourceHealthPolicyUpdateRequest request);
+
+    List<ResourceHealthSnapshotVO> listSnapshots(String resourceType, String healthStatus, String callabilityState, String probeStrategy);
 }

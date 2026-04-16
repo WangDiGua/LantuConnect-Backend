@@ -1119,7 +1119,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                     StringUtils.hasText(reason) ? reason : "资源当前不可调用");
         }
         String hs = valueOf(row.get("health_status")).trim().toLowerCase(Locale.ROOT);
-        if ("down".equals(hs) || "disabled".equals(hs) || "degraded".equals(hs)) {
+        if ("down".equals(hs) || "disabled".equals(hs)) {
             throw new BusinessException(ResultCode.RESOURCE_HEALTH_DOWN, "资源健康状态不满足调用要求");
         }
     }
@@ -1156,7 +1156,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             return false;
         }
         String h = raw.trim().toLowerCase(Locale.ROOT).replace('-', '_');
-        return "down".equals(h) || "disabled".equals(h) || "degraded".equals(h);
+        return "down".equals(h) || "disabled".equals(h);
     }
 
     /**

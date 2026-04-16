@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -29,10 +30,63 @@ public class AlertRecord {
     private String status;
     private String message;
     private String source;
+    private Long assigneeUserId;
+    private LocalDateTime ackAt;
+    private LocalDateTime silencedAt;
+    private LocalDateTime reopenedAt;
+    private BigDecimal lastSampleValue;
 
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<String, Object> labels;
 
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<String, Object> triggerSnapshotJson;
+
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<String, Object> ruleSnapshotJson;
+
     private LocalDateTime firedAt;
     private LocalDateTime resolvedAt;
+
+    @TableField(exist = false)
+    private String assigneeName;
+
+    @TableField(exist = false)
+    private String scopeType;
+
+    @TableField(exist = false)
+    private String scopeLabel;
+
+    @TableField(exist = false)
+    private String resourceType;
+
+    @TableField(exist = false)
+    private Long resourceId;
+
+    @TableField(exist = false)
+    private String resourceName;
+
+    @TableField(exist = false)
+    private String ruleMetric;
+
+    @TableField(exist = false)
+    private String ruleOperator;
+
+    @TableField(exist = false)
+    private BigDecimal ruleThreshold;
+
+    @TableField(exist = false)
+    private String ruleDuration;
+
+    @TableField(exist = false)
+    private String ruleExpression;
+
+    @TableField(exist = false)
+    private String triggerReason;
+
+    @TableField(exist = false)
+    private Long activeSeconds;
+
+    @TableField(exist = false)
+    private Integer notificationCount;
 }

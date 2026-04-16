@@ -7,10 +7,13 @@ import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.monitoring.dto.AlertRuleCreateRequest;
+import com.lantu.connect.monitoring.dto.AlertRuleDryRunRequest;
 import com.lantu.connect.monitoring.dto.AlertRuleDryRunResult;
+import com.lantu.connect.monitoring.dto.AlertRuleMetricOptionVO;
 import com.lantu.connect.monitoring.dto.AlertRuleUpdateRequest;
 import com.lantu.connect.monitoring.entity.AlertRule;
 import com.lantu.connect.monitoring.mapper.AlertRuleMapper;
+import com.lantu.connect.monitoring.service.AlertMetricSampler;
 import com.lantu.connect.monitoring.service.AlertRuleService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,35 +23,23 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
-/**
- * 监控AlertRule服务实现
- *
- * @author 王帝
- * @date 2026-03-21
- */
 @Service
 @RequiredArgsConstructor
 public class AlertRuleServiceImpl implements AlertRuleService {
 
     private final AlertRuleMapper alertRuleMapper;
+    private final AlertMetricSampler alertMetricSampler;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public String create(AlertRuleCreateRequest request) {
         AlertRule entity = new AlertRule();
-        entity.setName(request.getName());
-        entity.setMetric(request.getMetric() != null ? request.getMetric() : "custom");
-        entity.setDescription(request.getConditionExpr());
-        entity.setOperator(normalizeOperator(request.getOperator()));
-        entity.setDuration(normalizeDuration(request.getDuration()));
-        entity.setSeverity(normalizeSeverity(request.getSeverity()));
-        if (request.getThreshold() != null) {
-            entity.setThreshold(BigDecimal.valueOf(request.getThreshold()));
-        }
-        entity.setNotifyChannels(normalizeNotifyChannelsForStorage());
-        entity.setEnabled(request.getEnabled() == null || request.getEnabled() != 0);
+        applyWritableFields(entity, request);
         LocalDateTime now = LocalDateTime.now();
         entity.setCreateTime(now);
         entity.setUpdateTime(now);
@@ -63,31 +54,7 @@ public class AlertRuleServiceImpl implements AlertRuleService {
         if (existing == null) {
             throw new BusinessException(ResultCode.NOT_FOUND);
         }
-        if (request.getName() != null) {
-            existing.setName(request.getName());
-        }
-        if (request.getMetric() != null) {
-            existing.setMetric(request.getMetric());
-        }
-        if (request.getConditionExpr() != null) {
-            existing.setDescription(request.getConditionExpr());
-        }
-        if (request.getThreshold() != null) {
-            existing.setThreshold(BigDecimal.valueOf(request.getThreshold()));
-        }
-        existing.setNotifyChannels(normalizeNotifyChannelsForStorage());
-        if (request.getEnabled() != null) {
-            existing.setEnabled(request.getEnabled() != 0);
-        }
-        if (request.getOperator() != null) {
-            existing.setOperator(normalizeOperator(StringUtils.hasText(request.getOperator()) ? request.getOperator() : null));
-        }
-        if (request.getSeverity() != null) {
-            existing.setSeverity(normalizeSeverity(StringUtils.hasText(request.getSeverity()) ? request.getSeverity() : null));
-        }
-        if (request.getDuration() != null) {
-            existing.setDuration(normalizeDuration(StringUtils.hasText(request.getDuration()) ? request.getDuration() : null));
-        }
+        applyWritableFields(existing, request);
         existing.setUpdateTime(LocalDateTime.now());
         alertRuleMapper.updateById(existing);
     }
@@ -111,85 +78,209 @@ public class AlertRuleServiceImpl implements AlertRuleService {
     }
 
     @Override
-    public PageResult<AlertRule> page(int page, int pageSize, String name) {
+    public PageResult<AlertRule> page(int page,
+                                      int pageSize,
+                                      String keyword,
+                                      String scopeType,
+                                      String resourceType,
+                                      Boolean enabled,
+                                      String severity) {
         Page<AlertRule> p = new Page<>(page, pageSize);
         LambdaQueryWrapper<AlertRule> q = new LambdaQueryWrapper<>();
-        if (StringUtils.hasText(name)) {
-            q.like(AlertRule::getName, name);
+        if (StringUtils.hasText(keyword)) {
+            String kw = keyword.trim();
+            q.and(w -> w.like(AlertRule::getName, kw)
+                    .or().like(AlertRule::getMetric, kw)
+                    .or().like(AlertRule::getDescription, kw));
+        }
+        if (StringUtils.hasText(scopeType) && !"all".equalsIgnoreCase(scopeType.trim())) {
+            q.eq(AlertRule::getScopeType, normalizeScopeType(scopeType));
+        }
+        if (StringUtils.hasText(resourceType) && !"all".equalsIgnoreCase(resourceType.trim())) {
+            q.eq(AlertRule::getScopeResourceType, normalizeResourceType(resourceType));
+        }
+        if (enabled != null) {
+            q.eq(AlertRule::getEnabled, enabled);
+        }
+        if (StringUtils.hasText(severity) && !"all".equalsIgnoreCase(severity.trim())) {
+            q.eq(AlertRule::getSeverity, normalizeSeverity(severity));
         }
         q.orderByDesc(AlertRule::getUpdateTime);
-        Page<AlertRule> result = alertRuleMapper.selectPage(p, q);
-        return PageResults.from(result);
+        return PageResults.from(alertRuleMapper.selectPage(p, q));
     }
 
     @Override
-    public AlertRuleDryRunResult dryRun(String id, java.math.BigDecimal sampleValue) {
+    public AlertRuleDryRunResult dryRun(String id, AlertRuleDryRunRequest request) {
         AlertRule rule = getById(id);
-        String op = rule.getOperator() != null ? rule.getOperator().trim() : "gt";
-        BigDecimal threshold = rule.getThreshold() != null ? rule.getThreshold() : BigDecimal.ZERO;
-        boolean fire = evaluate(sampleValue, threshold, op);
-        String detail = String.format("样本值=%s, 阈值=%s, 算子=%s => %s",
-                sampleValue, threshold, op, fire ? "会触发" : "不触发");
-        return new AlertRuleDryRunResult(fire, op, threshold, sampleValue, detail);
+        BigDecimal sampleValue = request != null ? request.getSampleValue() : null;
+        String mode = request == null ? null : request.getMode();
+        AlertMetricSampler.AlertMetricSample sample;
+        if ("preview".equalsIgnoreCase(mode) || sampleValue == null) {
+            sample = alertMetricSampler.sample(rule);
+            sampleValue = sample.getSampleValue();
+        } else {
+            Map<String, Object> snapshot = new LinkedHashMap<>();
+            snapshot.put("metric", alertMetricSampler.normalizeMetric(rule.getMetric()));
+            snapshot.put("sampleValue", sampleValue);
+            snapshot.put("mode", "sample");
+            sample = AlertMetricSampler.AlertMetricSample.builder()
+                    .metric(alertMetricSampler.normalizeMetric(rule.getMetric()))
+                    .sampleValue(sampleValue)
+                    .sampleSource("manual_sample")
+                    .summary("manual sample")
+                    .snapshot(snapshot)
+                    .labels(Map.of("metric", alertMetricSampler.normalizeMetric(rule.getMetric())))
+                    .build();
+        }
+        boolean fire = alertMetricSampler.evaluate(sampleValue, rule.getThreshold(), rule.getOperator());
+        String expression = "%s %s %s".formatted(sample.getMetric(), rule.getOperator(), rule.getThreshold());
+        String detail = "sample=%s, expr=%s => %s".formatted(sampleValue, expression, fire ? "fire" : "stable");
+        return new AlertRuleDryRunResult(
+                fire,
+                alertMetricSampler.normalizeOperator(rule.getOperator()),
+                rule.getThreshold(),
+                sampleValue,
+                detail,
+                sample.getSampleSource(),
+                sample.getSummary(),
+                !fire,
+                sample.getSnapshot());
     }
 
-    /**
-     * 默认 gte；空串视为默认。与 {@link #evaluate} 支持的算子一致。
-     */
-    private static String normalizeOperator(String raw) {
-        if (!StringUtils.hasText(raw)) {
-            return "gte";
-        }
-        String s = raw.trim().toLowerCase();
-        return switch (s) {
-            case ">", "gt" -> "gt";
-            case ">=", "ge", "gte" -> "gte";
-            case "<", "lt" -> "lt";
-            case "<=", "le", "lte" -> "lte";
-            case "=", "eq" -> "eq";
-            default -> throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的算子: " + raw);
-        };
+    @Override
+    public List<AlertRuleMetricOptionVO> metricOptions() {
+        return alertMetricSampler.metricOptions();
     }
 
-    private static String normalizeSeverity(String raw) {
-        if (!StringUtils.hasText(raw)) {
-            return "warning";
-        }
-        String s = raw.trim().toLowerCase();
-        if ("medium".equals(s)) {
-            return "warning";
-        }
-        if ("critical".equals(s) || "warning".equals(s) || "info".equals(s)) {
-            return s;
-        }
-        throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的严重级别: " + raw);
+    private void applyWritableFields(AlertRule entity, AlertRuleCreateRequest request) {
+        entity.setName(requireText(request.getName(), "name 不能为空"));
+        entity.setMetric(alertMetricSampler.normalizeMetric(request.getMetric()));
+        entity.setDescription(trimToNull(request.getConditionExpr()));
+        entity.setOperator(alertMetricSampler.normalizeOperator(request.getOperator()));
+        entity.setDuration(normalizeDuration(request.getDuration()));
+        entity.setSeverity(normalizeSeverity(request.getSeverity()));
+        entity.setThreshold(request.getThreshold() == null ? BigDecimal.ZERO : BigDecimal.valueOf(request.getThreshold()));
+        entity.setEnabled(request.getEnabled() == null || request.getEnabled() != 0);
+        entity.setNotifyChannels(Collections.emptyList());
+        entity.setScopeType(normalizeScopeType(request.getScopeType()));
+        entity.setScopeResourceType(normalizeScopeResourceType(request.getScopeResourceType(), entity.getScopeType()));
+        entity.setScopeResourceId(normalizeScopeResourceId(request.getScopeResourceId(), entity.getScopeType()));
+        entity.setLabelFilters(normalizeLabelFilters(request.getLabelFilters()));
     }
 
-    private static String normalizeDuration(String raw) {
+    private void applyWritableFields(AlertRule entity, AlertRuleUpdateRequest request) {
+        if (request.getName() != null) {
+            entity.setName(requireText(request.getName(), "name 不能为空"));
+        }
+        if (request.getMetric() != null) {
+            entity.setMetric(alertMetricSampler.normalizeMetric(request.getMetric()));
+        }
+        if (request.getConditionExpr() != null) {
+            entity.setDescription(trimToNull(request.getConditionExpr()));
+        }
+        if (request.getOperator() != null) {
+            entity.setOperator(alertMetricSampler.normalizeOperator(request.getOperator()));
+        }
+        if (request.getDuration() != null) {
+            entity.setDuration(normalizeDuration(request.getDuration()));
+        }
+        if (request.getSeverity() != null) {
+            entity.setSeverity(normalizeSeverity(request.getSeverity()));
+        }
+        if (request.getThreshold() != null) {
+            entity.setThreshold(BigDecimal.valueOf(request.getThreshold()));
+        }
+        if (request.getEnabled() != null) {
+            entity.setEnabled(request.getEnabled() != 0);
+        }
+        entity.setNotifyChannels(Collections.emptyList());
+        if (request.getScopeType() != null || request.getScopeResourceType() != null || request.getScopeResourceId() != null) {
+            String scopeType = request.getScopeType() == null ? entity.getScopeType() : request.getScopeType();
+            entity.setScopeType(normalizeScopeType(scopeType));
+            String rawResourceType = request.getScopeResourceType() == null ? entity.getScopeResourceType() : request.getScopeResourceType();
+            Long rawResourceId = request.getScopeResourceId() == null ? entity.getScopeResourceId() : request.getScopeResourceId();
+            entity.setScopeResourceType(normalizeScopeResourceType(rawResourceType, entity.getScopeType()));
+            entity.setScopeResourceId(normalizeScopeResourceId(rawResourceId, entity.getScopeType()));
+        }
+        if (request.getLabelFilters() != null) {
+            entity.setLabelFilters(normalizeLabelFilters(request.getLabelFilters()));
+        }
+    }
+
+    private String normalizeDuration(String raw) {
         if (!StringUtils.hasText(raw)) {
             return "5m";
         }
-        return raw.trim();
+        return raw.trim().toLowerCase(Locale.ROOT);
     }
 
-    /**
-     * 产品当前仅支持站内通知（见 {@link com.lantu.connect.task.AlertRuleEvaluateTask}）。
-     * 请求体中的 notifyChannels（钉钉/邮件/Webhook 等）一律忽略，落库为空 JSON 数组，避免误导。
-     */
-    private static List<String> normalizeNotifyChannelsForStorage() {
-        return Collections.emptyList();
+    private String normalizeSeverity(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return "warning";
+        }
+        String value = raw.trim().toLowerCase(Locale.ROOT);
+        if ("medium".equals(value)) {
+            return "warning";
+        }
+        if ("critical".equals(value) || "warning".equals(value) || "info".equals(value)) {
+            return value;
+        }
+        throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的告警级别: " + raw);
     }
 
-    private static boolean evaluate(BigDecimal value, BigDecimal threshold, String op) {
-        String n = op.toLowerCase();
-        int cmp = value.compareTo(threshold);
-        return switch (n) {
-            case "gt", ">" -> cmp > 0;
-            case "gte", "ge", ">=" -> cmp >= 0;
-            case "lt", "<" -> cmp < 0;
-            case "lte", "le", "<=" -> cmp <= 0;
-            case "eq", "=" -> cmp == 0;
-            default -> throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的算子: " + op);
-        };
+    private String normalizeScopeType(String raw) {
+        return alertMetricSampler.normalizeScopeType(raw);
+    }
+
+    private String normalizeScopeResourceType(String raw, String scopeType) {
+        if ("global".equals(scopeType)) {
+            return null;
+        }
+        if (!StringUtils.hasText(raw)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "scopeResourceType 不能为空");
+        }
+        return normalizeResourceType(raw);
+    }
+
+    private Long normalizeScopeResourceId(Long raw, String scopeType) {
+        if (!"resource".equals(scopeType)) {
+            return null;
+        }
+        if (raw == null || raw <= 0L) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "scopeResourceId 不能为空");
+        }
+        return raw;
+    }
+
+    private String normalizeResourceType(String raw) {
+        String value = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+        if ("agent".equals(value) || "skill".equals(value) || "mcp".equals(value) || "app".equals(value) || "dataset".equals(value)) {
+            return value;
+        }
+        throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的资源类型: " + raw);
+    }
+
+    private Map<String, String> normalizeLabelFilters(Map<String, String> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        Map<String, String> normalized = new LinkedHashMap<>();
+        raw.forEach((key, value) -> {
+            if (StringUtils.hasText(key) && StringUtils.hasText(value)) {
+                normalized.put(key.trim(), value.trim());
+            }
+        });
+        return normalized.isEmpty() ? null : normalized;
+    }
+
+    private String requireText(String value, String message) {
+        if (!StringUtils.hasText(value)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, message);
+        }
+        return value.trim();
+    }
+
+    private String trimToNull(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
     }
 }

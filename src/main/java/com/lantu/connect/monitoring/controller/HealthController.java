@@ -7,6 +7,7 @@ import com.lantu.connect.common.security.RequireRole;
 import com.lantu.connect.monitoring.dto.CircuitBreakerManualRequest;
 import com.lantu.connect.monitoring.dto.CircuitBreakerUpdateRequest;
 import com.lantu.connect.monitoring.dto.HealthConfigUpsertRequest;
+import com.lantu.connect.monitoring.dto.ResourceHealthPolicyUpdateRequest;
 import com.lantu.connect.monitoring.dto.ResourceHealthSnapshotVO;
 import com.lantu.connect.monitoring.entity.CircuitBreaker;
 import com.lantu.connect.monitoring.entity.HealthConfig;
@@ -63,14 +64,22 @@ public class HealthController {
     @RequirePermission({"monitor:view"})
     public R<List<ResourceHealthSnapshotVO>> resources(@RequestParam(required = false) String resourceType,
                                                        @RequestParam(required = false) String healthStatus,
-                                                       @RequestParam(required = false) String callabilityState) {
-        return R.ok(healthService.listResourceHealth(resourceType, healthStatus, callabilityState));
+                                                       @RequestParam(required = false) String callabilityState,
+                                                       @RequestParam(required = false) String probeStrategy) {
+        return R.ok(healthService.listResourceHealth(resourceType, healthStatus, callabilityState, probeStrategy));
     }
 
     @GetMapping("/resources/{resourceId}")
     @RequirePermission({"monitor:view"})
     public R<ResourceHealthSnapshotVO> resource(@PathVariable Long resourceId) {
         return R.ok(healthService.getResourceHealth(resourceId));
+    }
+
+    @PutMapping("/resources/{resourceId}/policy")
+    @RequireRole({"platform_admin"})
+    public R<ResourceHealthSnapshotVO> updateResourcePolicy(@PathVariable Long resourceId,
+                                                            @Valid @RequestBody ResourceHealthPolicyUpdateRequest request) {
+        return R.ok(healthService.updateResourcePolicy(resourceId, request));
     }
 
     @PostMapping("/resources/{resourceId}/probe")

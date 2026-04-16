@@ -10,6 +10,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 告警规则实体
@@ -32,6 +33,12 @@ public class AlertRule {
     private String duration;
     private String severity;
     private Boolean enabled;
+    private String scopeType;
+    private String scopeResourceType;
+    private Long scopeResourceId;
+
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private Map<String, String> labelFilters;
 
     /**
      * 历史列；当前仅站内通知，服务端创建/更新时始终写入空列表，前端不再展示外部渠道。

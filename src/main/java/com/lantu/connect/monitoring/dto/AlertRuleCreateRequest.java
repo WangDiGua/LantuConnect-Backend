@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 监控 AlertRuleCreateRequest 数据传输对象
@@ -35,4 +36,8 @@ public class AlertRuleCreateRequest {
     @Deprecated
     private List<String> notifyChannels;
     private Integer enabled;
+    private String scopeType;
+    private String scopeResourceType;
+    private Long scopeResourceId;
+    private Map<String, String> labelFilters;
 }

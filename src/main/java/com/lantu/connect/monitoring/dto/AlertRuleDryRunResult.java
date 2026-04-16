@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -19,6 +20,13 @@ public class AlertRuleDryRunResult {
 
     private BigDecimal sampleValue;
 
-    /** 人类可读说明 */
     private String detail;
+
+    private String sampleSource;
+
+    private String reason;
+
+    private Boolean recoveryCandidate;
+
+    private Map<String, Object> snapshot;
 }
