@@ -26,8 +26,6 @@ public class ResourceUpsertRequest {
 
     private String sourceType;
 
-    private Long providerId;
-
     /** 目录标签（t_tag.id），写入 t_resource_tag_rel；须与资源类型桶位匹配或为 general。 */
     private List<Long> tagIds;
 

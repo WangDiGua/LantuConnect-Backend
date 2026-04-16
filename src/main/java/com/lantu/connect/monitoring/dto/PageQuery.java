@@ -12,6 +12,7 @@ public class PageQuery {
     private String severity;
     private String alertStatus;
     private String resourceType;
+    private Long resourceId;
     private String scopeType;
     private String assignee;
     private String ruleId;

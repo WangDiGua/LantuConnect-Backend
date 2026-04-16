@@ -20,6 +20,7 @@ import com.lantu.connect.monitoring.dto.AlertSummaryVO;
 import com.lantu.connect.monitoring.dto.AlertRuleUpdateRequest;
 import com.lantu.connect.monitoring.dto.KpiMetric;
 import com.lantu.connect.monitoring.dto.PageQuery;
+import com.lantu.connect.monitoring.dto.PerformanceAnalysisVO;
 import com.lantu.connect.monitoring.dto.QualityHistoryPointVO;
 import com.lantu.connect.monitoring.entity.AlertRecord;
 import com.lantu.connect.monitoring.entity.AlertRule;
@@ -75,6 +76,14 @@ public class MonitoringController {
     @RequirePermission({"monitor:view"})
     public R<List<Map<String, Object>>> performance(@RequestParam(required = false) String resourceType) {
         return R.ok(monitoringService.performance(resourceType));
+    }
+
+    @GetMapping("/performance-analysis")
+    @RequirePermission({"monitor:view"})
+    public R<PerformanceAnalysisVO> performanceAnalysis(@RequestParam(required = false, defaultValue = "24h") String window,
+                                                        @RequestParam(required = false) String resourceType,
+                                                        @RequestParam(required = false) Long resourceId) {
+        return R.ok(monitoringService.performanceAnalysis(window, resourceType, resourceId));
     }
 
     /**

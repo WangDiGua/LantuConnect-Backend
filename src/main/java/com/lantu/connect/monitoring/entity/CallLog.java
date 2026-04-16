@@ -31,6 +31,7 @@ public class CallLog {
     @TableField(exist = false)
     private String username;
 
+    @TableField(exist = false)
     private String model;
     private String method;
     private String status;

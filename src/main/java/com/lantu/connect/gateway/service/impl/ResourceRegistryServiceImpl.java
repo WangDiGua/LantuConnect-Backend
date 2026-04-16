@@ -108,8 +108,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(conn -> {
             PreparedStatement ps = conn.prepareStatement("""
-                    INSERT INTO t_resource(resource_type, resource_code, display_name, description, status, source_type, provider_id, access_policy, created_by, deleted, create_time, update_time)
-                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    INSERT INTO t_resource(resource_type, resource_code, display_name, description, status, source_type, access_policy, created_by, deleted, create_time, update_time)
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                     """, Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, type);
             ps.setString(2, request.getResourceCode().trim());
@@ -117,11 +117,10 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             ps.setString(4, request.getDescription());
             ps.setString(5, ResourceLifecycleStateMachine.STATUS_DRAFT);
             ps.setString(6, request.getSourceType());
-            ps.setObject(7, request.getProviderId());
-            ps.setString(8, accessPolicy.wireValue());
-            ps.setLong(9, operatorUserId);
+            ps.setString(7, accessPolicy.wireValue());
+            ps.setLong(8, operatorUserId);
+            ps.setTimestamp(9, Timestamp.valueOf(now));
             ps.setTimestamp(10, Timestamp.valueOf(now));
-            ps.setTimestamp(11, Timestamp.valueOf(now));
             return ps;
         }, keyHolder);
         Long resourceId = keyHolder.getKey() == null ? null : keyHolder.getKey().longValue();
@@ -562,7 +561,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 """
                         SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.source_type, \
-                        r.provider_id, r.access_policy, r.created_by, r.create_time, r.update_time, \
+                        r.access_policy, r.created_by, r.create_time, r.update_time, \
                         (SELECT v.version FROM t_resource_version v WHERE v.resource_id = r.id AND v.is_current = 1 LIMIT 1) AS current_version \
                         FROM t_resource r \
                         """
@@ -724,14 +723,13 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         ResourceAccessPolicy accessPolicy = resolveAccessPolicyForUpdate(resourceId, request);
         jdbcTemplate.update("""
                         UPDATE t_resource
-                        SET resource_code = ?, display_name = ?, description = ?, source_type = ?, provider_id = ?, access_policy = ?, update_time = NOW()
+                        SET resource_code = ?, display_name = ?, description = ?, source_type = ?, access_policy = ?, update_time = NOW()
                         WHERE id = ? AND deleted = 0
                         """,
                 request.getResourceCode().trim(),
                 request.getDisplayName().trim(),
                 request.getDescription(),
                 request.getSourceType(),
-                request.getProviderId(),
                 accessPolicy.wireValue(),
                 resourceId);
         upsertExtension(normalizedType, resourceId, request);
@@ -944,7 +942,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         vo.setDisplayName(r.getDisplayName());
         vo.setDescription(r.getDescription());
         vo.setSourceType(r.getSourceType());
-        vo.setProviderId(r.getProviderId());
         vo.setTagIds(r.getTagIds() == null ? null : new ArrayList<>(r.getTagIds()));
         vo.setAccessPolicy(r.getAccessPolicy());
         vo.setRelatedResourceIds(r.getRelatedResourceIds() == null ? null : new ArrayList<>(r.getRelatedResourceIds()));
@@ -1142,7 +1139,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         req.setDisplayName(vo.getDisplayName());
         req.setDescription(vo.getDescription());
         req.setSourceType(vo.getSourceType());
-        req.setProviderId(vo.getProviderId());
         if (vo.getTagIds() != null) {
             req.setTagIds(new ArrayList<>(vo.getTagIds()));
         }
@@ -1376,7 +1372,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private ResourceManageVO findResource(Long id) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT id, resource_type, resource_code, display_name, description, status, source_type, provider_id, access_policy, created_by, create_time, update_time
+                SELECT id, resource_type, resource_code, display_name, description, status, source_type, access_policy, created_by, create_time, update_time
                 FROM t_resource
                 WHERE id = ? AND deleted = 0
                 LIMIT 1
@@ -2747,7 +2743,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 .description(stringValue(row.get("description")))
                 .status(stringValue(row.get("status")))
                 .sourceType(stringValue(row.get("source_type")))
-                .providerId(longValue(row.get("provider_id")))
                 .accessPolicy(ResourceAccessPolicy.fromStored(row.get("access_policy")).wireValue())
                 .createdBy(longValue(row.get("created_by")))
                 .createTime(toDateTime(row.get("create_time")))

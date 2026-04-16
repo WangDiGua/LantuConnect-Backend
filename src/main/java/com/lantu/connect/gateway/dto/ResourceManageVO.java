@@ -18,8 +18,6 @@ public class ResourceManageVO {
     private String description;
     private String status;
     private String sourceType;
-    private Long providerId;
-
     /** 目录标签 id（t_resource_tag_rel → t_tag），与 catalogTagNames 顺序一致（按标签名排序）。 */
     private List<Long> tagIds;
 

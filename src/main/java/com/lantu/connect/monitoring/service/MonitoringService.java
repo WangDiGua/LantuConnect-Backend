@@ -3,6 +3,7 @@ package com.lantu.connect.monitoring.service;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.monitoring.dto.KpiMetric;
 import com.lantu.connect.monitoring.dto.PageQuery;
+import com.lantu.connect.monitoring.dto.PerformanceAnalysisVO;
 import com.lantu.connect.monitoring.dto.QualityHistoryPointVO;
 import com.lantu.connect.monitoring.entity.AlertRecord;
 import com.lantu.connect.monitoring.entity.CallLog;
@@ -28,6 +29,8 @@ public interface MonitoringService {
      * @param resourceType {@code null}/空/{@code all} 表示全部类型；{@code unknown} 表示类型为空或 unknown
      */
     List<Map<String, Object>> performance(String resourceType);
+
+    PerformanceAnalysisVO performanceAnalysis(String window, String resourceType, Long resourceId);
 
     /**
      * 时间窗内按 resource_type 汇总的调用次数（用于监控概览五类资源占比）。

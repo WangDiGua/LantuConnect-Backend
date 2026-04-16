@@ -6,7 +6,6 @@ SET NAMES utf8mb4;
 
 DELETE FROM t_trace_span WHERE trace_id IN ('trace-seed-ops-001', 'trace-seed-ops-002', 'trace-seed-ops-003');
 DELETE FROM t_call_log WHERE id LIKE 'seed-cl-%';
-DELETE FROM t_provider WHERE provider_code = 'seed-openai-compatible';
 
 INSERT INTO t_call_log (id, trace_id, agent_id, agent_name, resource_type, user_id, method, status, status_code, latency_ms, error_message, ip, create_time) VALUES
 ('seed-cl-01', 'trace-seed-ops-001', 'demo-agent-1', 'gateway-demo', 'agent', '4', 'POST /v1/invoke', 'success', 200, 420, NULL, '10.0.1.1', DATE_SUB(NOW(), INTERVAL 55 MINUTE));
@@ -53,5 +52,3 @@ INSERT INTO t_trace_span (id, trace_id, parent_id, operation_name, service_name,
 INSERT INTO t_trace_span (id, trace_id, parent_id, operation_name, service_name, start_time, duration, status, tags, logs) VALUES
 ('seed-ts-ops-c2', 'trace-seed-ops-003', 'seed-ts-ops-c1', 'dataset.query', 'vector-store', DATE_ADD(DATE_SUB(NOW(), INTERVAL 25 MINUTE), INTERVAL 5 SECOND), 920, 'ok', JSON_OBJECT('resource_type', 'dataset', 'top_k', '8'), NULL);
 
-INSERT INTO t_provider (provider_code, provider_name, provider_type, description, auth_type, auth_config, base_url, status, agent_count, skill_count, deleted)
-VALUES ('seed-openai-compatible', 'Seed OpenAI-compatible', 'cloud', 'Demo provider row', 'api_key', JSON_OBJECT('api_key', 'sk-demo-placeholder'), 'https://api.example.com/v1', 'active', 0, 1, 0);

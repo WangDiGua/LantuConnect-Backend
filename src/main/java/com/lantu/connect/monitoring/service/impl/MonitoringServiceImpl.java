@@ -7,6 +7,11 @@ import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.monitoring.dto.KpiMetric;
 import com.lantu.connect.monitoring.dto.PageQuery;
+import com.lantu.connect.monitoring.dto.PerformanceAnalysisVO;
+import com.lantu.connect.monitoring.dto.PerformanceBucketVO;
+import com.lantu.connect.monitoring.dto.PerformanceResourceLeaderboardVO;
+import com.lantu.connect.monitoring.dto.PerformanceSlowMethodVO;
+import com.lantu.connect.monitoring.dto.PerformanceSummaryVO;
 import com.lantu.connect.monitoring.dto.QualityHistoryPointVO;
 import com.lantu.connect.monitoring.entity.AlertRecord;
 import com.lantu.connect.monitoring.entity.CallLog;
@@ -20,16 +25,18 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeParseException;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.sql.Timestamp;
 
 /**
  * 监控Monitoring服务实现
@@ -40,6 +47,10 @@ import java.util.Objects;
 @Service
 @RequiredArgsConstructor
 public class MonitoringServiceImpl implements MonitoringService {
+
+    private static final DateTimeFormatter HOURLY_BUCKET_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:00:00");
+    private static final DateTimeFormatter DAILY_BUCKET_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd 00:00:00");
+    private static final DateTimeFormatter LEGACY_DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final CallLogMapper callLogMapper;
     private final AlertRecordMapper alertRecordMapper;
@@ -64,42 +75,24 @@ public class MonitoringServiceImpl implements MonitoringService {
 
     @Override
     public List<Map<String, Object>> performance(String resourceType) {
-        QueryWrapper<CallLog> qw = new QueryWrapper<>();
-        qw.select(
-                        "DATE_FORMAT(create_time, '%Y-%m-%d %H:00:00') AS bucket",
-                        "ROUND(AVG(latency_ms), 2) AS avgLatencyMs",
-                        "COUNT(*) AS requestCount",
-                        "SUM(CASE WHEN status <> 'success' THEN 1 ELSE 0 END) AS errorCount")
-                .ge("create_time", LocalDateTime.now().minusHours(24))
-                .groupBy("DATE_FORMAT(create_time, '%Y-%m-%d %H:00:00')")
-                .orderByAsc("DATE_FORMAT(create_time, '%Y-%m-%d %H:00:00')");
-        applyResourceTypeToQueryWrapper(qw, resourceType);
-        List<Map<String, Object>> rows = callLogMapper.selectMaps(qw);
-        if (rows == null || rows.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<Map<String, Object>> out = new ArrayList<>(rows.size());
-        for (Map<String, Object> src : rows) {
-            Map<String, Object> row = new LinkedHashMap<>(src);
-            long req = parseLong(row.get("requestCount"));
-            long err = parseLong(row.get("errorCount"));
-            double er = req <= 0 ? 0D : (double) err / (double) req;
-            double avg = parseDouble(row.get("avgLatencyMs"));
-            row.put("errorRate", er);
-            row.put("service", "gateway");
-            row.put("timestamp", row.get("bucket"));
-            row.put("cpu", 0D);
-            row.put("memory", 0D);
-            row.put("network", 0D);
-            row.put("disk", 0D);
-            row.put("p50Latency", avg);
-            row.put("p99Latency", avg);
-            row.put("latencyP50", avg);
-            row.put("latencyP99", avg);
-            row.put("throughput", (double) req);
-            out.add(row);
-        }
-        return out;
+        PerformanceAnalysisVO analysis = performanceAnalysis("24h", resourceType, null);
+        return analysis.getBuckets().stream()
+                .filter(bucket -> bucket.getRequestCount() > 0)
+                .map(MonitoringServiceImpl::toCompatibilityBucketRow)
+                .toList();
+    }
+
+    @Override
+    public PerformanceAnalysisVO performanceAnalysis(String window, String resourceType, Long resourceId) {
+        PerformanceWindowSpec spec = PerformanceWindowSpec.from(window);
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime start = spec.windowStart(now);
+        List<PerformanceSample> samples = queryPerformanceSamples(start, resourceType, resourceId);
+        List<PerformanceSample> filtered = samples.stream()
+                .filter(sample -> matchesResourceType(sample.resourceType(), resourceType))
+                .filter(sample -> matchesResourceId(sample.resourceId(), resourceId))
+                .toList();
+        return buildPerformanceAnalysis(spec, now, resourceType, resourceId, filtered);
     }
 
     @Override
@@ -142,6 +135,9 @@ public class MonitoringServiceImpl implements MonitoringService {
             q.eq(CallLog::getStatus, callStatus.trim());
         }
         applyResourceTypeToLambda(q, query.getResourceType());
+        if (query.getResourceId() != null && query.getResourceId() > 0) {
+            q.eq(CallLog::getAgentId, String.valueOf(query.getResourceId()));
+        }
         q.orderByDesc(CallLog::getCreateTime);
         Page<CallLog> result = callLogMapper.selectPage(page, q);
         enrichCallLogUserNames(result.getRecords());
@@ -227,17 +223,399 @@ public class MonitoringServiceImpl implements MonitoringService {
         return result;
     }
 
-    private static void applyResourceTypeToQueryWrapper(QueryWrapper<CallLog> qw, String resourceType) {
+    private PerformanceAnalysisVO buildPerformanceAnalysis(PerformanceWindowSpec spec,
+                                                           LocalDateTime now,
+                                                           String resourceType,
+                                                           Long resourceId,
+                                                           List<PerformanceSample> samples) {
+        Map<String, StatsAccumulator> buckets = new LinkedHashMap<>();
+        for (String bucketKey : spec.expectedBuckets(now)) {
+            buckets.put(bucketKey, new StatsAccumulator());
+        }
+        StatsAccumulator summary = new StatsAccumulator();
+        Map<ResourceKey, StatsAccumulator> resourceStats = new LinkedHashMap<>();
+        Map<String, StatsAccumulator> methodStats = new LinkedHashMap<>();
+        for (PerformanceSample sample : samples) {
+            String bucketKey = spec.bucketKey(sample.createTime());
+            StatsAccumulator bucketStats = buckets.computeIfAbsent(bucketKey, ignored -> new StatsAccumulator());
+            bucketStats.add(sample.latencyMs(), sample.status());
+            summary.add(sample.latencyMs(), sample.status());
+            resourceStats.computeIfAbsent(
+                            new ResourceKey(sample.resourceType(), sample.resourceId(), sample.resourceName()),
+                            ignored -> new StatsAccumulator())
+                    .add(sample.latencyMs(), sample.status());
+            methodStats.computeIfAbsent(normalizeMethod(sample.method()), ignored -> new StatsAccumulator())
+                    .add(sample.latencyMs(), sample.status());
+        }
+        List<PerformanceBucketVO> bucketList = buckets.entrySet().stream()
+                .map(entry -> entry.getValue().toBucket(entry.getKey()))
+                .toList();
+        List<PerformanceResourceLeaderboardVO> leaderboard = resourceStats.entrySet().stream()
+                .map(entry -> entry.getValue().toResource(entry.getKey()))
+                .sorted((left, right) -> {
+                    int byRequest = Long.compare(right.getRequestCount(), left.getRequestCount());
+                    if (byRequest != 0) return byRequest;
+                    int byP99 = Double.compare(right.getP99LatencyMs(), left.getP99LatencyMs());
+                    if (byP99 != 0) return byP99;
+                    return Double.compare(right.getErrorRate(), left.getErrorRate());
+                })
+                .toList();
+        List<PerformanceSlowMethodVO> slowMethods = methodStats.entrySet().stream()
+                .map(entry -> entry.getValue().toMethod(entry.getKey()))
+                .sorted((left, right) -> {
+                    int byP99 = Double.compare(right.getP99LatencyMs(), left.getP99LatencyMs());
+                    if (byP99 != 0) return byP99;
+                    return Long.compare(right.getRequestCount(), left.getRequestCount());
+                })
+                .toList();
+        return PerformanceAnalysisVO.builder()
+                .window(spec.code)
+                .resourceType(normalizeRequestedResourceType(resourceType))
+                .resourceId(resourceId)
+                .summary(summary.toSummary())
+                .buckets(bucketList)
+                .resourceLeaderboard(leaderboard)
+                .slowMethods(slowMethods)
+                .build();
+    }
+
+    private List<PerformanceSample> queryPerformanceSamples(LocalDateTime start, String resourceType, Long resourceId) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT create_time,
+                       latency_ms,
+                       status,
+                       COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown') AS resource_type,
+                       agent_id AS resource_id,
+                       COALESCE(NULLIF(TRIM(agent_name), ''), CONCAT(COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown'), '#', agent_id)) AS resource_name,
+                       method
+                FROM t_call_log
+                WHERE create_time >= '
+                """);
+        sql.append(LEGACY_DATE_TIME_FORMATTER.format(start)).append("'");
+        appendResourceTypeFilter(sql, resourceType);
+        appendResourceIdFilter(sql, resourceId);
+        sql.append(" ORDER BY create_time ASC");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString());
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<PerformanceSample> samples = new ArrayList<>(rows.size());
+        for (Map<String, Object> row : rows) {
+            LocalDateTime createTime = parseDateTime(row.get("create_time"));
+            if (createTime == null) {
+                continue;
+            }
+            samples.add(new PerformanceSample(
+                    createTime,
+                    normalizeSampleResourceType(row.get("resource_type")),
+                    parseLong(String.valueOf(row.get("resource_id"))),
+                    firstText(row.get("resource_name"), "unknown"),
+                    firstText(row.get("method"), "UNKNOWN"),
+                    normalizeStatus(row.get("status")),
+                    (int) Math.max(0L, parseLong(row.get("latency_ms")))));
+        }
+        return samples;
+    }
+
+    private static Map<String, Object> toCompatibilityBucketRow(PerformanceBucketVO bucket) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("bucket", bucket.getBucket());
+        row.put("timestamp", bucket.getBucket());
+        row.put("requestCount", bucket.getRequestCount());
+        row.put("requestRate", bucket.getRequestCount());
+        row.put("successCount", bucket.getSuccessCount());
+        row.put("errorCount", bucket.getErrorCount());
+        row.put("timeoutCount", bucket.getTimeoutCount());
+        row.put("successRate", bucket.getSuccessRate());
+        row.put("errorRate", bucket.getErrorRate());
+        row.put("timeoutRate", bucket.getTimeoutRate());
+        row.put("avgLatencyMs", bucket.getAvgLatencyMs());
+        row.put("p50Latency", bucket.getP50LatencyMs());
+        row.put("p95Latency", bucket.getP95LatencyMs());
+        row.put("p99Latency", bucket.getP99LatencyMs());
+        row.put("latencyP50", bucket.getP50LatencyMs());
+        row.put("latencyP95", bucket.getP95LatencyMs());
+        row.put("latencyP99", bucket.getP99LatencyMs());
+        row.put("throughput", bucket.getThroughput());
+        return row;
+    }
+
+    private static void appendResourceTypeFilter(StringBuilder sql, String resourceType) {
         if (!StringUtils.hasText(resourceType) || "all".equalsIgnoreCase(resourceType.trim())) {
             return;
         }
-        String rt = resourceType.trim().toLowerCase();
-        if ("unknown".equals(rt)) {
-            qw.and(w -> w.isNull("resource_type")
-                    .or().eq("resource_type", "")
-                    .or().eq("resource_type", "unknown"));
-        } else {
-            qw.eq("resource_type", rt);
+        String normalized = resourceType.trim().toLowerCase();
+        if ("unknown".equals(normalized)) {
+            sql.append(" AND (resource_type IS NULL OR TRIM(resource_type) = '' OR LOWER(TRIM(resource_type)) = 'unknown')");
+            return;
+        }
+        if (!normalized.matches("[a-z_]+")) {
+            return;
+        }
+        sql.append(" AND LOWER(TRIM(resource_type)) = '").append(normalized).append("'");
+    }
+
+    private static void appendResourceIdFilter(StringBuilder sql, Long resourceId) {
+        if (resourceId == null || resourceId <= 0) {
+            return;
+        }
+        sql.append(" AND agent_id = '").append(resourceId).append("'");
+    }
+
+    private static boolean matchesResourceType(String sampleType, String requestedType) {
+        if (!StringUtils.hasText(requestedType) || "all".equalsIgnoreCase(requestedType.trim())) {
+            return true;
+        }
+        String normalized = requestedType.trim().toLowerCase();
+        if ("unknown".equals(normalized)) {
+            return "unknown".equalsIgnoreCase(sampleType);
+        }
+        return normalized.equalsIgnoreCase(sampleType);
+    }
+
+    private static boolean matchesResourceId(Long sampleId, Long requestedId) {
+        return requestedId == null || requestedId <= 0 || Objects.equals(sampleId, requestedId);
+    }
+
+    private static String normalizeRequestedResourceType(String resourceType) {
+        if (!StringUtils.hasText(resourceType) || "all".equalsIgnoreCase(resourceType.trim())) {
+            return "all";
+        }
+        return resourceType.trim().toLowerCase();
+    }
+
+    private static String normalizeSampleResourceType(Object value) {
+        String text = firstText(value, "unknown").toLowerCase();
+        return text.isBlank() ? "unknown" : text;
+    }
+
+    private static String normalizeMethod(String method) {
+        if (!StringUtils.hasText(method)) {
+            return "UNKNOWN";
+        }
+        return method.trim();
+    }
+
+    private static String normalizeStatus(Object value) {
+        String text = firstText(value, "error").toLowerCase();
+        if ("success".equals(text)) {
+            return "success";
+        }
+        if ("timeout".equals(text)) {
+            return "timeout";
+        }
+        return "error";
+    }
+
+    private static String firstText(Object value, String fallback) {
+        String text = value == null ? "" : String.valueOf(value).trim();
+        return text.isEmpty() ? fallback : text;
+    }
+
+    private static LocalDateTime parseDateTime(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof LocalDateTime ldt) {
+            return ldt;
+        }
+        if (value instanceof Timestamp ts) {
+            return ts.toLocalDateTime();
+        }
+        if (value instanceof java.util.Date date) {
+            return LocalDateTime.ofInstant(date.toInstant(), ZoneId.systemDefault());
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDateTime.parse(text);
+        } catch (DateTimeParseException ignored) {
+            try {
+                return LocalDateTime.parse(text, LEGACY_DATE_TIME_FORMATTER);
+            } catch (DateTimeParseException ignoredAgain) {
+                return null;
+            }
+        }
+    }
+
+    private static double percentile(List<Integer> values, double ratio) {
+        if (values == null || values.isEmpty()) {
+            return 0D;
+        }
+        List<Integer> sorted = new ArrayList<>(values);
+        sorted.sort(Comparator.naturalOrder());
+        int rank = (int) Math.ceil(ratio * sorted.size());
+        int index = Math.max(0, Math.min(sorted.size() - 1, rank - 1));
+        return round(sorted.get(index), 2);
+    }
+
+    private static double round(double value, int scale) {
+        double factor = Math.pow(10, scale);
+        return Math.round(value * factor) / factor;
+    }
+
+    private enum PerformanceWindowSpec {
+        SIX_HOURS("6h", 6, 1, HOURLY_BUCKET_FORMATTER),
+        TWENTY_FOUR_HOURS("24h", 24, 1, HOURLY_BUCKET_FORMATTER),
+        SEVEN_DAYS("7d", 7, 24, DAILY_BUCKET_FORMATTER);
+
+        private final String code;
+        private final int bucketCount;
+        private final int hoursPerBucket;
+        private final DateTimeFormatter formatter;
+
+        PerformanceWindowSpec(String code, int bucketCount, int hoursPerBucket, DateTimeFormatter formatter) {
+            this.code = code;
+            this.bucketCount = bucketCount;
+            this.hoursPerBucket = hoursPerBucket;
+            this.formatter = formatter;
+        }
+
+        private static PerformanceWindowSpec from(String raw) {
+            if (!StringUtils.hasText(raw)) {
+                return TWENTY_FOUR_HOURS;
+            }
+            String value = raw.trim().toLowerCase();
+            return switch (value) {
+                case "6h" -> SIX_HOURS;
+                case "7d" -> SEVEN_DAYS;
+                default -> TWENTY_FOUR_HOURS;
+            };
+        }
+
+        private LocalDateTime windowStart(LocalDateTime now) {
+            LocalDateTime currentBucket = bucketStart(now);
+            return currentBucket.minusHours((long) hoursPerBucket * (bucketCount - 1));
+        }
+
+        private List<String> expectedBuckets(LocalDateTime now) {
+            LocalDateTime cursor = windowStart(now);
+            List<String> buckets = new ArrayList<>(bucketCount);
+            for (int i = 0; i < bucketCount; i++) {
+                buckets.add(formatter.format(cursor));
+                cursor = cursor.plusHours(hoursPerBucket);
+            }
+            return buckets;
+        }
+
+        private String bucketKey(LocalDateTime createTime) {
+            return formatter.format(bucketStart(createTime));
+        }
+
+        private LocalDateTime bucketStart(LocalDateTime createTime) {
+            if (this == SEVEN_DAYS) {
+                return createTime.toLocalDate().atStartOfDay();
+            }
+            return createTime.withMinute(0).withSecond(0).withNano(0);
+        }
+    }
+
+    private record PerformanceSample(
+            LocalDateTime createTime,
+            String resourceType,
+            Long resourceId,
+            String resourceName,
+            String method,
+            String status,
+            int latencyMs
+    ) {
+    }
+
+    private record ResourceKey(String resourceType, Long resourceId, String resourceName) {
+    }
+
+    private static final class StatsAccumulator {
+        private long requestCount;
+        private long successCount;
+        private long errorCount;
+        private long timeoutCount;
+        private long latencyTotal;
+        private final List<Integer> latencies = new ArrayList<>();
+
+        private void add(int latencyMs, String status) {
+            requestCount++;
+            latencyTotal += Math.max(latencyMs, 0);
+            latencies.add(Math.max(latencyMs, 0));
+            if ("success".equals(status)) {
+                successCount++;
+                return;
+            }
+            errorCount++;
+            if ("timeout".equals(status)) {
+                timeoutCount++;
+            }
+        }
+
+        private PerformanceSummaryVO toSummary() {
+            return PerformanceSummaryVO.builder()
+                    .requestCount(requestCount)
+                    .successCount(successCount)
+                    .errorCount(errorCount)
+                    .timeoutCount(timeoutCount)
+                    .successRate(rate(successCount))
+                    .errorRate(rate(errorCount))
+                    .timeoutRate(rate(timeoutCount))
+                    .avgLatencyMs(avgLatency())
+                    .p50LatencyMs(percentile(latencies, 0.50))
+                    .p95LatencyMs(percentile(latencies, 0.95))
+                    .p99LatencyMs(percentile(latencies, 0.99))
+                    .build();
+        }
+
+        private PerformanceBucketVO toBucket(String bucket) {
+            return PerformanceBucketVO.builder()
+                    .bucket(bucket)
+                    .requestCount(requestCount)
+                    .successCount(successCount)
+                    .errorCount(errorCount)
+                    .timeoutCount(timeoutCount)
+                    .successRate(rate(successCount))
+                    .errorRate(rate(errorCount))
+                    .timeoutRate(rate(timeoutCount))
+                    .avgLatencyMs(avgLatency())
+                    .p50LatencyMs(percentile(latencies, 0.50))
+                    .p95LatencyMs(percentile(latencies, 0.95))
+                    .p99LatencyMs(percentile(latencies, 0.99))
+                    .throughput(requestCount)
+                    .build();
+        }
+
+        private PerformanceResourceLeaderboardVO toResource(ResourceKey resource) {
+            return PerformanceResourceLeaderboardVO.builder()
+                    .resourceType(resource.resourceType())
+                    .resourceId(resource.resourceId())
+                    .resourceName(resource.resourceName())
+                    .requestCount(requestCount)
+                    .errorCount(errorCount)
+                    .timeoutCount(timeoutCount)
+                    .errorRate(rate(errorCount))
+                    .timeoutRate(rate(timeoutCount))
+                    .avgLatencyMs(avgLatency())
+                    .p99LatencyMs(percentile(latencies, 0.99))
+                    .lowSample(requestCount < 5)
+                    .build();
+        }
+
+        private PerformanceSlowMethodVO toMethod(String method) {
+            return PerformanceSlowMethodVO.builder()
+                    .method(method)
+                    .requestCount(requestCount)
+                    .errorCount(errorCount)
+                    .errorRate(rate(errorCount))
+                    .avgLatencyMs(avgLatency())
+                    .p95LatencyMs(percentile(latencies, 0.95))
+                    .p99LatencyMs(percentile(latencies, 0.99))
+                    .build();
+        }
+
+        private double avgLatency() {
+            return requestCount <= 0 ? 0D : round((double) latencyTotal / (double) requestCount, 2);
+        }
+
+        private double rate(long count) {
+            return requestCount <= 0 ? 0D : round((double) count / (double) requestCount, 4);
         }
     }
 

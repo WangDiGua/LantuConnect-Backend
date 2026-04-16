@@ -304,7 +304,6 @@ public class CapabilityV2ServiceImpl implements CapabilityV2Service {
         upsert.setResourceCode(firstText(request.getResourceCode(), detected.getResourceCode()));
         upsert.setDescription(firstText(request.getDescription(), detected.getDescription()));
         upsert.setSourceType(firstText(request.getSourceType(), "capability_v2"));
-        upsert.setProviderId(request.getProviderId());
         upsert.setEnabled(Boolean.TRUE);
         upsert.setIsPublic(Boolean.TRUE);
         upsert.setHidden(Boolean.FALSE);

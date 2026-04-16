@@ -24,8 +24,6 @@ public class CapabilityCreateRequest {
 
     private String sourceType;
 
-    private Long providerId;
-
     private String runtimeMode;
 
     private Map<String, Object> inputSchema;
