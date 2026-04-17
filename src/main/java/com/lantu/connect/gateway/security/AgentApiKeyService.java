@@ -3,6 +3,7 @@ package com.lantu.connect.gateway.security;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.common.util.SensitiveDataEncryptor;
 import com.lantu.connect.usermgmt.dto.ApiKeyResponse;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import com.lantu.connect.usermgmt.mapper.ApiKeyMapper;
@@ -25,6 +26,7 @@ public class AgentApiKeyService {
 
     private final ApiKeyMapper apiKeyMapper;
     private final JdbcTemplate jdbcTemplate;
+    private final SensitiveDataEncryptor sensitiveDataEncryptor;
 
     @Transactional(rollbackFor = Exception.class)
     public void ensureActiveKeyForAgent(Long agentId, Long operatorUserId) {
@@ -74,6 +76,7 @@ public class AgentApiKeyService {
         entity.setName("agent-" + agentId + "-key");
         entity.setScopes(DEFAULT_SCOPES);
         entity.setKeyHash(sha256Hex(plain));
+        entity.setSecretCiphertext(sensitiveDataEncryptor.encrypt(plain));
         entity.setPrefix(prefix);
         entity.setMaskedKey(prefix.substring(0, Math.min(6, prefix.length())) + "****");
         entity.setStatus("active");

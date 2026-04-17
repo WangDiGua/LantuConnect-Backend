@@ -107,6 +107,12 @@ public class UserMgmtController {
         return R.ok(userMgmtService.listApiKeys());
     }
 
+    @GetMapping("/api-keys/{id}")
+    @RequirePermission("apikey:read")
+    public R<ApiKeyDetailResponse> getApiKeyDetail(@PathVariable String id) {
+        return R.ok(userMgmtService.getApiKeyDetail(id));
+    }
+
     @PostMapping("/api-keys")
     @RequirePermission("apikey:create")
     public R<ApiKeyResponse> createApiKey(@Valid @RequestBody ApiKeyCreateRequest request) {

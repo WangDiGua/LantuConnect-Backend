@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -25,6 +26,9 @@ public class ApiKey {
 
     private String name;
     private String keyHash;
+    @JsonIgnore
+    @TableField("secret_ciphertext")
+    private String secretCiphertext;
     private String prefix;
     private String maskedKey;
     private String ownerType;

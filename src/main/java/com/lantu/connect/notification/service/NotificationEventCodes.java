@@ -1,8 +1,5 @@
 package com.lantu.connect.notification.service;
 
-/**
- * 统一通知事件编码，供前后端按类型聚合和跳转。
- */
 public final class NotificationEventCodes {
 
     private NotificationEventCodes() {
@@ -10,7 +7,6 @@ public final class NotificationEventCodes {
 
     public static final String RESOURCE_SUBMITTED = "resource_submitted";
     public static final String RESOURCE_DEPRECATED = "resource_deprecated";
-    /** 平台管理员对任意资源强制下架（与开发者自助 deprecate 区分） */
     public static final String PLATFORM_RESOURCE_FORCE_DEPRECATED = "platform_resource_force_deprecated";
     public static final String RESOURCE_WITHDRAWN = "resource_withdrawn";
     public static final String RESOURCE_VERSION_SWITCHED = "resource_version_switched";
@@ -34,8 +30,6 @@ public final class NotificationEventCodes {
 
     public static final String API_KEY_CREATED = "api_key_created";
     public static final String API_KEY_REVOKED = "api_key_revoked";
-    /** 用户轮换密钥：同一 Key 记录换用新明文，旧明文失效 */
-    public static final String API_KEY_ROTATED = "api_key_rotated";
 
     public static final String USER_STATUS_CHANGED = "user_status_changed";
     public static final String USER_DELETED = "user_deleted";

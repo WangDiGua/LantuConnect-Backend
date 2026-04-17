@@ -218,18 +218,8 @@ public class SystemNotificationFacade {
         String title = created ? "API Key 已创建" : "API Key 已撤销";
         String result = created ? "创建成功" : "撤销成功";
         String details = String.format(Locale.ROOT, "Key ID: %s%nKey 名称: %s", fallbackText(keyId, "-"), fallbackText(keyName, "-"));
-        notifyToUser(userId, type, title, buildBody("API Key 管理", result, details, "请妥善保管密钥并定期轮换。"),
+        notifyToUser(userId, type, title, buildBody("API Key 管理", result, details, "请妥善保管密钥，如需更换请撤销后重新创建。"),
                 "api_key", keyId);
-    }
-
-    public void notifyApiKeyRotated(Long userId, String keyId, String keyName) {
-        String details = String.format(Locale.ROOT, "Key ID: %s%nKey 名称: %s", fallbackText(keyId, "-"), fallbackText(keyName, "-"));
-        notifyToUser(userId,
-                NotificationEventCodes.API_KEY_ROTATED,
-                "API Key 已轮换",
-                buildBody("API Key 管理", "轮换成功", details, "旧密钥已失效，请立即更新所有集成与环境变量中的 X-Api-Key。"),
-                "api_key",
-                keyId);
     }
 
     public void notifyUserStatusChanged(Long targetUserId, Long operatorUserId, String oldStatus, String newStatus) {
@@ -537,10 +527,6 @@ public class SystemNotificationFacade {
             if (NotificationEventCodes.API_KEY_CREATED.equals(type)) {
                 n.setFlowStatus("running");
                 setStep(n, 1, "created", "创建密钥", "done", "API Key 已创建");
-            } else if (NotificationEventCodes.API_KEY_ROTATED.equals(type)) {
-                n.setFlowStatus("running");
-                n.setSeverity("warning");
-                setStep(n, 2, "rotated", "轮换密钥", "warning", "旧密钥已失效，请更新集成配置");
             } else if (NotificationEventCodes.API_KEY_REVOKED.equals(type)) {
                 n.setFlowStatus("success");
                 n.setSeverity("warning");
@@ -588,8 +574,7 @@ public class SystemNotificationFacade {
                 || type.contains("system_param")) {
             return "warning";
         }
-        if (type.contains("approved") || type.contains("published") || type.contains("created")
-                || type.contains("rotated")) {
+        if (type.contains("approved") || type.contains("published") || type.contains("created")) {
             return "success";
         }
         return "info";

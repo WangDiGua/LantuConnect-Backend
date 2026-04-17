@@ -1,16 +1,17 @@
 package com.lantu.connect.usersettings.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.audit.entity.SensitiveActionAudit;
 import com.lantu.connect.audit.mapper.SensitiveActionAuditMapper;
 import com.lantu.connect.auth.entity.User;
 import com.lantu.connect.auth.mapper.UserMapper;
-import com.lantu.connect.useractivity.entity.UsageRecord;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.security.RedisAuthRateLimiter;
+import com.lantu.connect.common.session.SessionTrackerService;
+import com.lantu.connect.common.util.SensitiveDataEncryptor;
 import com.lantu.connect.gateway.dto.ResourceGrantVO;
 import com.lantu.connect.integrationpackage.dto.IntegrationPackageOptionVO;
 import com.lantu.connect.integrationpackage.dto.IntegrationPackageUpsertRequest;
@@ -19,22 +20,23 @@ import com.lantu.connect.integrationpackage.entity.IntegrationPackage;
 import com.lantu.connect.integrationpackage.mapper.IntegrationPackageMapper;
 import com.lantu.connect.integrationpackage.service.IntegrationPackageMembershipService;
 import com.lantu.connect.integrationpackage.service.IntegrationPackageService;
+import com.lantu.connect.notification.service.SystemNotificationFacade;
+import com.lantu.connect.useractivity.entity.UsageRecord;
+import com.lantu.connect.useractivity.mapper.UsageRecordMapper;
 import com.lantu.connect.usermgmt.ApiKeyScopes;
 import com.lantu.connect.usermgmt.dto.ApiKeyCreateRequest;
+import com.lantu.connect.usermgmt.dto.ApiKeyDetailResponse;
 import com.lantu.connect.usermgmt.dto.ApiKeyIntegrationPackagePatchRequest;
 import com.lantu.connect.usermgmt.dto.ApiKeyResponse;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import com.lantu.connect.usermgmt.mapper.ApiKeyMapper;
-import com.lantu.connect.useractivity.mapper.UsageRecordMapper;
+import com.lantu.connect.usersettings.dto.ApiKeyRevokeRequest;
 import com.lantu.connect.usersettings.dto.InvokeEligibilityRequest;
 import com.lantu.connect.usersettings.dto.InvokeEligibilityResponse;
-import com.lantu.connect.usersettings.dto.ApiKeyRevokeRequest;
 import com.lantu.connect.usersettings.dto.UserStatsVO;
 import com.lantu.connect.usersettings.dto.WorkspaceSettingsVO;
 import com.lantu.connect.usersettings.dto.WorkspaceUpdateRequest;
 import com.lantu.connect.usersettings.service.UserSettingsService;
-import com.lantu.connect.common.session.SessionTrackerService;
-import com.lantu.connect.notification.service.SystemNotificationFacade;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -47,20 +49,14 @@ import org.springframework.util.StringUtils;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.time.LocalDateTime;
 
-/**
- * 用户设置UserSettings服务实现
- *
- * @author 王帝
- * @date 2026-03-21
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -68,8 +64,8 @@ public class UserSettingsServiceImpl implements UserSettingsService {
 
     private static final String OWNER_USER = "user";
     private static final String WORKSPACE_KEY_PREFIX = "lantu:usersettings:workspace:";
-    /** 工作区偏好 Redis 过期（天），避免无限堆积；到期后回到默认，可再保存 */
     private static final long WORKSPACE_TTL_DAYS = 365;
+
     private final ApiKeyMapper apiKeyMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
@@ -84,18 +80,13 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     private final IntegrationPackageMapper integrationPackageMapper;
     private final IntegrationPackageMembershipService integrationPackageMembershipService;
     private final IntegrationPackageService integrationPackageService;
+    private final SensitiveDataEncryptor sensitiveDataEncryptor;
 
-    /**
-     * 读取工作区偏好：优先 Redis，缺省回退到系统默认模板。
-     */
     @Override
     public WorkspaceSettingsVO getWorkspace(Long userId) {
         return loadWorkspace(userId);
     }
 
-    /**
-     * 更新工作区偏好：按字段增量合并并持久化到 Redis。
-     */
     @Override
     public void updateWorkspace(Long userId, WorkspaceUpdateRequest request) {
         WorkspaceSettingsVO current = loadWorkspace(userId);
@@ -130,7 +121,7 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     @Override
     public List<IntegrationPackageOptionVO> listActiveIntegrationPackages(Long userId) {
         if (userId == null) {
-            throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证用户无法查询");
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "Authentication required");
         }
         return integrationPackageService.listOwnedForUser(userId);
     }
@@ -155,18 +146,15 @@ public class UserSettingsServiceImpl implements UserSettingsService {
         integrationPackageService.deleteOwnedByUser(packageId, userId);
     }
 
-    /**
-     * 创建用户 API Key：生成明文一次性回传，库内仅保存哈希与掩码。
-     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ApiKeyResponse createApiKey(Long userId, ApiKeyCreateRequest request) {
         String plain = "sk_" + UUID.randomUUID().toString().replace("-", "");
         ApiKey entity = new ApiKey();
         entity.setName(request.getName());
-        // 未指定 scope 时默认全量，避免创建后无法 catalog/resolve/invoke（仅保存 id 误当密钥的客户仍会 401）
         entity.setScopes(ApiKeyScopes.defaultIfUnspecified(request.getScopes()));
         entity.setKeyHash(sha256Hex(plain));
+        entity.setSecretCiphertext(sensitiveDataEncryptor.encrypt(plain));
         String prefix = plain.length() > 16 ? plain.substring(0, 16) : plain;
         entity.setPrefix(prefix);
         entity.setMaskedKey(prefix.length() > 4 ? prefix.substring(0, 4) + "****" : "****");
@@ -176,10 +164,10 @@ public class UserSettingsServiceImpl implements UserSettingsService {
         entity.setOwnerId(String.valueOf(userId));
         entity.setCreatedBy(String.valueOf(userId));
         if (StringUtils.hasText(request.getIntegrationPackageId())) {
-            String pid = request.getIntegrationPackageId().trim();
-            IntegrationPackage pkg = integrationPackageMapper.selectById(pid);
+            String packageId = request.getIntegrationPackageId().trim();
+            IntegrationPackage pkg = integrationPackageMapper.selectById(packageId);
             assertUserOwnsActivePackage(userId, pkg);
-            entity.setIntegrationPackageId(pid);
+            entity.setIntegrationPackageId(packageId);
         }
         apiKeyMapper.insert(entity);
         systemNotificationFacade.notifyApiKeyChanged(userId, entity.getId(), entity.getName(), true);
@@ -195,29 +183,39 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     }
 
     @Override
+    public ApiKeyDetailResponse getApiKeyDetail(Long userId, String apiKeyId) {
+        ApiKey key = apiKeyMapper.selectById(apiKeyId);
+        if (key == null || !OWNER_USER.equals(key.getOwnerType())
+                || !String.valueOf(userId).equals(key.getOwnerId())) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "API key not found");
+        }
+        return buildApiKeyDetailResponse(key);
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void patchApiKeyIntegrationPackage(Long userId, String apiKeyId, ApiKeyIntegrationPackagePatchRequest request) {
         if (!StringUtils.hasText(apiKeyId)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "API Key id 不能为空");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "API key id is required");
         }
         ApiKey key = apiKeyMapper.selectById(apiKeyId.trim());
         if (key == null || !OWNER_USER.equals(key.getOwnerType())
                 || !String.valueOf(userId).equals(key.getOwnerId())) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不存在");
+            throw new BusinessException(ResultCode.NOT_FOUND, "API key not found");
         }
-        String prevPid = key.getIntegrationPackageId();
+        String previousPackageId = key.getIntegrationPackageId();
         String raw = request != null ? request.getIntegrationPackageId() : null;
-        if (raw == null || raw.isBlank()) {
+        if (!StringUtils.hasText(raw)) {
             key.setIntegrationPackageId(null);
         } else {
-            String pid = raw.trim();
-            IntegrationPackage pkg = integrationPackageMapper.selectById(pid);
+            String packageId = raw.trim();
+            IntegrationPackage pkg = integrationPackageMapper.selectById(packageId);
             assertUserOwnsActivePackage(userId, pkg);
-            key.setIntegrationPackageId(pid);
+            key.setIntegrationPackageId(packageId);
         }
         apiKeyMapper.updateById(key);
-        if (StringUtils.hasText(prevPid)) {
-            integrationPackageMembershipService.evict(prevPid);
+        if (StringUtils.hasText(previousPackageId)) {
+            integrationPackageMembershipService.evict(previousPackageId);
         }
         if (StringUtils.hasText(key.getIntegrationPackageId())) {
             integrationPackageMembershipService.evict(key.getIntegrationPackageId());
@@ -230,7 +228,7 @@ public class UserSettingsServiceImpl implements UserSettingsService {
         ApiKey key = apiKeyMapper.selectById(apiKeyId);
         if (key == null || !OWNER_USER.equals(key.getOwnerType())
                 || !String.valueOf(userId).equals(key.getOwnerId())) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不存在");
+            throw new BusinessException(ResultCode.NOT_FOUND, "API key not found");
         }
         key.setStatus("revoked");
         apiKeyMapper.updateById(key);
@@ -240,15 +238,15 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     @Override
     public List<ResourceGrantVO> listResourceGrantsForApiKey(Long userId, String apiKeyId, String resourceType) {
         if (userId == null) {
-            throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证用户无法查询");
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "Authentication required");
         }
         if (!StringUtils.hasText(apiKeyId)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "API Key id 不能为空");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "API key id is required");
         }
         ApiKey key = apiKeyMapper.selectById(apiKeyId.trim());
         if (key == null || !OWNER_USER.equalsIgnoreCase(key.getOwnerType())
                 || !String.valueOf(userId).equals(String.valueOf(key.getOwnerId()).trim())) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不存在");
+            throw new BusinessException(ResultCode.NOT_FOUND, "API key not found");
         }
         return List.of();
     }
@@ -256,40 +254,40 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     @Override
     public InvokeEligibilityResponse invokeEligibilityForApiKey(Long userId, String apiKeyId, InvokeEligibilityRequest request) {
         if (userId == null) {
-            throw new BusinessException(ResultCode.UNAUTHORIZED, "未认证用户无法查询");
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "Authentication required");
         }
         if (!StringUtils.hasText(apiKeyId)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "API Key id 不能为空");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "API key id is required");
         }
         ApiKey key = apiKeyMapper.selectById(apiKeyId.trim());
         if (key == null || !OWNER_USER.equalsIgnoreCase(key.getOwnerType())
                 || !String.valueOf(userId).equals(String.valueOf(key.getOwnerId()).trim())) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不存在");
+            throw new BusinessException(ResultCode.NOT_FOUND, "API key not found");
         }
         if (!"active".equalsIgnoreCase(key.getStatus())) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不可用");
+            throw new BusinessException(ResultCode.NOT_FOUND, "API key is not active");
         }
-        String rt = request.getResourceType().trim().toLowerCase(Locale.ROOT);
-        Map<String, Boolean> out = new LinkedHashMap<>();
-        for (String ridRaw : request.getResourceIds()) {
-            if (!StringUtils.hasText(ridRaw)) {
+        String resourceType = request.getResourceType().trim().toLowerCase(Locale.ROOT);
+        Map<String, Boolean> result = new LinkedHashMap<>();
+        for (String rawResourceId : request.getResourceIds()) {
+            if (!StringUtils.hasText(rawResourceId)) {
                 continue;
             }
-            String trimmed = ridRaw.trim();
-            Long rid;
+            String trimmed = rawResourceId.trim();
+            Long resourceId;
             try {
-                rid = Long.valueOf(trimmed);
+                resourceId = Long.valueOf(trimmed);
             } catch (NumberFormatException e) {
-                out.put(trimmed, false);
+                result.put(trimmed, false);
                 continue;
             }
-            Integer cnt = jdbcTemplate.queryForObject("""
+            Integer count = jdbcTemplate.queryForObject("""
                     SELECT COUNT(1) FROM t_resource
                     WHERE deleted = 0 AND resource_type = ? AND id = ? AND status = 'published'
-                    """, Integer.class, rt, rid);
-            out.put(String.valueOf(rid), cnt != null && cnt > 0);
+                    """, Integer.class, resourceType, resourceId);
+            result.put(String.valueOf(resourceId), count != null && count > 0);
         }
-        return InvokeEligibilityResponse.builder().byResourceId(out).build();
+        return InvokeEligibilityResponse.builder().byResourceId(result).build();
     }
 
     @Override
@@ -303,35 +301,28 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
-    public ApiKeyResponse rotateApiKey(Long userId, String apiKeyId, ApiKeyRevokeRequest request, String clientIp) {
-        ApiKey key = assertOwnedApiKeyAfterCredentialCheck(userId, apiKeyId, request, clientIp, "api_key_rotate");
-        if (!"active".equalsIgnoreCase(key.getStatus())) {
-            insertAudit(userId, "api_key_rotate", apiKeyId, false, "API Key 不可用", clientIp);
-            throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不可用");
-        }
-        String plain = "sk_" + UUID.randomUUID().toString().replace("-", "");
-        key.setKeyHash(sha256Hex(plain));
-        String prefix = plain.length() > 16 ? plain.substring(0, 16) : plain;
-        key.setPrefix(prefix);
-        key.setMaskedKey(prefix.length() > 4 ? prefix.substring(0, 4) + "****" : "****");
-        apiKeyMapper.updateById(key);
-        systemNotificationFacade.notifyApiKeyRotated(userId, key.getId(), key.getName());
-        insertAudit(userId, "api_key_rotate", apiKeyId, true, null, clientIp);
-        return ApiKeyResponse.builder()
-                .id(key.getId())
-                .name(key.getName())
-                .scopes(key.getScopes())
-                .secretPlain(plain)
-                .expiresAt(key.getExpiresAt())
-                .revoked(false)
-                .integrationPackageId(key.getIntegrationPackageId())
+    public UserStatsVO getStats(Long userId) {
+        long agents = countResourceByTypeAndCreator("agent", userId);
+        long skills = countResourceByTypeAndCreator("skill", userId);
+        long usage = usageRecordMapper.selectCount(
+                new LambdaQueryWrapper<UsageRecord>().eq(UsageRecord::getUserId, userId));
+        Long bytes = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(ext.file_size),0) FROM t_resource r JOIN t_resource_dataset_ext ext ON r.id = ext.resource_id "
+                        + "WHERE r.deleted = 0 AND r.resource_type = 'dataset' AND r.created_by = ?",
+                Long.class,
+                userId);
+        long storageMb = bytes != null ? Math.max(0L, bytes / (1024L * 1024L)) : 0L;
+        long activeSessions = sessionTrackerService.getActiveSessionCount(userId);
+        return UserStatsVO.builder()
+                .totalAgents(agents)
+                .totalWorkflows(skills)
+                .totalApiCalls(usage)
+                .storageUsedMb(storageMb)
+                .activeSessions(activeSessions)
+                .period("30d")
                 .build();
     }
 
-    /**
-     * 校验归属与登录密码，失败写入敏感操作审计。成功返回可用的 Key 行。
-     */
     private ApiKey assertOwnedApiKeyAfterCredentialCheck(
             Long userId,
             String apiKeyId,
@@ -339,27 +330,27 @@ public class UserSettingsServiceImpl implements UserSettingsService {
             String clientIp,
             String auditActionType) {
         if (request == null) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "请求体不能为空");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Revoke request is required");
         }
         redisAuthRateLimiter.checkApiKeyRevokeByUser(userId);
         ApiKey key = apiKeyMapper.selectById(apiKeyId);
         if (key == null || !OWNER_USER.equals(key.getOwnerType())
                 || !String.valueOf(userId).equals(key.getOwnerId())) {
-            insertAudit(userId, auditActionType, apiKeyId, false, "API Key 不存在", clientIp);
-            throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不存在");
+            insertAudit(userId, auditActionType, apiKeyId, false, "API key not found", clientIp);
+            throw new BusinessException(ResultCode.NOT_FOUND, "API key not found");
         }
         User user = userMapper.selectById(userId);
         if (user == null) {
-            insertAudit(userId, auditActionType, apiKeyId, false, "用户不存在", clientIp);
-            throw new BusinessException(ResultCode.NOT_FOUND, "用户不存在");
+            insertAudit(userId, auditActionType, apiKeyId, false, "User not found", clientIp);
+            throw new BusinessException(ResultCode.NOT_FOUND, "User not found");
         }
         try {
             if (!StringUtils.hasText(user.getPasswordHash())) {
                 throw new BusinessException(ResultCode.PARAM_ERROR,
-                        "账户未设置登录密码，请先在「个人设置」中修改密码后再执行此操作");
+                        "No login password is configured for this account");
             }
             if (!StringUtils.hasText(request.getPassword())) {
-                throw new BusinessException(ResultCode.PARAM_ERROR, "请输入登录密码以继续操作");
+                throw new BusinessException(ResultCode.PARAM_ERROR, "Password is required");
             }
             if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
                 throw new BusinessException(ResultCode.PASSWORD_ERROR);
@@ -388,39 +379,13 @@ public class UserSettingsServiceImpl implements UserSettingsService {
         sensitiveActionAuditMapper.insert(row);
     }
 
-    /**
-     * 用户统计：从统一资源模型与调用日志聚合工作区关键指标。
-     */
-    @Override
-    public UserStatsVO getStats(Long userId) {
-        long agents = countResourceByTypeAndCreator("agent", userId);
-        long skills = countResourceByTypeAndCreator("skill", userId);
-        long usage = usageRecordMapper.selectCount(
-                new LambdaQueryWrapper<UsageRecord>().eq(UsageRecord::getUserId, userId));
-        Long bytes = jdbcTemplate.queryForObject(
-                "SELECT COALESCE(SUM(ext.file_size),0) FROM t_resource r JOIN t_resource_dataset_ext ext ON r.id = ext.resource_id "
-                        + "WHERE r.deleted = 0 AND r.resource_type = 'dataset' AND r.created_by = ?",
-                Long.class,
-                userId);
-        long storageMb = bytes != null ? Math.max(0L, bytes / (1024L * 1024L)) : 0L;
-        long activeSessions = sessionTrackerService.getActiveSessionCount(userId);
-        return UserStatsVO.builder()
-                .totalAgents(agents)
-                .totalWorkflows(skills)
-                .totalApiCalls(usage)
-                .storageUsedMb(storageMb)
-                .activeSessions(activeSessions)
-                .period("30d")
-                .build();
-    }
-
     private long countResourceByTypeAndCreator(String type, Long userId) {
-        Long cnt = jdbcTemplate.queryForObject(
+        Long count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM t_resource WHERE deleted = 0 AND resource_type = ? AND created_by = ?",
                 Long.class,
                 type,
                 userId);
-        return cnt == null ? 0L : cnt;
+        return count == null ? 0L : count;
     }
 
     private WorkspaceSettingsVO loadWorkspace(Long userId) {
@@ -445,7 +410,7 @@ public class UserSettingsServiceImpl implements UserSettingsService {
             }
             return vo;
         } catch (JsonProcessingException e) {
-            log.warn("解析工作区 Redis 失败 userId={}, 使用默认", userId, e);
+            log.warn("Failed to parse workspace settings from redis, userId={}", userId, e);
             return defaultWorkspace(userId);
         }
     }
@@ -456,31 +421,60 @@ public class UserSettingsServiceImpl implements UserSettingsService {
             stringRedisTemplate.opsForValue().set(
                     WORKSPACE_KEY_PREFIX + userId, json, WORKSPACE_TTL_DAYS, TimeUnit.DAYS);
         } catch (JsonProcessingException e) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "工作区设置序列化失败");
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "Failed to serialize workspace settings");
         }
     }
 
     private static WorkspaceSettingsVO defaultWorkspace(Long userId) {
-        Map<String, Object> pref = new LinkedHashMap<>();
-        pref.put("userId", userId);
+        Map<String, Object> preferences = new LinkedHashMap<>();
+        preferences.put("userId", userId);
         return WorkspaceSettingsVO.builder()
                 .theme("system")
                 .locale("zh-CN")
                 .layout(new LinkedHashMap<>())
-                .preferences(pref)
+                .preferences(preferences)
                 .build();
     }
 
     private static void assertUserOwnsActivePackage(Long userId, IntegrationPackage pkg) {
         if (pkg == null) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "集成套餐不存在");
+            throw new BusinessException(ResultCode.NOT_FOUND, "Integration package not found");
         }
         if (pkg.getOwnerUserId() == null || !userId.equals(pkg.getOwnerUserId())) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "只能绑定本人创建的集成套餐");
+            throw new BusinessException(ResultCode.FORBIDDEN, "Integration package does not belong to current user");
         }
         if (!"active".equalsIgnoreCase(pkg.getStatus())) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "集成套餐未启用或已停用");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Integration package is not active");
         }
+    }
+
+    private ApiKeyDetailResponse buildApiKeyDetailResponse(ApiKey key) {
+        boolean secretAvailable = StringUtils.hasText(key.getSecretCiphertext());
+        String secretPlain = null;
+        if (secretAvailable) {
+            try {
+                secretPlain = sensitiveDataEncryptor.decrypt(key.getSecretCiphertext());
+            } catch (RuntimeException e) {
+                throw new BusinessException(ResultCode.INTERNAL_ERROR, "Failed to decrypt API key secret");
+            }
+        }
+        return ApiKeyDetailResponse.builder()
+                .id(key.getId())
+                .name(key.getName())
+                .prefix(key.getPrefix())
+                .maskedKey(key.getMaskedKey())
+                .scopes(key.getScopes())
+                .status(key.getStatus())
+                .expiresAt(key.getExpiresAt())
+                .lastUsedAt(key.getLastUsedAt())
+                .callCount(key.getCallCount())
+                .createdBy(key.getCreatedBy())
+                .createdByName(key.getCreatedByName())
+                .createdAt(key.getCreateTime())
+                .integrationPackageId(key.getIntegrationPackageId())
+                .secretPlain(secretPlain)
+                .secretAvailable(secretAvailable)
+                .build();
     }
 
     private static String sha256Hex(String raw) {
@@ -493,7 +487,7 @@ public class UserSettingsServiceImpl implements UserSettingsService {
             }
             return sb.toString();
         } catch (NoSuchAlgorithmException e) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "SHA-256 不可用");
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "SHA-256 is not available");
         }
     }
 }

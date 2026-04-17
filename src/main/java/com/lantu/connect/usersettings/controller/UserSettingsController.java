@@ -8,6 +8,7 @@ import com.lantu.connect.integrationpackage.dto.IntegrationPackageOptionVO;
 import com.lantu.connect.integrationpackage.dto.IntegrationPackageUpsertRequest;
 import com.lantu.connect.integrationpackage.dto.IntegrationPackageVO;
 import com.lantu.connect.usermgmt.dto.ApiKeyCreateRequest;
+import com.lantu.connect.usermgmt.dto.ApiKeyDetailResponse;
 import com.lantu.connect.usermgmt.dto.ApiKeyIntegrationPackagePatchRequest;
 import com.lantu.connect.usermgmt.dto.ApiKeyResponse;
 import com.lantu.connect.usermgmt.entity.ApiKey;
@@ -95,6 +96,12 @@ public class UserSettingsController {
         return R.ok(userSettingsService.createApiKey(userId, request));
     }
 
+    @GetMapping("/api-keys/{id}")
+    public R<ApiKeyDetailResponse> getApiKeyDetail(@RequestHeader("X-User-Id") Long userId,
+                                                   @PathVariable String id) {
+        return R.ok(userSettingsService.getApiKeyDetail(userId, id));
+    }
+
     @DeleteMapping("/api-keys/{id}")
     public ResponseEntity<R<Void>> deleteApiKey(@PathVariable String id) {
         return ResponseEntity.status(HttpStatus.GONE).body(R.fail(ResultCode.API_KEY_DELETE_USE_REVOKE));
@@ -122,14 +129,6 @@ public class UserSettingsController {
                                   HttpServletRequest request) {
         userSettingsService.revokeApiKey(userId, id, body, clientIpResolver.resolve(request));
         return R.ok();
-    }
-
-    @PostMapping("/api-keys/{id}/rotate")
-    public R<ApiKeyResponse> rotateApiKey(@RequestHeader("X-User-Id") Long userId,
-                                           @PathVariable String id,
-                                           @RequestBody ApiKeyRevokeRequest body,
-                                           HttpServletRequest request) {
-        return R.ok(userSettingsService.rotateApiKey(userId, id, body, clientIpResolver.resolve(request)));
     }
 
     @PatchMapping("/api-keys/{id}/integration-package")

@@ -16,6 +16,7 @@ import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.util.ListQueryKeyword;
+import com.lantu.connect.common.util.SensitiveDataEncryptor;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
 import com.lantu.connect.usermgmt.ApiKeyScopes;
@@ -57,6 +58,7 @@ public class UserMgmtServiceImpl implements UserMgmtService {
     private final ApiKeyMapper apiKeyMapper;
     private final UserDisplayNameResolver userDisplayNameResolver;
     private final SystemNotificationFacade systemNotificationFacade;
+    private final SensitiveDataEncryptor sensitiveDataEncryptor;
 
     @Override
     public PageResult<User> listUsers(UserQueryRequest request, Long operatorUserId) {
@@ -319,6 +321,16 @@ public class UserMgmtServiceImpl implements UserMgmtService {
     }
 
     @Override
+    public ApiKeyDetailResponse getApiKeyDetail(String id) {
+        ApiKey key = apiKeyMapper.selectById(id);
+        if (key == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "API Key 不存在");
+        }
+        enrichApiKeyCreatorNames(List.of(key));
+        return buildApiKeyDetailResponse(key);
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public ApiKeyResponse createApiKey(ApiKeyCreateRequest request) {
         String plain = "sk_" + UUID.randomUUID().toString().replace("-", "");
@@ -326,6 +338,7 @@ public class UserMgmtServiceImpl implements UserMgmtService {
         entity.setName(request.getName());
         entity.setScopes(ApiKeyScopes.defaultIfUnspecified(request.getScopes()));
         entity.setKeyHash(sha256Hex(plain));
+        entity.setSecretCiphertext(sensitiveDataEncryptor.encrypt(plain));
         String prefix = plain.length() > 16 ? plain.substring(0, 16) : plain;
         entity.setPrefix(prefix);
         entity.setMaskedKey(prefix.length() > 4 ? prefix.substring(0, 4) + "****" : "****");
@@ -707,6 +720,35 @@ public class UserMgmtServiceImpl implements UserMgmtService {
             orgMenuMapper.updateById(child);
             refreshChildLevels(child.getMenuId(), nextLevel);
         }
+    }
+
+    private ApiKeyDetailResponse buildApiKeyDetailResponse(ApiKey key) {
+        boolean secretAvailable = StringUtils.hasText(key.getSecretCiphertext());
+        String secretPlain = null;
+        if (secretAvailable) {
+            try {
+                secretPlain = sensitiveDataEncryptor.decrypt(key.getSecretCiphertext());
+            } catch (RuntimeException e) {
+                throw new BusinessException(ResultCode.INTERNAL_ERROR, "API Key 解密失败");
+            }
+        }
+        return ApiKeyDetailResponse.builder()
+                .id(key.getId())
+                .name(key.getName())
+                .prefix(key.getPrefix())
+                .maskedKey(key.getMaskedKey())
+                .scopes(key.getScopes())
+                .status(key.getStatus())
+                .expiresAt(key.getExpiresAt())
+                .lastUsedAt(key.getLastUsedAt())
+                .callCount(key.getCallCount())
+                .createdBy(key.getCreatedBy())
+                .createdByName(key.getCreatedByName())
+                .createdAt(key.getCreateTime())
+                .integrationPackageId(key.getIntegrationPackageId())
+                .secretPlain(secretPlain)
+                .secretAvailable(secretAvailable)
+                .build();
     }
 
     private static String sha256Hex(String raw) {

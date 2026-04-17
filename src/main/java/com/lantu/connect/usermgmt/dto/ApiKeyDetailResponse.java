@@ -12,20 +12,21 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ApiKeyResponse {
+public class ApiKeyDetailResponse {
 
     private String id;
-
     private String name;
-
+    private String prefix;
+    private String maskedKey;
     private List<String> scopes;
-
-    private String secretPlain;
-
+    private String status;
     private LocalDateTime expiresAt;
-
-    private Boolean revoked;
-
-    /** 创建响应可能带回；列表接口见 {@link com.lantu.connect.usermgmt.entity.ApiKey#getIntegrationPackageId()} */
+    private LocalDateTime lastUsedAt;
+    private Long callCount;
+    private String createdBy;
+    private String createdByName;
+    private LocalDateTime createdAt;
     private String integrationPackageId;
+    private String secretPlain;
+    private Boolean secretAvailable;
 }

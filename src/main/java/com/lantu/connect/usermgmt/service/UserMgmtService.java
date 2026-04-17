@@ -4,6 +4,7 @@ import com.lantu.connect.auth.entity.PlatformRole;
 import com.lantu.connect.auth.entity.User;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.usermgmt.dto.ApiKeyCreateRequest;
+import com.lantu.connect.usermgmt.dto.ApiKeyDetailResponse;
 import com.lantu.connect.usermgmt.dto.ApiKeyResponse;
 import com.lantu.connect.usermgmt.dto.CreateUserRequest;
 import com.lantu.connect.usermgmt.dto.OrgCreateRequest;
@@ -52,6 +53,8 @@ public interface UserMgmtService {
     void deleteRole(Long id);
 
     List<ApiKey> listApiKeys();
+
+    ApiKeyDetailResponse getApiKeyDetail(String id);
 
     ApiKeyResponse createApiKey(ApiKeyCreateRequest request);
 
