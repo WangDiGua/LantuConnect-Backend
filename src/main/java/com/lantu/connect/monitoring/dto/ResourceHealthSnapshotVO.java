@@ -45,4 +45,7 @@ public class ResourceHealthSnapshotVO {
     private Map<String, Object> lastProbeEvidence;
     private ResourceHealthPolicyVO policy;
     private List<ResourceHealthDependencyVO> dependencies;
+    private List<CallLogEvidenceVO> recentCallLogs;
+    private List<TraceSummaryVO> recentTraces;
+    private List<AlertEvidenceVO> recentAlerts;
 }

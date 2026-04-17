@@ -6,6 +6,7 @@ import com.lantu.connect.audit.entity.AuditItem;
 import com.lantu.connect.audit.mapper.AuditItemMapper;
 import com.lantu.connect.auth.mapper.UserMapper;
 import com.lantu.connect.dashboard.dto.AdminOverviewVO;
+import com.lantu.connect.dashboard.dto.UsageStatsVO;
 import com.lantu.connect.dashboard.dto.AdminRealtimeData;
 import com.lantu.connect.monitoring.mapper.AlertRecordMapper;
 import com.lantu.connect.monitoring.mapper.CallLogMapper;
@@ -23,11 +24,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -88,5 +92,51 @@ class DashboardServiceImplTest {
         AdminRealtimeData realtime = service.adminRealtime();
 
         assertEquals(6L, realtime.getPendingAudits());
+    }
+
+    @Test
+    void usageStatsShouldExposeDepartmentOwnerAndResourceBreakdowns() {
+        when(callLogMapper.selectMaps(any(QueryWrapper.class))).thenReturn(List.of());
+        when(callLogMapper.selectTodayCount()).thenReturn(18L);
+        doReturn(List.of(Map.of("resource_type", "agent", "calls", 12L, "success_calls", 10L)))
+                .when(jdbcTemplate)
+                .queryForList(
+                        argThat((String sql) -> sql.contains("GROUP BY COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown')")),
+                        org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class),
+                        org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class));
+        doReturn(List.of(Map.of("department_key", 1001L, "users", 3L, "calls", 12L)))
+                .when(jdbcTemplate)
+                .queryForList(
+                        argThat((String sql) -> sql.contains("GROUP BY COALESCE(u.school_id, -1)")),
+                        org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class),
+                        org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class));
+        doReturn(List.of(Map.of(
+                "owner_user_id", 7L,
+                "owner_name", "Alice",
+                "calls", 12L,
+                "success_calls", 10L,
+                "resource_count", 2L)))
+                .when(jdbcTemplate)
+                .queryForList(
+                        argThat((String sql) -> sql.contains("LEFT JOIN t_resource r ON r.id = CAST(cl.agent_id AS UNSIGNED)")),
+                        org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class),
+                        org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class));
+        doReturn(List.of(Map.of(
+                "resource_type", "agent",
+                "agent_name", "Agent Alpha",
+                "calls", 12L,
+                "success_calls", 10L)))
+                .when(jdbcTemplate)
+                .queryForList(
+                        argThat((String sql) -> sql.contains("GROUP BY COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown'), agent_name")),
+                        org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class),
+                        org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class));
+
+        UsageStatsVO stats = service.usageStats("7d");
+
+        Map<String, Object> breakdown = stats.getBreakdown();
+        assertTrue(breakdown.containsKey("departmentUsage"));
+        assertTrue(breakdown.containsKey("ownerUsage"));
+        assertTrue(breakdown.containsKey("topResources"));
     }
 }

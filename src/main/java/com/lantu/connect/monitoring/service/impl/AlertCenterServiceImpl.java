@@ -18,6 +18,9 @@ import com.lantu.connect.monitoring.dto.AlertRuleScopeOptionVO;
 import com.lantu.connect.monitoring.dto.AlertRuleScopeResourceOptionVO;
 import com.lantu.connect.monitoring.dto.AlertSilenceRequest;
 import com.lantu.connect.monitoring.dto.AlertSummaryVO;
+import com.lantu.connect.monitoring.dto.CallLogEvidenceVO;
+import com.lantu.connect.monitoring.dto.ResourceHealthEvidenceVO;
+import com.lantu.connect.monitoring.dto.TraceSummaryVO;
 import com.lantu.connect.monitoring.dto.PageQuery;
 import com.lantu.connect.monitoring.entity.AlertRecord;
 import com.lantu.connect.monitoring.entity.AlertRecordAction;
@@ -133,7 +136,13 @@ public class AlertCenterServiceImpl implements AlertCenterService {
     public AlertRecordDetailVO detail(String id) {
         AlertRecord record = requireRecord(id);
         enrichRecords(List.of(record));
-        return toDetail(record);
+        AlertRecordDetailVO detail = toDetail(record);
+        String traceId = resolveTraceId(record);
+        detail.setTraceId(traceId);
+        detail.setTrace(findTraceSummary(traceId));
+        detail.setResourceHealth(findResourceHealthEvidence(record.getResourceId()));
+        detail.setRelatedCallLogs(findRelatedCallLogs(traceId, record.getResourceType(), record.getResourceId()));
+        return detail;
     }
 
     @Override
@@ -549,6 +558,196 @@ public class AlertCenterServiceImpl implements AlertCenterService {
                 .build();
     }
 
+    private String resolveTraceId(AlertRecord record) {
+        if (record == null) {
+            return null;
+        }
+        String traceId = firstText(
+                mapValue(record.getLabels(), "trace_id"),
+                mapValue(record.getLabels(), "traceId"),
+                mapValue(record.getTriggerSnapshotJson(), "trace_id"),
+                mapValue(record.getTriggerSnapshotJson(), "traceId"));
+        return StringUtils.hasText(traceId) ? traceId.trim() : null;
+    }
+
+    private TraceSummaryVO findTraceSummary(String traceId) {
+        if (!StringUtils.hasText(traceId)) {
+            return null;
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT
+                    cl.trace_id AS traceId,
+                    cl.id AS requestId,
+                    COALESCE(root.operation_name, cl.method) AS rootOperation,
+                    COALESCE(root.service_name, 'unified-gateway') AS entryService,
+                    COALESCE(NULLIF(TRIM(cl.resource_type), ''), 'unknown') AS rootResourceType,
+                    CASE WHEN TRIM(IFNULL(cl.agent_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.agent_id AS UNSIGNED) ELSE NULL END AS rootResourceId,
+                    COALESCE(r.resource_code, cl.agent_name, '') AS rootResourceCode,
+                    COALESCE(r.display_name, r.resource_code, cl.agent_name, '') AS rootDisplayName,
+                    CASE
+                        WHEN LOWER(COALESCE(cl.status, 'success')) <> 'success'
+                            OR SUM(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success' THEN 1 ELSE 0 END) > 0
+                        THEN 'error'
+                        ELSE 'success'
+                    END AS status,
+                    COALESCE(root.start_time, cl.create_time) AS startedAt,
+                    GREATEST(COALESCE(root.duration, 0), COALESCE(MAX(ts.duration), 0), COALESCE(cl.latency_ms, 0)) AS durationMs,
+                    COUNT(DISTINCT ts.id) AS spanCount,
+                    SUM(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success' THEN 1 ELSE 0 END) AS errorSpanCount,
+                    COALESCE(
+                        MAX(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success'
+                            THEN COALESCE(
+                                JSON_UNQUOTE(JSON_EXTRACT(ts.tags, '$.errorMessage')),
+                                JSON_UNQUOTE(JSON_EXTRACT(ts.tags, '$.message'))
+                            )
+                        END),
+                        MAX(CASE WHEN LOWER(COALESCE(cl.status, 'success')) <> 'success' THEN cl.error_message END),
+                        ''
+                    ) AS firstErrorMessage,
+                    CASE WHEN TRIM(IFNULL(cl.user_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.user_id AS UNSIGNED) ELSE NULL END AS userId,
+                    cl.ip AS ip
+                FROM t_call_log cl
+                LEFT JOIN t_trace_span root ON root.trace_id = cl.trace_id AND (root.parent_id IS NULL OR TRIM(root.parent_id) = '')
+                LEFT JOIN t_trace_span ts ON ts.trace_id = cl.trace_id
+                LEFT JOIN t_resource r
+                  ON (CASE WHEN TRIM(IFNULL(cl.agent_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.agent_id AS UNSIGNED) ELSE NULL END) = r.id
+                 AND r.deleted = 0
+                WHERE cl.trace_id = ?
+                GROUP BY
+                    cl.trace_id,
+                    cl.id,
+                    root.operation_name,
+                    root.service_name,
+                    root.start_time,
+                    root.duration,
+                    cl.method,
+                    cl.resource_type,
+                    cl.agent_id,
+                    r.resource_code,
+                    r.display_name,
+                    cl.agent_name,
+                    cl.status,
+                    cl.create_time,
+                    cl.latency_ms,
+                    cl.user_id,
+                    cl.ip
+                ORDER BY startedAt DESC
+                LIMIT 1
+                """, traceId.trim());
+        if (rows.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> row = rows.get(0);
+        return TraceSummaryVO.builder()
+                .traceId(text(row.get("traceId")))
+                .requestId(text(row.get("requestId")))
+                .rootOperation(text(row.get("rootOperation")))
+                .entryService(text(row.get("entryService")))
+                .rootResourceType(text(row.get("rootResourceType")))
+                .rootResourceId(parseLong(row.get("rootResourceId")))
+                .rootResourceCode(text(row.get("rootResourceCode")))
+                .rootDisplayName(text(row.get("rootDisplayName")))
+                .status(text(row.get("status")))
+                .startedAt(toDateTime(row.get("startedAt")))
+                .durationMs(intValue(row.get("durationMs")))
+                .spanCount(intValue(row.get("spanCount")))
+                .errorSpanCount(intValue(row.get("errorSpanCount")))
+                .firstErrorMessage(text(row.get("firstErrorMessage")))
+                .userId(parseLong(row.get("userId")))
+                .ip(text(row.get("ip")))
+                .build();
+    }
+
+    private ResourceHealthEvidenceVO findResourceHealthEvidence(Long resourceId) {
+        if (resourceId == null || resourceId <= 0) {
+            return null;
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT
+                    resource_id AS resourceId,
+                    resource_type AS resourceType,
+                    resource_code AS resourceCode,
+                    display_name AS displayName,
+                    health_status AS healthStatus,
+                    current_state AS circuitState,
+                    callability_state AS callabilityState,
+                    callability_reason AS callabilityReason,
+                    last_failure_reason AS lastFailureReason,
+                    last_failure_at AS lastFailureAt
+                FROM t_resource_runtime_policy
+                WHERE resource_id = ?
+                LIMIT 1
+                """, resourceId);
+        if (rows.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> row = rows.get(0);
+        return ResourceHealthEvidenceVO.builder()
+                .resourceId(parseLong(row.get("resourceId")))
+                .resourceType(text(row.get("resourceType")))
+                .resourceCode(text(row.get("resourceCode")))
+                .displayName(text(row.get("displayName")))
+                .healthStatus(text(row.get("healthStatus")))
+                .circuitState(text(row.get("circuitState")))
+                .callabilityState(text(row.get("callabilityState")))
+                .callabilityReason(text(row.get("callabilityReason")))
+                .lastFailureReason(text(row.get("lastFailureReason")))
+                .lastFailureAt(toDateTime(row.get("lastFailureAt")))
+                .build();
+    }
+
+    private List<CallLogEvidenceVO> findRelatedCallLogs(String traceId, String resourceType, Long resourceId) {
+        List<Object> args = new ArrayList<>();
+        StringBuilder sql = new StringBuilder("""
+                SELECT
+                    id,
+                    trace_id AS traceId,
+                    COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown') AS resourceType,
+                    agent_name AS resourceName,
+                    method,
+                    status,
+                    status_code AS statusCode,
+                    latency_ms AS latencyMs,
+                    error_message AS errorMessage,
+                    create_time AS createdAt
+                FROM t_call_log
+                WHERE
+                """);
+        List<String> clauses = new ArrayList<>();
+        if (StringUtils.hasText(traceId)) {
+            clauses.add("trace_id = ?");
+            args.add(traceId.trim());
+        }
+        if (resourceId != null && resourceId > 0) {
+            clauses.add("agent_id = ?");
+            args.add(String.valueOf(resourceId));
+            if (StringUtils.hasText(resourceType)) {
+                clauses.add("(agent_id = ? AND LOWER(COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown')) = ?)");
+                args.add(String.valueOf(resourceId));
+                args.add(resourceType.trim().toLowerCase(Locale.ROOT));
+            }
+        }
+        if (clauses.isEmpty()) {
+            return List.of();
+        }
+        sql.append(String.join(" OR ", clauses));
+        sql.append(" ORDER BY create_time DESC LIMIT 5");
+        return jdbcTemplate.queryForList(sql.toString(), args.toArray()).stream()
+                .map(row -> CallLogEvidenceVO.builder()
+                        .id(text(row.get("id")))
+                        .traceId(text(row.get("traceId")))
+                        .resourceType(text(row.get("resourceType")))
+                        .resourceName(text(row.get("resourceName")))
+                        .method(text(row.get("method")))
+                        .status(text(row.get("status")))
+                        .statusCode(intValue(row.get("statusCode")))
+                        .latencyMs(intValue(row.get("latencyMs")))
+                        .errorMessage(text(row.get("errorMessage")))
+                        .createdAt(toDateTime(row.get("createdAt")))
+                        .build())
+                .toList();
+    }
+
     private List<AlertRecordActionVO> listActionVos(String recordId) {
         List<AlertRecordAction> actions = alertRecordActionMapper.selectList(new LambdaQueryWrapper<AlertRecordAction>()
                 .eq(AlertRecordAction::getRecordId, recordId)
@@ -801,6 +1000,26 @@ public class AlertCenterServiceImpl implements AlertCenterService {
         return value == null ? "" : String.valueOf(value);
     }
 
+    private static String mapValue(Map<String, Object> raw, String key) {
+        if (raw == null || !StringUtils.hasText(key)) {
+            return null;
+        }
+        Object value = raw.get(key);
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private static String firstText(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (StringUtils.hasText(value)) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
     private static int intValue(Object value) {
         if (value instanceof Number number) {
             return number.intValue();
@@ -825,6 +1044,27 @@ public class AlertCenterServiceImpl implements AlertCenterService {
         try {
             return Long.parseLong(String.valueOf(value).trim());
         } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private static LocalDateTime toDateTime(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof LocalDateTime localDateTime) {
+            return localDateTime;
+        }
+        if (value instanceof java.sql.Timestamp timestamp) {
+            return timestamp.toLocalDateTime();
+        }
+        String text = String.valueOf(value).trim();
+        if (!StringUtils.hasText(text)) {
+            return null;
+        }
+        try {
+            return LocalDateTime.parse(text.replace(' ', 'T'));
+        } catch (Exception ex) {
             return null;
         }
     }

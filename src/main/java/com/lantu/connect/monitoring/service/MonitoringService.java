@@ -2,6 +2,7 @@ package com.lantu.connect.monitoring.service;
 
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.monitoring.dto.KpiMetric;
+import com.lantu.connect.monitoring.dto.CallLogDetailVO;
 import com.lantu.connect.monitoring.dto.PageQuery;
 import com.lantu.connect.monitoring.dto.PerformanceAnalysisVO;
 import com.lantu.connect.monitoring.dto.QualityHistoryPointVO;
@@ -41,6 +42,8 @@ public interface MonitoringService {
     List<Map<String, Object>> callSummaryByResource(int windowHours);
 
     PageResult<CallLog> callLogs(PageQuery query);
+
+    CallLogDetailVO callLogDetail(String id);
 
     PageResult<AlertRecord> alerts(PageQuery query);
 

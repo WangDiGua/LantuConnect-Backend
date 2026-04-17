@@ -13,6 +13,7 @@ import com.lantu.connect.gateway.dto.ToolDispatchRouteVO;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
+import com.lantu.connect.monitoring.trace.TraceRecorder;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,9 +26,12 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.RETURNS_SELF;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -38,6 +42,7 @@ class CapabilityV2ServiceImplTest {
     private UnifiedGatewayService unifiedGatewayService;
     private ResourceRegistryService resourceRegistryService;
     private ApiKeyScopeService apiKeyScopeService;
+    private TraceRecorder traceRecorder;
     private CapabilityV2ServiceImpl service;
     private ApiKey apiKey;
 
@@ -47,13 +52,18 @@ class CapabilityV2ServiceImplTest {
         unifiedGatewayService = mock(UnifiedGatewayService.class);
         resourceRegistryService = mock(ResourceRegistryService.class);
         apiKeyScopeService = mock(ApiKeyScopeService.class);
+        traceRecorder = mock(TraceRecorder.class);
         service = new CapabilityV2ServiceImpl(
                 jdbcTemplate,
                 new ObjectMapper(),
                 new CapabilityImportDetector(),
                 unifiedGatewayService,
                 resourceRegistryService,
-                apiKeyScopeService);
+                apiKeyScopeService,
+                traceRecorder);
+        TraceRecorder.TraceSpanScope spanScope = mock(TraceRecorder.TraceSpanScope.class, RETURNS_SELF);
+        when(traceRecorder.normalizeTraceId(anyString())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(traceRecorder.openSpan(anyString(), anyString(), anyString(), anyMap())).thenReturn(spanScope);
         apiKey = new ApiKey();
         apiKey.setId("k-1");
     }

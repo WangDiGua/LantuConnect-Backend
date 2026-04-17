@@ -1,14 +1,15 @@
 package com.lantu.connect.monitoring.service.impl;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.lantu.connect.monitoring.dto.PerformanceAnalysisVO;
+import com.lantu.connect.common.util.UserDisplayNameResolver;
+import com.lantu.connect.monitoring.dto.CallLogDetailVO;
 import com.lantu.connect.monitoring.dto.PageQuery;
+import com.lantu.connect.monitoring.dto.PerformanceAnalysisVO;
 import com.lantu.connect.monitoring.entity.CallLog;
 import com.lantu.connect.monitoring.mapper.AlertRecordMapper;
 import com.lantu.connect.monitoring.mapper.CallLogMapper;
 import com.lantu.connect.monitoring.mapper.TraceSpanMapper;
-import com.lantu.connect.common.util.UserDisplayNameResolver;
-import com.baomidou.mybatisplus.annotation.TableField;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentMatchers;
@@ -19,10 +20,11 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.time.LocalDateTime;
 import java.lang.reflect.Field;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -137,6 +139,8 @@ class MonitoringServiceImplTest {
         assertEquals("HowToCook MCP", result.getResourceLeaderboard().get(0).getResourceName());
         assertEquals(1, result.getSlowMethods().size());
         assertEquals("tools/list", result.getSlowMethods().get(0).getMethod());
+        assertNotNull(result.getCompareSummary());
+        assertEquals(result.getSlowMethods(), result.getMethodLeaderboard());
     }
 
     @Test
@@ -188,6 +192,42 @@ class MonitoringServiceImplTest {
         assertFalse(tableField.exist(), "legacy model field must be excluded from MyBatis SQL");
     }
 
+    @Test
+    void callLogDetailProjectsTraceAlertAndHealthEvidence() {
+        CallLog log = new CallLog();
+        log.setId("log-1");
+        log.setTraceId("trace-1");
+        log.setAgentId("42");
+        log.setAgentName("Agent Alpha");
+        log.setResourceType("agent");
+        log.setUserId("9");
+        log.setMethod("POST /invoke");
+        log.setStatus("error");
+        log.setStatusCode(500);
+        log.setLatencyMs(812);
+        log.setErrorMessage("tool timeout");
+
+        when(callLogMapper.selectById("log-1")).thenReturn(log);
+        when(userDisplayNameResolver.resolveDisplayNames(List.of(9L))).thenReturn(Map.of(9L, "ops-user"));
+        doReturn(List.of(traceDetailRow()))
+                .doReturn(List.of(alertEvidenceRow()))
+                .doReturn(List.of(resourceHealthRow()))
+                .when(jdbcTemplate)
+                .queryForList(anyString(), any(Object[].class));
+
+        CallLogDetailVO detail = monitoringService.callLogDetail("log-1");
+
+        assertEquals("log-1", detail.getLog().getId());
+        assertEquals("ops-user", detail.getLog().getUsername());
+        assertNotNull(detail.getTrace());
+        assertEquals("trace-1", detail.getTrace().getTraceId());
+        assertEquals(1, detail.getRelatedAlerts().size());
+        assertEquals("Alert: tool timeout", detail.getRelatedAlerts().get(0).getMessage());
+        assertNotNull(detail.getResourceHealth());
+        assertEquals("degraded", detail.getResourceHealth().getHealthStatus());
+        assertEquals("dependency_blocked", detail.getResourceHealth().getCallabilityState());
+    }
+
     private static Map<String, Object> sample(LocalDateTime createTime,
                                               String resourceType,
                                               String resourceId,
@@ -203,6 +243,54 @@ class MonitoringServiceImplTest {
         row.put("method", method);
         row.put("status", status);
         row.put("latency_ms", latencyMs);
+        return row;
+    }
+
+    private static Map<String, Object> traceDetailRow() {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("requestId", "req-1");
+        row.put("rootOperation", "gateway.invoke");
+        row.put("entryService", "unified-gateway");
+        row.put("rootResourceType", "agent");
+        row.put("rootResourceId", 42L);
+        row.put("rootResourceCode", "agent.alpha");
+        row.put("rootDisplayName", "Agent Alpha");
+        row.put("status", "error");
+        row.put("startedAt", LocalDateTime.of(2026, 4, 17, 10, 0));
+        row.put("durationMs", 812);
+        row.put("spanCount", 4);
+        row.put("errorSpanCount", 1);
+        row.put("firstErrorMessage", "tool timeout");
+        row.put("userId", 9L);
+        row.put("ip", "127.0.0.1");
+        row.put("traceId", "trace-1");
+        return row;
+    }
+
+    private static Map<String, Object> alertEvidenceRow() {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", "alert-1");
+        row.put("ruleId", "rule-1");
+        row.put("ruleName", "gateway error rate");
+        row.put("severity", "critical");
+        row.put("status", "firing");
+        row.put("message", "Alert: tool timeout");
+        row.put("firedAt", LocalDateTime.of(2026, 4, 17, 10, 1));
+        return row;
+    }
+
+    private static Map<String, Object> resourceHealthRow() {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("resourceId", 42L);
+        row.put("resourceType", "agent");
+        row.put("resourceCode", "agent.alpha");
+        row.put("displayName", "Agent Alpha");
+        row.put("healthStatus", "degraded");
+        row.put("circuitState", "OPEN");
+        row.put("callabilityState", "dependency_blocked");
+        row.put("callabilityReason", "dependency blocked");
+        row.put("lastFailureReason", "tool timeout");
+        row.put("lastFailureAt", LocalDateTime.of(2026, 4, 17, 9, 59));
         return row;
     }
 }

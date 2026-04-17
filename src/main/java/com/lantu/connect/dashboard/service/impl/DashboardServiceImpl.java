@@ -219,6 +219,9 @@ public class DashboardServiceImpl implements DashboardService {
                 .last("LIMIT 10");
         breakdown.put("topPaths", callLogMapper.selectMaps(topPath));
         breakdown.put("callsByResourceType", buildCallsByResourceTypeRows(w.from(), w.toInclusive()));
+        breakdown.put("departmentUsage", buildDepartmentUsageRows(w.from(), w.toInclusive()));
+        breakdown.put("ownerUsage", buildOwnerUsageRows(w.from(), w.toInclusive()));
+        breakdown.put("topResources", buildTopResourceRows(w.from(), w.toInclusive(), 20));
 
         return UsageStatsVO.builder()
                 .aggregates(aggregates)
@@ -328,6 +331,71 @@ public class DashboardServiceImpl implements DashboardService {
         List<Map<String, Object>> out = new ArrayList<>();
         for (Map<String, Object> row : raw) {
             out.add(mapTypeCallsRow(row));
+        }
+        return out;
+    }
+
+    private List<Map<String, Object>> buildDepartmentUsageRows(LocalDateTime from, LocalDateTime toInclusive) {
+        List<Map<String, Object>> raw = jdbcTemplate.queryForList(
+                "SELECT COALESCE(u.school_id, -1) AS department_key, "
+                        + "COUNT(DISTINCT cl.user_id) AS users, COUNT(*) AS calls "
+                        + "FROM t_call_log cl "
+                        + "LEFT JOIN t_user u ON u.user_id = CAST(cl.user_id AS UNSIGNED) AND u.deleted = 0 "
+                        + "WHERE cl.create_time >= ? AND cl.create_time <= ? "
+                        + "GROUP BY COALESCE(u.school_id, -1) ORDER BY calls DESC LIMIT 25",
+                from, toInclusive);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> row : raw) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            Object key = row.get("department_key");
+            long departmentKey = key instanceof Number number ? number.longValue() : -1L;
+            item.put("department", departmentKey < 0 ? "未关联用户院系" : ("院系 ID " + departmentKey));
+            item.put("users", numberToLong(row.get("users")));
+            item.put("calls", numberToLong(row.get("calls")));
+            out.add(item);
+        }
+        return out;
+    }
+
+    private List<Map<String, Object>> buildOwnerUsageRows(LocalDateTime from, LocalDateTime toInclusive) {
+        List<Map<String, Object>> raw = jdbcTemplate.queryForList(
+                "SELECT COALESCE(r.owner_id, 0) AS owner_user_id, "
+                        + "COALESCE(NULLIF(TRIM(r.owner_name), ''), CONCAT('用户 ', COALESCE(r.owner_id, 0))) AS owner_name, "
+                        + "COUNT(*) AS calls, "
+                        + "SUM(CASE WHEN cl.status = 'success' THEN 1 ELSE 0 END) AS success_calls, "
+                        + "COUNT(DISTINCT r.id) AS resource_count "
+                        + "FROM t_call_log cl "
+                        + "LEFT JOIN t_resource r ON r.id = CAST(cl.agent_id AS UNSIGNED) "
+                        + "WHERE cl.create_time >= ? AND cl.create_time <= ? "
+                        + "GROUP BY COALESCE(r.owner_id, 0), COALESCE(NULLIF(TRIM(r.owner_name), ''), CONCAT('用户 ', COALESCE(r.owner_id, 0))) "
+                        + "ORDER BY calls DESC LIMIT 20",
+                from, toInclusive);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> row : raw) {
+            long calls = numberToLong(row.get("calls"));
+            long successCalls = numberToLong(row.get("success_calls"));
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("ownerUserId", numberToLong(row.get("owner_user_id")));
+            item.put("ownerName", row.getOrDefault("owner_name", "--"));
+            item.put("calls", calls);
+            item.put("successRate", calls > 0 ? Math.round(((successCalls * 100.0D) / calls) * 100.0D) / 100.0D : 0D);
+            item.put("resourceCount", numberToLong(row.get("resource_count")));
+            out.add(item);
+        }
+        return out;
+    }
+
+    private List<Map<String, Object>> buildTopResourceRows(LocalDateTime from, LocalDateTime toInclusive, int limit) {
+        List<Map<String, Object>> raw = jdbcTemplate.queryForList(
+                "SELECT COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown') AS resource_type, agent_name, "
+                        + "COUNT(*) AS calls, SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_calls "
+                        + "FROM t_call_log WHERE create_time >= ? AND create_time <= ? "
+                        + "GROUP BY COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown'), agent_name "
+                        + "ORDER BY calls DESC LIMIT " + Math.max(limit, 1),
+                from, toInclusive);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> row : raw) {
+            out.add(mapTopResourceRow(row));
         }
         return out;
     }

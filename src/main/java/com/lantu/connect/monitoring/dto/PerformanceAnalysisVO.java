@@ -16,4 +16,7 @@ public class PerformanceAnalysisVO {
     private List<PerformanceBucketVO> buckets;
     private List<PerformanceResourceLeaderboardVO> resourceLeaderboard;
     private List<PerformanceSlowMethodVO> slowMethods;
+    private String compareWindow;
+    private PerformanceSummaryVO compareSummary;
+    private List<PerformanceSlowMethodVO> methodLeaderboard;
 }

@@ -7,6 +7,7 @@ import com.lantu.connect.gateway.dto.ResourceResolveVO;
 import com.lantu.connect.gateway.protocol.ProtocolInvokeResult;
 import com.lantu.connect.gateway.protocol.ProtocolInvokerRegistry;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
+import com.lantu.connect.monitoring.trace.TraceRecorder;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,8 +22,12 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.RETURNS_SELF;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -35,6 +40,8 @@ class GatewayBindingExpansionServiceTest {
     private ProtocolInvokerRegistry protocolInvokerRegistry;
     @Mock
     private ApiKeyScopeService apiKeyScopeService;
+    @Mock
+    private TraceRecorder traceRecorder;
 
     private GatewayBindingExpansionService service;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -42,7 +49,7 @@ class GatewayBindingExpansionServiceTest {
     @BeforeEach
     void setUp() {
         GatewayInvokeProperties gw = new GatewayInvokeProperties();
-        service = new GatewayBindingExpansionService(jdbcTemplate, objectMapper, protocolInvokerRegistry, apiKeyScopeService, gw);
+        service = new GatewayBindingExpansionService(jdbcTemplate, objectMapper, protocolInvokerRegistry, apiKeyScopeService, gw, traceRecorder);
     }
 
     @Test
@@ -77,6 +84,7 @@ class GatewayBindingExpansionServiceTest {
 
     @Test
     void aggregateMcpTools_mergesToolsFromMcpList() throws Exception {
+        stubTracing();
         ApiKey key = new ApiKey();
         key.setId("key-1");
         ResourceResolveVO resolved = ResourceResolveVO.builder()
@@ -127,7 +135,8 @@ class GatewayBindingExpansionServiceTest {
     void aggregateMcpTools_warnsWhenMaxMcpsTruncates() throws Exception {
         GatewayInvokeProperties gw = new GatewayInvokeProperties();
         gw.getCapabilities().setMaxMcpsPerAggregate(1);
-        service = new GatewayBindingExpansionService(jdbcTemplate, objectMapper, protocolInvokerRegistry, apiKeyScopeService, gw);
+        service = new GatewayBindingExpansionService(jdbcTemplate, objectMapper, protocolInvokerRegistry, apiKeyScopeService, gw, traceRecorder);
+        stubTracing();
         ApiKey key = new ApiKey();
         key.setId("key-1");
         ResourceResolveVO resolved = ResourceResolveVO.builder()
@@ -163,5 +172,11 @@ class GatewayBindingExpansionServiceTest {
         assertThat(vo.getWarnings()).anyMatch(w -> w.contains("maxMcpsPerAggregate"));
         assertThat(vo.getAggregateTruncated()).isTrue();
         assertThat(vo.getOpenAiTools()).hasSize(1);
+    }
+
+    private void stubTracing() {
+        TraceRecorder.TraceSpanScope spanScope = mock(TraceRecorder.TraceSpanScope.class, RETURNS_SELF);
+        when(traceRecorder.normalizeTraceId(nullable(String.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(traceRecorder.openSpan(nullable(String.class), anyString(), anyString(), anyMap())).thenReturn(spanScope);
     }
 }

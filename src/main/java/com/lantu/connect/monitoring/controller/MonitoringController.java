@@ -18,6 +18,7 @@ import com.lantu.connect.monitoring.dto.AlertRuleScopeOptionVO;
 import com.lantu.connect.monitoring.dto.AlertSilenceRequest;
 import com.lantu.connect.monitoring.dto.AlertSummaryVO;
 import com.lantu.connect.monitoring.dto.AlertRuleUpdateRequest;
+import com.lantu.connect.monitoring.dto.CallLogDetailVO;
 import com.lantu.connect.monitoring.dto.KpiMetric;
 import com.lantu.connect.monitoring.dto.PageQuery;
 import com.lantu.connect.monitoring.dto.PerformanceAnalysisVO;
@@ -101,6 +102,12 @@ public class MonitoringController {
     @RequirePermission({"monitor:view"})
     public R<PageResult<CallLog>> callLogs(PageQuery query) {
         return R.ok(monitoringService.callLogs(query));
+    }
+
+    @GetMapping("/call-logs/{id}")
+    @RequirePermission({"monitor:view"})
+    public R<CallLogDetailVO> callLogDetail(@PathVariable String id) {
+        return R.ok(monitoringService.callLogDetail(id));
     }
 
     @GetMapping("/alerts")

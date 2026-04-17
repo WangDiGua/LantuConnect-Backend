@@ -2,9 +2,14 @@ package com.lantu.connect.monitoring.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
+import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
+import com.lantu.connect.monitoring.dto.AlertEvidenceVO;
+import com.lantu.connect.monitoring.dto.CallLogDetailVO;
+import com.lantu.connect.monitoring.dto.ResourceHealthEvidenceVO;
 import com.lantu.connect.monitoring.dto.KpiMetric;
 import com.lantu.connect.monitoring.dto.PageQuery;
 import com.lantu.connect.monitoring.dto.PerformanceAnalysisVO;
@@ -95,12 +100,23 @@ public class MonitoringServiceImpl implements MonitoringService {
         PerformanceWindowSpec spec = PerformanceWindowSpec.from(window);
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime start = spec.windowStart(now);
+        LocalDateTime previousStart = spec.previousWindowStart(now);
         List<PerformanceSample> samples = queryPerformanceSamples(start, resourceType, resourceId);
         List<PerformanceSample> filtered = samples.stream()
                 .filter(sample -> matchesResourceType(sample.resourceType(), resourceType))
                 .filter(sample -> matchesResourceId(sample.resourceId(), resourceId))
                 .toList();
-        return buildPerformanceAnalysis(spec, now, resourceType, resourceId, filtered);
+        List<PerformanceSample> previousSamples = queryPerformanceSamples(previousStart, resourceType, resourceId).stream()
+                .filter(sample -> !sample.createTime().isBefore(previousStart))
+                .filter(sample -> sample.createTime().isBefore(start))
+                .filter(sample -> matchesResourceType(sample.resourceType(), resourceType))
+                .filter(sample -> matchesResourceId(sample.resourceId(), resourceId))
+                .toList();
+        PerformanceAnalysisVO analysis = buildPerformanceAnalysis(spec, now, resourceType, resourceId, filtered);
+        analysis.setCompareWindow("previous_" + spec.code);
+        analysis.setCompareSummary(buildPerformanceSummary(previousSamples));
+        analysis.setMethodLeaderboard(analysis.getSlowMethods());
+        return analysis;
     }
 
     @Override
@@ -150,6 +166,23 @@ public class MonitoringServiceImpl implements MonitoringService {
         Page<CallLog> result = callLogMapper.selectPage(page, q);
         enrichCallLogUserNames(result.getRecords());
         return PageResults.from(result);
+    }
+
+    @Override
+    public CallLogDetailVO callLogDetail(String id) {
+        String normalizedId = StringUtils.hasText(id) ? id.trim() : "";
+        CallLog log = callLogMapper.selectById(normalizedId);
+        if (log == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND);
+        }
+        enrichCallLogUserNames(List.of(log));
+        Long resourceId = parseLong(log.getAgentId());
+        return CallLogDetailVO.builder()
+                .log(log)
+                .trace(findTraceSummary(log.getTraceId()))
+                .relatedAlerts(findAlertEvidence(log.getTraceId(), log.getResourceType(), resourceId))
+                .resourceHealth(findResourceHealthEvidence(resourceId))
+                .build();
     }
 
     @Override
@@ -231,6 +264,8 @@ public class MonitoringServiceImpl implements MonitoringService {
                 .rootCause(rootCause)
                 .spans(spanRows)
                 .callLogs(callLogs)
+                .relatedAlerts(findAlertEvidence(normalizedTraceId, summary == null ? null : summary.getRootResourceType(), summary == null ? null : summary.getRootResourceId()))
+                .resourceHealth(findResourceHealthEvidence(summary == null ? null : summary.getRootResourceId()))
                 .build();
     }
 
@@ -327,6 +362,14 @@ public class MonitoringServiceImpl implements MonitoringService {
                 .resourceLeaderboard(leaderboard)
                 .slowMethods(slowMethods)
                 .build();
+    }
+
+    private PerformanceSummaryVO buildPerformanceSummary(List<PerformanceSample> samples) {
+        StatsAccumulator accumulator = new StatsAccumulator();
+        for (PerformanceSample sample : samples) {
+            accumulator.add(sample.latencyMs(), sample.status());
+        }
+        return accumulator.toSummary();
     }
 
     private List<PerformanceSample> queryPerformanceSamples(LocalDateTime start, String resourceType, Long resourceId) {
@@ -538,6 +581,10 @@ public class MonitoringServiceImpl implements MonitoringService {
         private LocalDateTime windowStart(LocalDateTime now) {
             LocalDateTime currentBucket = bucketStart(now);
             return currentBucket.minusHours((long) hoursPerBucket * (bucketCount - 1));
+        }
+
+        private LocalDateTime previousWindowStart(LocalDateTime now) {
+            return windowStart(now).minusHours((long) bucketCount * hoursPerBucket);
         }
 
         private List<String> expectedBuckets(LocalDateTime now) {
@@ -795,6 +842,114 @@ public class MonitoringServiceImpl implements MonitoringService {
                 Long.class, from, to);
     }
 
+    private TraceSummaryVO findTraceSummary(String traceId) {
+        if (!StringUtils.hasText(traceId)) {
+            return null;
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(buildTraceSummarySql(), traceId.trim());
+        return rows.isEmpty() ? null : mapTraceSummary(rows.get(0));
+    }
+
+    private List<AlertEvidenceVO> findAlertEvidence(String traceId, String resourceType, Long resourceId) {
+        List<Object> args = new ArrayList<>();
+        StringBuilder sql = new StringBuilder("""
+                SELECT
+                    id,
+                    rule_id AS ruleId,
+                    rule_name AS ruleName,
+                    severity,
+                    status,
+                    message,
+                    fired_at AS firedAt
+                FROM t_alert_record
+                WHERE
+                """);
+        List<String> clauses = new ArrayList<>();
+        if (StringUtils.hasText(traceId)) {
+            clauses.add("""
+                    (
+                        JSON_UNQUOTE(JSON_EXTRACT(labels, '$.trace_id')) = ?
+                        OR JSON_UNQUOTE(JSON_EXTRACT(labels, '$.traceId')) = ?
+                        OR JSON_UNQUOTE(JSON_EXTRACT(trigger_snapshot_json, '$.trace_id')) = ?
+                        OR JSON_UNQUOTE(JSON_EXTRACT(trigger_snapshot_json, '$.traceId')) = ?
+                    )
+                    """);
+            String normalizedTraceId = traceId.trim();
+            args.add(normalizedTraceId);
+            args.add(normalizedTraceId);
+            args.add(normalizedTraceId);
+            args.add(normalizedTraceId);
+        }
+        if (resourceId != null && resourceId > 0) {
+            String resourceIdText = String.valueOf(resourceId);
+            if (StringUtils.hasText(resourceType)) {
+                String normalizedType = resourceType.trim().toLowerCase(Locale.ROOT);
+                clauses.add("""
+                        (
+                            (
+                                LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(labels, '$.resource_type')), '')) = ?
+                                OR LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(labels, '$.resourceType')), '')) = ?
+                                OR LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(rule_snapshot_json, '$.scopeResourceType')), '')) = ?
+                            )
+                            AND (
+                                JSON_UNQUOTE(JSON_EXTRACT(labels, '$.resource_id')) = ?
+                                OR JSON_UNQUOTE(JSON_EXTRACT(labels, '$.resourceId')) = ?
+                                OR JSON_UNQUOTE(JSON_EXTRACT(rule_snapshot_json, '$.scopeResourceId')) = ?
+                            )
+                        )
+                        """);
+                args.add(normalizedType);
+                args.add(normalizedType);
+                args.add(normalizedType);
+                args.add(resourceIdText);
+                args.add(resourceIdText);
+                args.add(resourceIdText);
+            } else {
+                clauses.add("""
+                        (
+                            JSON_UNQUOTE(JSON_EXTRACT(labels, '$.resource_id')) = ?
+                            OR JSON_UNQUOTE(JSON_EXTRACT(labels, '$.resourceId')) = ?
+                            OR JSON_UNQUOTE(JSON_EXTRACT(rule_snapshot_json, '$.scopeResourceId')) = ?
+                        )
+                        """);
+                args.add(resourceIdText);
+                args.add(resourceIdText);
+                args.add(resourceIdText);
+            }
+        }
+        if (clauses.isEmpty()) {
+            return List.of();
+        }
+        sql.append(String.join(" OR ", clauses));
+        sql.append(" ORDER BY fired_at DESC LIMIT 5");
+        return jdbcTemplate.queryForList(sql.toString(), args.toArray()).stream()
+                .map(this::mapAlertEvidence)
+                .toList();
+    }
+
+    private ResourceHealthEvidenceVO findResourceHealthEvidence(Long resourceId) {
+        if (resourceId == null || resourceId <= 0) {
+            return null;
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT
+                    resource_id AS resourceId,
+                    resource_type AS resourceType,
+                    resource_code AS resourceCode,
+                    display_name AS displayName,
+                    health_status AS healthStatus,
+                    current_state AS circuitState,
+                    callability_state AS callabilityState,
+                    callability_reason AS callabilityReason,
+                    last_failure_reason AS lastFailureReason,
+                    last_failure_at AS lastFailureAt
+                FROM t_resource_runtime_policy
+                WHERE resource_id = ?
+                LIMIT 1
+                """, resourceId);
+        return rows.isEmpty() ? null : mapResourceHealthEvidence(rows.get(0));
+    }
+
     private String buildTraceListBaseSql(PageQuery query, List<Object> args) {
         StringBuilder sql = new StringBuilder("""
                 SELECT
@@ -896,6 +1051,69 @@ public class MonitoringServiceImpl implements MonitoringService {
         return sql.toString();
     }
 
+    private String buildTraceSummarySql() {
+        return """
+                SELECT
+                    cl.trace_id AS traceId,
+                    cl.id AS requestId,
+                    COALESCE(root.operation_name, cl.method) AS rootOperation,
+                    COALESCE(root.service_name, 'unified-gateway') AS entryService,
+                    COALESCE(NULLIF(TRIM(cl.resource_type), ''), 'unknown') AS rootResourceType,
+                    CASE WHEN TRIM(IFNULL(cl.agent_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.agent_id AS UNSIGNED) ELSE NULL END AS rootResourceId,
+                    COALESCE(r.resource_code, cl.agent_name, '') AS rootResourceCode,
+                    COALESCE(r.display_name, r.resource_code, cl.agent_name, '') AS rootDisplayName,
+                    CASE
+                        WHEN LOWER(COALESCE(cl.status, 'success')) <> 'success'
+                            OR SUM(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success' THEN 1 ELSE 0 END) > 0
+                        THEN 'error'
+                        ELSE 'success'
+                    END AS status,
+                    COALESCE(root.start_time, cl.create_time) AS startedAt,
+                    GREATEST(COALESCE(root.duration, 0), COALESCE(MAX(ts.duration), 0), COALESCE(cl.latency_ms, 0)) AS durationMs,
+                    COUNT(DISTINCT ts.id) AS spanCount,
+                    SUM(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success' THEN 1 ELSE 0 END) AS errorSpanCount,
+                    COALESCE(
+                        MAX(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success'
+                            THEN COALESCE(
+                                JSON_UNQUOTE(JSON_EXTRACT(ts.tags, '$.errorMessage')),
+                                JSON_UNQUOTE(JSON_EXTRACT(ts.tags, '$.message'))
+                            )
+                        END),
+                        MAX(CASE WHEN LOWER(COALESCE(cl.status, 'success')) <> 'success' THEN cl.error_message END),
+                        ''
+                    ) AS firstErrorMessage,
+                    CASE WHEN TRIM(IFNULL(cl.user_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.user_id AS UNSIGNED) ELSE NULL END AS userId,
+                    cl.ip AS ip
+                FROM t_call_log cl
+                LEFT JOIN t_trace_span root ON root.trace_id = cl.trace_id AND (root.parent_id IS NULL OR TRIM(root.parent_id) = '')
+                LEFT JOIN t_trace_span ts ON ts.trace_id = cl.trace_id
+                LEFT JOIN t_resource r
+                  ON (CASE WHEN TRIM(IFNULL(cl.agent_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.agent_id AS UNSIGNED) ELSE NULL END) = r.id
+                 AND r.deleted = 0
+                WHERE cl.trace_id = ?
+                GROUP BY
+                    cl.trace_id,
+                    cl.id,
+                    root.operation_name,
+                    root.service_name,
+                    root.start_time,
+                    root.duration,
+                    cl.method,
+                    cl.resource_type,
+                    cl.agent_id,
+                    r.resource_code,
+                    r.display_name,
+                    cl.agent_name,
+                    cl.status,
+                    cl.create_time,
+                    cl.latency_ms,
+                    cl.user_id,
+                    cl.ip
+                ORDER BY startedAt DESC
+                LIMIT 1
+                """;
+    }
+
     private static void applyTraceResourceTypeFilter(StringBuilder sql, List<Object> args, String resourceType) {
         if (!StringUtils.hasText(resourceType) || "all".equalsIgnoreCase(resourceType.trim())) {
             return;
@@ -962,6 +1180,54 @@ public class MonitoringServiceImpl implements MonitoringService {
                 .firstErrorMessage(rowText(row, "firstErrorMessage", "first_error_message"))
                 .userId(rowLong(row, "userId", "user_id"))
                 .ip(rowText(row, "ip"))
+                .build();
+    }
+
+    private TraceSummaryVO mapTraceSummary(Map<String, Object> row) {
+        return TraceSummaryVO.builder()
+                .traceId(rowText(row, "traceId", "trace_id"))
+                .requestId(rowText(row, "requestId", "request_id"))
+                .rootOperation(rowText(row, "rootOperation", "root_operation"))
+                .entryService(rowText(row, "entryService", "entry_service"))
+                .rootResourceType(rowText(row, "rootResourceType", "root_resource_type"))
+                .rootResourceId(rowLong(row, "rootResourceId", "root_resource_id"))
+                .rootResourceCode(rowText(row, "rootResourceCode", "root_resource_code"))
+                .rootDisplayName(rowText(row, "rootDisplayName", "root_display_name"))
+                .status(normalizeTraceStatus(rowText(row, "status")))
+                .startedAt(rowDateTime(row, "startedAt", "started_at"))
+                .durationMs(rowInt(row, "durationMs", "duration_ms"))
+                .spanCount(rowInt(row, "spanCount", "span_count"))
+                .errorSpanCount(rowInt(row, "errorSpanCount", "error_span_count"))
+                .firstErrorMessage(rowText(row, "firstErrorMessage", "first_error_message"))
+                .userId(rowLong(row, "userId", "user_id"))
+                .ip(rowText(row, "ip"))
+                .build();
+    }
+
+    private AlertEvidenceVO mapAlertEvidence(Map<String, Object> row) {
+        return AlertEvidenceVO.builder()
+                .id(rowText(row, "id"))
+                .ruleId(rowText(row, "ruleId", "rule_id"))
+                .ruleName(rowText(row, "ruleName", "rule_name"))
+                .severity(rowText(row, "severity"))
+                .status(rowText(row, "status"))
+                .message(rowText(row, "message"))
+                .firedAt(rowDateTime(row, "firedAt", "fired_at"))
+                .build();
+    }
+
+    private ResourceHealthEvidenceVO mapResourceHealthEvidence(Map<String, Object> row) {
+        return ResourceHealthEvidenceVO.builder()
+                .resourceId(rowLong(row, "resourceId", "resource_id"))
+                .resourceType(rowText(row, "resourceType", "resource_type"))
+                .resourceCode(rowText(row, "resourceCode", "resource_code"))
+                .displayName(rowText(row, "displayName", "display_name"))
+                .healthStatus(rowText(row, "healthStatus", "health_status"))
+                .circuitState(rowText(row, "circuitState", "circuit_state", "current_state"))
+                .callabilityState(rowText(row, "callabilityState", "callability_state"))
+                .callabilityReason(rowText(row, "callabilityReason", "callability_reason"))
+                .lastFailureReason(rowText(row, "lastFailureReason", "last_failure_reason"))
+                .lastFailureAt(rowDateTime(row, "lastFailureAt", "last_failure_at"))
                 .build();
     }
 

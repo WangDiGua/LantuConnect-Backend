@@ -45,4 +45,8 @@ public class AlertRecordDetailVO {
     private Map<String, Object> ruleSnapshot;
     private List<AlertRecordActionVO> actions;
     private List<AlertNotificationVO> notifications;
+    private String traceId;
+    private TraceSummaryVO trace;
+    private ResourceHealthEvidenceVO resourceHealth;
+    private List<CallLogEvidenceVO> relatedCallLogs;
 }

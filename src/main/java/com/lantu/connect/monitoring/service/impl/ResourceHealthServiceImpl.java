@@ -5,9 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.gateway.service.GatewayBindingExpansionService;
 import com.lantu.connect.monitoring.ResourceCircuitHealthBridge;
 import com.lantu.connect.monitoring.dto.ResourceHealthDependencyVO;
+import com.lantu.connect.monitoring.dto.AlertEvidenceVO;
+import com.lantu.connect.monitoring.dto.CallLogEvidenceVO;
 import com.lantu.connect.monitoring.dto.ResourceHealthPolicyUpdateRequest;
 import com.lantu.connect.monitoring.dto.ResourceHealthPolicyVO;
 import com.lantu.connect.monitoring.dto.ResourceHealthSnapshotVO;
+import com.lantu.connect.monitoring.dto.TraceSummaryVO;
 import com.lantu.connect.monitoring.probe.ResourceProbeEngine;
 import com.lantu.connect.monitoring.probe.ResourceProbeResult;
 import com.lantu.connect.monitoring.probe.ResourceProbeTarget;
@@ -214,7 +217,7 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
     @Override
     public ResourceHealthSnapshotVO getSnapshot(Long resourceId) {
         ResourceRow row = loadResourceRow(resourceId);
-        return row == null ? null : toSnapshot(row);
+        return row == null ? null : toSnapshot(row, true);
     }
 
     @Override
@@ -288,7 +291,8 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
                 ? probeStrategy.trim().toLowerCase(Locale.ROOT)
                 : null;
         for (Long id : ids) {
-            ResourceHealthSnapshotVO snapshot = getSnapshot(id);
+            ResourceRow row = loadResourceRow(id);
+            ResourceHealthSnapshotVO snapshot = row == null ? null : toSnapshot(row, false);
             if (snapshot == null) {
                 continue;
             }
@@ -306,6 +310,10 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
     }
 
     private ResourceHealthSnapshotVO toSnapshot(ResourceRow row) {
+        return toSnapshot(row, true);
+    }
+
+    private ResourceHealthSnapshotVO toSnapshot(ResourceRow row, boolean includeEvidence) {
         String healthStatus = normalizeHealthStatus(row.healthStatus);
         String circuitState = normalizeCircuitState(row.currentState);
         String callabilityState = computeCallabilityState(row, healthStatus, circuitState);
@@ -315,6 +323,9 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
         probeEvidence.put("dependencyCount", row.dependencyCount);
         probeEvidence.put("dependencyReason", row.dependencyReason);
         probeEvidence.put("probeStrategy", row.probeStrategy);
+        List<CallLogEvidenceVO> recentCallLogs = includeEvidence ? recentCallLogs(row.resourceId) : List.of();
+        List<TraceSummaryVO> recentTraces = includeEvidence ? recentTraces(row.resourceId) : List.of();
+        List<AlertEvidenceVO> recentAlerts = includeEvidence ? recentAlerts(row.resourceId, row.resourceType) : List.of();
         return ResourceHealthSnapshotVO.builder()
                 .resourceId(row.resourceId)
                 .resourceType(row.resourceType)
@@ -345,6 +356,9 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
                 .lastProbeEvidence(row.lastProbeEvidence == null ? Map.of() : row.lastProbeEvidence)
                 .policy(toPolicy(row))
                 .dependencies(row.dependencies)
+                .recentCallLogs(recentCallLogs)
+                .recentTraces(recentTraces)
+                .recentAlerts(recentAlerts)
                 .build();
     }
 
@@ -802,6 +816,192 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
         payload.put("probeStrategy", snapshot.getProbeStrategy());
         log.debug("health snapshot changed: {}", payload);
         realtimePushService.getClass();
+    }
+
+    private List<CallLogEvidenceVO> recentCallLogs(Long resourceId) {
+        if (resourceId == null || resourceId <= 0) {
+            return List.of();
+        }
+        return jdbcTemplate.queryForList("""
+                SELECT
+                    id,
+                    trace_id AS traceId,
+                    COALESCE(NULLIF(TRIM(resource_type), ''), 'unknown') AS resourceType,
+                    agent_name AS resourceName,
+                    method,
+                    status,
+                    status_code AS statusCode,
+                    latency_ms AS latencyMs,
+                    error_message AS errorMessage,
+                    create_time AS createdAt
+                FROM t_call_log
+                WHERE agent_id = ?
+                ORDER BY create_time DESC
+                LIMIT 5
+                """, String.valueOf(resourceId)).stream()
+                .map(row -> CallLogEvidenceVO.builder()
+                        .id(str(row.get("id")))
+                        .traceId(str(row.get("traceId")))
+                        .resourceType(str(row.get("resourceType")))
+                        .resourceName(str(row.get("resourceName")))
+                        .method(str(row.get("method")))
+                        .status(str(row.get("status")))
+                        .statusCode(intObject(row.get("statusCode"), 0))
+                        .latencyMs(intObject(row.get("latencyMs"), 0))
+                        .errorMessage(str(row.get("errorMessage")))
+                        .createdAt(toDateTime(row.get("createdAt")))
+                        .build())
+                .toList();
+    }
+
+    private List<TraceSummaryVO> recentTraces(Long resourceId) {
+        if (resourceId == null || resourceId <= 0) {
+            return List.of();
+        }
+        return jdbcTemplate.queryForList("""
+                SELECT
+                    cl.trace_id AS traceId,
+                    cl.id AS requestId,
+                    COALESCE(root.operation_name, cl.method) AS rootOperation,
+                    COALESCE(root.service_name, 'unified-gateway') AS entryService,
+                    COALESCE(NULLIF(TRIM(cl.resource_type), ''), 'unknown') AS rootResourceType,
+                    CASE WHEN TRIM(IFNULL(cl.agent_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.agent_id AS UNSIGNED) ELSE NULL END AS rootResourceId,
+                    COALESCE(r.resource_code, cl.agent_name, '') AS rootResourceCode,
+                    COALESCE(r.display_name, r.resource_code, cl.agent_name, '') AS rootDisplayName,
+                    CASE
+                        WHEN LOWER(COALESCE(cl.status, 'success')) <> 'success'
+                            OR SUM(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success' THEN 1 ELSE 0 END) > 0
+                        THEN 'error'
+                        ELSE 'success'
+                    END AS status,
+                    COALESCE(root.start_time, cl.create_time) AS startedAt,
+                    GREATEST(COALESCE(root.duration, 0), COALESCE(MAX(ts.duration), 0), COALESCE(cl.latency_ms, 0)) AS durationMs,
+                    COUNT(DISTINCT ts.id) AS spanCount,
+                    SUM(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success' THEN 1 ELSE 0 END) AS errorSpanCount,
+                    COALESCE(
+                        MAX(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success'
+                            THEN COALESCE(
+                                JSON_UNQUOTE(JSON_EXTRACT(ts.tags, '$.errorMessage')),
+                                JSON_UNQUOTE(JSON_EXTRACT(ts.tags, '$.message'))
+                            )
+                        END),
+                        MAX(CASE WHEN LOWER(COALESCE(cl.status, 'success')) <> 'success' THEN cl.error_message END),
+                        ''
+                    ) AS firstErrorMessage,
+                    CASE WHEN TRIM(IFNULL(cl.user_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.user_id AS UNSIGNED) ELSE NULL END AS userId,
+                    cl.ip AS ip
+                FROM t_call_log cl
+                LEFT JOIN t_trace_span root ON root.trace_id = cl.trace_id AND (root.parent_id IS NULL OR TRIM(root.parent_id) = '')
+                LEFT JOIN t_trace_span ts ON ts.trace_id = cl.trace_id
+                LEFT JOIN t_resource r
+                  ON (CASE WHEN TRIM(IFNULL(cl.agent_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.agent_id AS UNSIGNED) ELSE NULL END) = r.id
+                 AND r.deleted = 0
+                WHERE cl.agent_id = ?
+                  AND cl.trace_id IS NOT NULL
+                  AND TRIM(cl.trace_id) <> ''
+                GROUP BY
+                    cl.trace_id,
+                    cl.id,
+                    root.operation_name,
+                    root.service_name,
+                    root.start_time,
+                    root.duration,
+                    cl.method,
+                    cl.resource_type,
+                    cl.agent_id,
+                    r.resource_code,
+                    r.display_name,
+                    cl.agent_name,
+                    cl.status,
+                    cl.create_time,
+                    cl.latency_ms,
+                    cl.user_id,
+                    cl.ip
+                ORDER BY startedAt DESC
+                LIMIT 5
+                """, String.valueOf(resourceId)).stream()
+                .map(row -> TraceSummaryVO.builder()
+                        .traceId(str(row.get("traceId")))
+                        .requestId(str(row.get("requestId")))
+                        .rootOperation(str(row.get("rootOperation")))
+                        .entryService(str(row.get("entryService")))
+                        .rootResourceType(str(row.get("rootResourceType")))
+                        .rootResourceId(longObject(row.get("rootResourceId")))
+                        .rootResourceCode(str(row.get("rootResourceCode")))
+                        .rootDisplayName(str(row.get("rootDisplayName")))
+                        .status(str(row.get("status")))
+                        .startedAt(toDateTime(row.get("startedAt")))
+                        .durationMs(intObject(row.get("durationMs"), 0))
+                        .spanCount(intObject(row.get("spanCount"), 0))
+                        .errorSpanCount(intObject(row.get("errorSpanCount"), 0))
+                        .firstErrorMessage(str(row.get("firstErrorMessage")))
+                        .userId(longObject(row.get("userId")))
+                        .ip(str(row.get("ip")))
+                        .build())
+                .toList();
+    }
+
+    private List<AlertEvidenceVO> recentAlerts(Long resourceId, String resourceType) {
+        if (resourceId == null || resourceId <= 0) {
+            return List.of();
+        }
+        List<Object> args = new ArrayList<>();
+        StringBuilder sql = new StringBuilder("""
+                SELECT
+                    id,
+                    rule_id AS ruleId,
+                    rule_name AS ruleName,
+                    severity,
+                    status,
+                    message,
+                    fired_at AS firedAt
+                FROM t_alert_record
+                WHERE
+                """);
+        String resourceIdText = String.valueOf(resourceId);
+        if (StringUtils.hasText(resourceType)) {
+            sql.append("""
+                    (
+                        (
+                            LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(labels, '$.resource_type')), '')) = ?
+                            OR LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(labels, '$.resourceType')), '')) = ?
+                            OR LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(rule_snapshot_json, '$.scopeResourceType')), '')) = ?
+                        )
+                        AND (
+                            JSON_UNQUOTE(JSON_EXTRACT(labels, '$.resource_id')) = ?
+                            OR JSON_UNQUOTE(JSON_EXTRACT(labels, '$.resourceId')) = ?
+                            OR JSON_UNQUOTE(JSON_EXTRACT(rule_snapshot_json, '$.scopeResourceId')) = ?
+                        )
+                    )
+                    """);
+            String normalizedType = resourceType.trim().toLowerCase(Locale.ROOT);
+            args.add(normalizedType);
+            args.add(normalizedType);
+            args.add(normalizedType);
+        } else {
+            sql.append("""
+                    (
+                        JSON_UNQUOTE(JSON_EXTRACT(labels, '$.resource_id')) = ?
+                        OR JSON_UNQUOTE(JSON_EXTRACT(labels, '$.resourceId')) = ?
+                        OR JSON_UNQUOTE(JSON_EXTRACT(rule_snapshot_json, '$.scopeResourceId')) = ?
+                    )
+                    """);
+        }
+        args.add(resourceIdText);
+        args.add(resourceIdText);
+        args.add(resourceIdText);
+        sql.append(" ORDER BY fired_at DESC LIMIT 5");
+        return jdbcTemplate.queryForList(sql.toString(), args.toArray()).stream()
+                .map(row -> AlertEvidenceVO.builder()
+                        .id(str(row.get("id")))
+                        .ruleId(str(row.get("ruleId")))
+                        .ruleName(str(row.get("ruleName")))
+                        .severity(str(row.get("severity")))
+                        .status(str(row.get("status")))
+                        .message(str(row.get("message")))
+                        .firedAt(toDateTime(row.get("firedAt")))
+                        .build())
+                .toList();
     }
 
     private Map<String, Object> queryOne(String sql, Long resourceId) {
