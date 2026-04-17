@@ -18,4 +18,6 @@ public class PageQuery {
     private String ruleId;
     private Boolean onlyMine;
     private Boolean enabled;
+    private String from;
+    private String to;
 }

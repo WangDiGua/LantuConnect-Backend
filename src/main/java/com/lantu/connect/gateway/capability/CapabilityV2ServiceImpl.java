@@ -30,6 +30,7 @@ import com.lantu.connect.gateway.dto.ToolDispatchRouteVO;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
+import com.lantu.connect.monitoring.trace.TraceRecorder;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -60,6 +61,7 @@ public class CapabilityV2ServiceImpl implements CapabilityV2Service {
     private final ResourceRegistryService resourceRegistryService;
     @SuppressWarnings("unused")
     private final ApiKeyScopeService apiKeyScopeService;
+    private final TraceRecorder traceRecorder;
 
     @Override
     public CapabilityImportSuggestionVO detect(CapabilityImportRequest request) {
@@ -224,6 +226,7 @@ public class CapabilityV2ServiceImpl implements CapabilityV2Service {
         Map<String, Object> delegateDef = !nestedMap(spec, "delegate").isEmpty()
                 ? nestedMap(spec, "delegate")
                 : nestedMap(manifest, "delegate");
+        String effectiveTraceId = traceRecorder.normalizeTraceId(traceId);
         if ("delegate_agent".equalsIgnoreCase(runtimeMode) || !delegateDef.isEmpty()) {
             String delegateType = firstText(mapText(delegateDef.get("resourceType")), TYPE_AGENT);
             String delegateId = firstText(mapText(delegateDef.get("resourceId")), null);
@@ -236,7 +239,27 @@ public class CapabilityV2ServiceImpl implements CapabilityV2Service {
             delegate.setVersion(request == null ? null : request.getVersion());
             delegate.setTimeoutSec(request == null || request.getTimeoutSec() == null ? 30 : request.getTimeoutSec());
             delegate.setPayload(enrichSkillDelegatePayload(capabilityId, resolved, request == null ? null : request.getPayload()));
-            InvokeResponse response = unifiedGatewayService.invoke(userId, traceId, ip, delegate, apiKey);
+            TraceRecorder.TraceSpanScope delegateSpan = traceRecorder.openSpan(
+                    effectiveTraceId,
+                    "skill.delegate-agent",
+                    "capability-v2",
+                    Map.of(
+                            "resourceType", TYPE_SKILL,
+                            "resourceId", String.valueOf(capabilityId),
+                            "delegateResourceType", delegateType,
+                            "delegateResourceId", delegateId,
+                            "spanKind", "internal"));
+            InvokeResponse response;
+            try (delegateSpan) {
+                response = unifiedGatewayService.invoke(userId, effectiveTraceId, ip, delegate, apiKey);
+                delegateSpan.tag("statusCode", response.getStatusCode());
+                delegateSpan.tag("requestId", response.getRequestId());
+                if ("success".equalsIgnoreCase(response.getStatus())) {
+                    delegateSpan.success();
+                } else {
+                    delegateSpan.fail(response.getBody());
+                }
+            }
             return CapabilityInvokeResultVO.builder()
                     .capability(fromResolved(resolved))
                     .response(response)
@@ -255,7 +278,7 @@ public class CapabilityV2ServiceImpl implements CapabilityV2Service {
         promptBundle.put("input", copyMap(request == null ? null : request.getPayload()));
         InvokeResponse response = InvokeResponse.builder()
                 .requestId(UUID.randomUUID().toString())
-                .traceId(traceId)
+                .traceId(effectiveTraceId)
                 .resourceType(TYPE_SKILL)
                 .resourceId(String.valueOf(capabilityId))
                 .statusCode(200)

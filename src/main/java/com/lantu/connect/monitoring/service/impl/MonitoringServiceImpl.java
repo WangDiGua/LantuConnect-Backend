@@ -13,6 +13,12 @@ import com.lantu.connect.monitoring.dto.PerformanceResourceLeaderboardVO;
 import com.lantu.connect.monitoring.dto.PerformanceSlowMethodVO;
 import com.lantu.connect.monitoring.dto.PerformanceSummaryVO;
 import com.lantu.connect.monitoring.dto.QualityHistoryPointVO;
+import com.lantu.connect.monitoring.dto.TraceDetailVO;
+import com.lantu.connect.monitoring.dto.TraceListItemVO;
+import com.lantu.connect.monitoring.dto.TraceRootCauseVO;
+import com.lantu.connect.monitoring.dto.TraceSpanLogVO;
+import com.lantu.connect.monitoring.dto.TraceSpanVO;
+import com.lantu.connect.monitoring.dto.TraceSummaryVO;
 import com.lantu.connect.monitoring.entity.AlertRecord;
 import com.lantu.connect.monitoring.entity.CallLog;
 import com.lantu.connect.monitoring.entity.TraceSpan;
@@ -27,6 +33,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -37,6 +44,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.sql.Timestamp;
+import java.util.Locale;
 
 /**
  * 监控Monitoring服务实现
@@ -172,16 +180,58 @@ public class MonitoringServiceImpl implements MonitoringService {
     }
 
     @Override
-    public PageResult<TraceSpan> traces(PageQuery query) {
-        Page<TraceSpan> page = new Page<>(query.getPage(), query.getPageSize());
-        LambdaQueryWrapper<TraceSpan> q = new LambdaQueryWrapper<>();
-        if (StringUtils.hasText(query.getKeyword())) {
-            q.and(w -> w.like(TraceSpan::getTraceId, query.getKeyword())
-                    .or().like(TraceSpan::getOperationName, query.getKeyword()));
+    public PageResult<TraceListItemVO> traces(PageQuery query) {
+        int page = query.getPage() <= 0 ? 1 : query.getPage();
+        int pageSize = query.getPageSize() <= 0 ? 10 : Math.min(100, query.getPageSize());
+        List<Object> baseArgs = new ArrayList<>();
+        String baseSql = buildTraceListBaseSql(query, baseArgs);
+        Long total = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM (" + baseSql + ") trace_page",
+                Long.class,
+                baseArgs.toArray());
+
+        List<Object> pageArgs = new ArrayList<>(baseArgs);
+        pageArgs.add(pageSize);
+        pageArgs.add((page - 1L) * pageSize);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                baseSql + " ORDER BY CASE WHEN status = 'error' THEN 0 ELSE 1 END ASC, startedAt DESC LIMIT ? OFFSET ?",
+                pageArgs.toArray());
+
+        List<TraceListItemVO> list = rows == null
+                ? List.of()
+                : rows.stream().map(this::mapTraceListItem).toList();
+        return PageResult.of(list, total == null ? 0L : total, page, pageSize);
+    }
+
+    @Override
+    public TraceDetailVO traceDetail(String traceId) {
+        String normalizedTraceId = StringUtils.hasText(traceId) ? traceId.trim() : "";
+        List<Map<String, Object>> callLogRows = jdbcTemplate.queryForList(buildTraceDetailCallLogSql(), normalizedTraceId);
+        List<CallLog> callLogs = callLogRows.stream().map(this::mapTraceCallLog).toList();
+
+        LambdaQueryWrapper<TraceSpan> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(TraceSpan::getTraceId, normalizedTraceId)
+                .orderByAsc(TraceSpan::getStartTime)
+                .orderByAsc(TraceSpan::getId);
+        List<TraceSpan> spans = new ArrayList<>(traceSpanMapper.selectList(wrapper));
+        if (spans.isEmpty() && !callLogs.isEmpty()) {
+            spans.add(synthesizeTraceSpanFromCallLog(callLogs.get(0)));
         }
-        q.orderByDesc(TraceSpan::getStartTime);
-        Page<TraceSpan> result = traceSpanMapper.selectPage(page, q);
-        return PageResults.from(result);
+
+        TraceSummaryVO summary = buildTraceSummary(normalizedTraceId, callLogRows, callLogs, spans);
+        TraceRootCauseVO rootCause = buildRootCause(spans, callLogs);
+        List<TraceSpanVO> spanRows = spans.stream()
+                .sorted(Comparator.comparing(TraceSpan::getStartTime, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(TraceSpan::getId, Comparator.nullsLast(String::compareTo)))
+                .map(this::mapTraceSpan)
+                .toList();
+
+        return TraceDetailVO.builder()
+                .summary(summary)
+                .rootCause(rootCause)
+                .spans(spanRows)
+                .callLogs(callLogs)
+                .build();
     }
 
     @Override
@@ -743,5 +793,547 @@ public class MonitoringServiceImpl implements MonitoringService {
         return jdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM t_call_log WHERE status = 'success' AND create_time >= ? AND create_time < ?",
                 Long.class, from, to);
+    }
+
+    private String buildTraceListBaseSql(PageQuery query, List<Object> args) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT
+                    cl.trace_id AS traceId,
+                    cl.id AS requestId,
+                    COALESCE(root.operation_name, cl.method) AS rootOperation,
+                    COALESCE(root.service_name, 'unified-gateway') AS entryService,
+                    COALESCE(NULLIF(TRIM(cl.resource_type), ''), 'unknown') AS rootResourceType,
+                    CASE WHEN TRIM(IFNULL(cl.agent_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.agent_id AS UNSIGNED) ELSE NULL END AS rootResourceId,
+                    COALESCE(r.resource_code, cl.agent_name, '') AS rootResourceCode,
+                    COALESCE(r.display_name, r.resource_code, cl.agent_name, '') AS rootDisplayName,
+                    CASE
+                        WHEN LOWER(COALESCE(cl.status, 'success')) <> 'success'
+                            OR SUM(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success' THEN 1 ELSE 0 END) > 0
+                        THEN 'error'
+                        ELSE 'success'
+                    END AS status,
+                    COALESCE(root.start_time, cl.create_time) AS startedAt,
+                    GREATEST(COALESCE(root.duration, 0), COALESCE(MAX(ts.duration), 0), COALESCE(cl.latency_ms, 0)) AS durationMs,
+                    COUNT(DISTINCT ts.id) AS spanCount,
+                    SUM(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success' THEN 1 ELSE 0 END) AS errorSpanCount,
+                    COALESCE(
+                        MAX(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success'
+                            THEN COALESCE(
+                                JSON_UNQUOTE(JSON_EXTRACT(ts.tags, '$.errorMessage')),
+                                JSON_UNQUOTE(JSON_EXTRACT(ts.tags, '$.message'))
+                            )
+                        END),
+                        MAX(CASE WHEN LOWER(COALESCE(cl.status, 'success')) <> 'success' THEN cl.error_message END),
+                        ''
+                    ) AS firstErrorMessage,
+                    CASE WHEN TRIM(IFNULL(cl.user_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.user_id AS UNSIGNED) ELSE NULL END AS userId,
+                    cl.ip AS ip
+                FROM t_call_log cl
+                LEFT JOIN t_trace_span root ON root.trace_id = cl.trace_id AND (root.parent_id IS NULL OR TRIM(root.parent_id) = '')
+                LEFT JOIN t_trace_span ts ON ts.trace_id = cl.trace_id
+                LEFT JOIN t_resource r
+                  ON (CASE WHEN TRIM(IFNULL(cl.agent_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.agent_id AS UNSIGNED) ELSE NULL END) = r.id
+                 AND r.deleted = 0
+                WHERE cl.trace_id IS NOT NULL
+                  AND TRIM(cl.trace_id) <> ''
+                """);
+
+        if (StringUtils.hasText(query.getKeyword())) {
+            String like = "%" + query.getKeyword().trim() + "%";
+            sql.append("""
+                     AND (
+                        cl.trace_id LIKE ?
+                        OR cl.id LIKE ?
+                        OR COALESCE(r.resource_code, cl.agent_name, '') LIKE ?
+                        OR COALESCE(r.display_name, '') LIKE ?
+                     )
+                    """);
+            args.add(like);
+            args.add(like);
+            args.add(like);
+            args.add(like);
+        }
+        applyTraceResourceTypeFilter(sql, args, query.getResourceType());
+        if (query.getResourceId() != null && query.getResourceId() > 0) {
+            sql.append(" AND cl.agent_id = ? ");
+            args.add(String.valueOf(query.getResourceId()));
+        }
+        LocalDateTime fromTime = parseQueryDateTime(query.getFrom(), false);
+        if (fromTime != null) {
+            sql.append(" AND cl.create_time >= ? ");
+            args.add(fromTime);
+        }
+        LocalDateTime toTime = parseQueryDateTime(query.getTo(), true);
+        if (toTime != null) {
+            sql.append(" AND cl.create_time <= ? ");
+            args.add(toTime);
+        }
+
+        sql.append("""
+                GROUP BY
+                    cl.trace_id,
+                    cl.id,
+                    root.operation_name,
+                    root.service_name,
+                    root.start_time,
+                    root.duration,
+                    cl.method,
+                    cl.resource_type,
+                    cl.agent_id,
+                    r.resource_code,
+                    r.display_name,
+                    cl.agent_name,
+                    cl.status,
+                    cl.create_time,
+                    cl.latency_ms,
+                    cl.user_id,
+                    cl.ip
+                """);
+        String havingClause = buildTraceHavingClause(query.getStatus());
+        if (StringUtils.hasText(havingClause)) {
+            sql.append(" HAVING ").append(havingClause);
+        }
+        return sql.toString();
+    }
+
+    private static void applyTraceResourceTypeFilter(StringBuilder sql, List<Object> args, String resourceType) {
+        if (!StringUtils.hasText(resourceType) || "all".equalsIgnoreCase(resourceType.trim())) {
+            return;
+        }
+        String rt = resourceType.trim().toLowerCase(Locale.ROOT);
+        if ("unknown".equals(rt)) {
+            sql.append(" AND (cl.resource_type IS NULL OR TRIM(cl.resource_type) = '' OR LOWER(TRIM(cl.resource_type)) = 'unknown') ");
+            return;
+        }
+        sql.append(" AND LOWER(TRIM(cl.resource_type)) = ? ");
+        args.add(rt);
+    }
+
+    private static String buildTraceHavingClause(String status) {
+        if (!StringUtils.hasText(status) || "all".equalsIgnoreCase(status.trim())) {
+            return "";
+        }
+        String normalized = status.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "error" -> "status = 'error'";
+            case "success" -> "status = 'success'";
+            case "timeout" -> "LOWER(COALESCE(cl.status, 'success')) = 'timeout'";
+            default -> "";
+        };
+    }
+
+    private static LocalDateTime parseQueryDateTime(String raw, boolean endOfDayIfDateOnly) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        String text = raw.trim();
+        try {
+            return LocalDateTime.parse(text);
+        } catch (DateTimeParseException ignored) {
+            try {
+                return LocalDateTime.parse(text, LEGACY_DATE_TIME_FORMATTER);
+            } catch (DateTimeParseException ignoredAgain) {
+                try {
+                    return endOfDayIfDateOnly
+                            ? java.time.LocalDate.parse(text).atTime(LocalTime.MAX.withNano(0))
+                            : java.time.LocalDate.parse(text).atStartOfDay();
+                } catch (DateTimeParseException ignoredDate) {
+                    return null;
+                }
+            }
+        }
+    }
+
+    private TraceListItemVO mapTraceListItem(Map<String, Object> row) {
+        return TraceListItemVO.builder()
+                .traceId(rowText(row, "traceId", "trace_id"))
+                .requestId(rowText(row, "requestId", "request_id"))
+                .rootOperation(rowText(row, "rootOperation", "root_operation"))
+                .entryService(rowText(row, "entryService", "entry_service"))
+                .rootResourceType(rowText(row, "rootResourceType", "root_resource_type"))
+                .rootResourceId(rowLong(row, "rootResourceId", "root_resource_id"))
+                .rootResourceCode(rowText(row, "rootResourceCode", "root_resource_code"))
+                .rootDisplayName(rowText(row, "rootDisplayName", "root_display_name"))
+                .status(normalizeTraceStatus(rowText(row, "status")))
+                .startedAt(rowDateTime(row, "startedAt", "started_at"))
+                .durationMs(rowInt(row, "durationMs", "duration_ms"))
+                .spanCount(rowInt(row, "spanCount", "span_count"))
+                .errorSpanCount(rowInt(row, "errorSpanCount", "error_span_count"))
+                .firstErrorMessage(rowText(row, "firstErrorMessage", "first_error_message"))
+                .userId(rowLong(row, "userId", "user_id"))
+                .ip(rowText(row, "ip"))
+                .build();
+    }
+
+    private String buildTraceDetailCallLogSql() {
+        return """
+                SELECT
+                    cl.id AS requestId,
+                    cl.trace_id AS traceId,
+                    cl.agent_id AS agentId,
+                    COALESCE(r.resource_code, cl.agent_name, '') AS agentName,
+                    COALESCE(NULLIF(TRIM(cl.resource_type), ''), 'unknown') AS resourceType,
+                    cl.user_id AS userId,
+                    cl.method AS method,
+                    cl.status AS status,
+                    cl.status_code AS statusCode,
+                    cl.latency_ms AS latencyMs,
+                    cl.error_message AS errorMessage,
+                    cl.ip AS ip,
+                    cl.create_time AS createdAt,
+                    COALESCE(r.display_name, r.resource_code, cl.agent_name, '') AS rootDisplayName,
+                    COALESCE(r.resource_code, cl.agent_name, '') AS rootResourceCode,
+                    CASE WHEN TRIM(IFNULL(cl.agent_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.agent_id AS UNSIGNED) ELSE NULL END AS rootResourceId
+                FROM t_call_log cl
+                LEFT JOIN t_resource r
+                  ON (CASE WHEN TRIM(IFNULL(cl.agent_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.agent_id AS UNSIGNED) ELSE NULL END) = r.id
+                 AND r.deleted = 0
+                WHERE cl.trace_id = ?
+                ORDER BY cl.create_time DESC
+                """;
+    }
+
+    private CallLog mapTraceCallLog(Map<String, Object> row) {
+        CallLog log = new CallLog();
+        log.setId(rowText(row, "requestId", "id"));
+        log.setTraceId(rowText(row, "traceId", "trace_id"));
+        log.setAgentId(rowText(row, "agentId", "agent_id"));
+        log.setAgentName(rowText(row, "agentName", "agent_name"));
+        log.setResourceType(rowText(row, "resourceType", "resource_type"));
+        log.setUserId(rowText(row, "userId", "user_id"));
+        log.setMethod(rowText(row, "method"));
+        log.setStatus(normalizeTraceStatus(rowText(row, "status")));
+        log.setStatusCode(rowInt(row, "statusCode", "status_code"));
+        log.setLatencyMs(rowInt(row, "latencyMs", "latency_ms"));
+        log.setErrorMessage(rowText(row, "errorMessage", "error_message"));
+        log.setIp(rowText(row, "ip"));
+        log.setCreateTime(rowDateTime(row, "createdAt", "create_time"));
+        return log;
+    }
+
+    private TraceSummaryVO buildTraceSummary(String traceId,
+                                            List<Map<String, Object>> callLogRows,
+                                            List<CallLog> callLogs,
+                                            List<TraceSpan> spans) {
+        Map<String, Object> primaryRow = callLogRows.isEmpty() ? Map.of() : callLogRows.get(0);
+        TraceSpan rootSpan = findRootSpan(spans);
+        TraceRootCauseVO rootCause = buildRootCause(spans, callLogs);
+        int spanCount = spans.size();
+        int errorSpanCount = (int) spans.stream().filter(MonitoringServiceImpl::isErrorTraceSpan).count();
+        CallLog primaryLog = callLogs.isEmpty() ? null : callLogs.get(0);
+
+        String requestId = firstNonBlank(
+                rowText(primaryRow, "requestId", "request_id"),
+                rootSpan == null ? null : mapValue(rootSpan.getTags(), "requestId"),
+                primaryLog == null ? null : primaryLog.getId());
+        String status = determineTraceStatus(primaryLog, errorSpanCount);
+        Integer durationMs = firstPositive(
+                rootSpan == null ? null : rootSpan.getDuration(),
+                maxSpanDuration(spans),
+                primaryLog == null ? null : primaryLog.getLatencyMs());
+
+        return TraceSummaryVO.builder()
+                .traceId(traceId)
+                .requestId(requestId)
+                .rootOperation(firstNonBlank(
+                        rootSpan == null ? null : rootSpan.getOperationName(),
+                        rowText(primaryRow, "rootOperation", "root_operation"),
+                        primaryLog == null ? null : primaryLog.getMethod()))
+                .entryService(firstNonBlank(
+                        rootSpan == null ? null : rootSpan.getServiceName(),
+                        rowText(primaryRow, "entryService", "entry_service"),
+                        "unified-gateway"))
+                .rootResourceType(firstNonBlank(
+                        rowText(primaryRow, "resourceType", "rootResourceType", "root_resource_type"),
+                        primaryLog == null ? null : primaryLog.getResourceType(),
+                        rootSpan == null ? null : mapValue(rootSpan.getTags(), "resourceType"),
+                        "unknown"))
+                .rootResourceId(firstNonNull(
+                        rowLong(primaryRow, "rootResourceId", "root_resource_id"),
+                        parseLong(primaryLog == null ? null : primaryLog.getAgentId()),
+                        parseLong(rootSpan == null ? null : mapValue(rootSpan.getTags(), "resourceId"))))
+                .rootResourceCode(firstNonBlank(
+                        rowText(primaryRow, "rootResourceCode", "root_resource_code"),
+                        primaryLog == null ? null : primaryLog.getAgentName(),
+                        rootSpan == null ? null : mapValue(rootSpan.getTags(), "resourceCode")))
+                .rootDisplayName(firstNonBlank(
+                        rowText(primaryRow, "rootDisplayName", "root_display_name"),
+                        rowText(primaryRow, "rootResourceCode", "root_resource_code"),
+                        primaryLog == null ? null : primaryLog.getAgentName()))
+                .status(status)
+                .startedAt(firstNonNull(
+                        rootSpan == null ? null : rootSpan.getStartTime(),
+                        rowDateTime(primaryRow, "startedAt", "started_at"),
+                        primaryLog == null ? null : primaryLog.getCreateTime()))
+                .durationMs(durationMs)
+                .spanCount(spanCount)
+                .errorSpanCount(errorSpanCount)
+                .firstErrorMessage(firstNonBlank(
+                        rootCause == null ? null : rootCause.getMessage(),
+                        primaryLog == null ? null : primaryLog.getErrorMessage(),
+                        rowText(primaryRow, "errorMessage", "error_message")))
+                .userId(firstNonNull(
+                        rowLong(primaryRow, "userId", "user_id"),
+                        parseLong(primaryLog == null ? null : primaryLog.getUserId())))
+                .ip(firstNonBlank(
+                        rowText(primaryRow, "ip"),
+                        primaryLog == null ? null : primaryLog.getIp()))
+                .build();
+    }
+
+    private TraceRootCauseVO buildRootCause(List<TraceSpan> spans, List<CallLog> callLogs) {
+        TraceSpan candidate = spans.stream()
+                .filter(MonitoringServiceImpl::isErrorTraceSpan)
+                .max(Comparator.comparing(TraceSpan::getStartTime, Comparator.nullsLast(Comparator.naturalOrder())))
+                .orElse(null);
+        if (candidate != null) {
+            String message = firstNonBlank(
+                    mapValue(candidate.getTags(), "errorMessage"),
+                    mapValue(candidate.getTags(), "message"),
+                    extractFirstTraceLogMessage(candidate.getLogs()));
+            return TraceRootCauseVO.builder()
+                    .spanId(candidate.getId())
+                    .operationName(candidate.getOperationName())
+                    .serviceName(candidate.getServiceName())
+                    .message(firstNonBlank(message, "trace failed"))
+                    .build();
+        }
+
+        CallLog failedLog = callLogs.stream()
+                .filter(item -> !"success".equalsIgnoreCase(item.getStatus()))
+                .findFirst()
+                .orElse(null);
+        if (failedLog == null) {
+            return null;
+        }
+        return TraceRootCauseVO.builder()
+                .spanId(failedLog.getId())
+                .operationName(failedLog.getMethod())
+                .serviceName("unified-gateway")
+                .message(firstNonBlank(failedLog.getErrorMessage(), "trace failed"))
+                .build();
+    }
+
+    private TraceSpan findRootSpan(List<TraceSpan> spans) {
+        return spans.stream()
+                .filter(item -> !StringUtils.hasText(item.getParentId()))
+                .findFirst()
+                .orElse(spans.isEmpty() ? null : spans.get(0));
+    }
+
+    private TraceSpanVO mapTraceSpan(TraceSpan span) {
+        return TraceSpanVO.builder()
+                .id(span.getId())
+                .traceId(span.getTraceId())
+                .parentId(span.getParentId())
+                .operationName(span.getOperationName())
+                .serviceName(span.getServiceName())
+                .startTime(span.getStartTime())
+                .duration(span.getDuration())
+                .status(normalizeTraceStatus(span.getStatus()))
+                .tags(span.getTags() == null ? Map.of() : new LinkedHashMap<>(span.getTags()))
+                .logs(normalizeTraceLogs(span.getLogs()))
+                .build();
+    }
+
+    private static List<TraceSpanLogVO> normalizeTraceLogs(Object raw) {
+        if (!(raw instanceof Iterable<?> iterable)) {
+            return List.of();
+        }
+        List<TraceSpanLogVO> out = new ArrayList<>();
+        for (Object item : iterable) {
+            if (!(item instanceof Map<?, ?> map)) {
+                continue;
+            }
+            Map<String, Object> context = new LinkedHashMap<>();
+            map.forEach((key, value) -> {
+                if (key == null || "timestamp".equals(String.valueOf(key)) || "time".equals(String.valueOf(key)) || "message".equals(String.valueOf(key))) {
+                    return;
+                }
+                context.put(String.valueOf(key), value);
+            });
+            out.add(TraceSpanLogVO.builder()
+                    .timestamp(firstNonBlank(mapValue(map, "timestamp"), mapValue(map, "time")))
+                    .message(firstNonBlank(mapValue(map, "message"), ""))
+                    .context(context.isEmpty() ? Map.of() : context)
+                    .build());
+        }
+        return out;
+    }
+
+    private TraceSpan synthesizeTraceSpanFromCallLog(CallLog log) {
+        TraceSpan span = new TraceSpan();
+        span.setId(log.getId());
+        span.setTraceId(log.getTraceId());
+        span.setOperationName(firstNonBlank(log.getMethod(), "gateway.invoke"));
+        span.setServiceName("unified-gateway");
+        span.setParentId(null);
+        LocalDateTime startTime = log.getCreateTime() == null
+                ? LocalDateTime.now()
+                : log.getCreateTime().minusNanos(Math.max(0L, log.getLatencyMs() == null ? 0 : log.getLatencyMs()) * 1_000_000L);
+        span.setStartTime(startTime);
+        span.setDuration(log.getLatencyMs() == null ? 0 : log.getLatencyMs());
+        span.setStatus(normalizeTraceStatus(log.getStatus()));
+        Map<String, Object> tags = new LinkedHashMap<>();
+        tags.put("requestId", log.getId());
+        tags.put("resourceType", log.getResourceType());
+        tags.put("resourceId", log.getAgentId());
+        tags.put("resourceCode", log.getAgentName());
+        tags.put("method", log.getMethod());
+        tags.put("statusCode", log.getStatusCode());
+        if (StringUtils.hasText(log.getErrorMessage())) {
+            tags.put("errorMessage", log.getErrorMessage());
+        }
+        span.setTags(tags);
+        if (StringUtils.hasText(log.getErrorMessage())) {
+            span.setLogs(List.of(Map.of(
+                    "timestamp", log.getCreateTime() == null ? LocalDateTime.now().toString() : log.getCreateTime().toString(),
+                    "message", log.getErrorMessage()
+            )));
+        } else {
+            span.setLogs(List.of());
+        }
+        return span;
+    }
+
+    private static boolean isErrorTraceSpan(TraceSpan span) {
+        return span != null && !"success".equalsIgnoreCase(normalizeTraceStatus(span.getStatus()));
+    }
+
+    private static String normalizeTraceStatus(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return "success";
+        }
+        String status = raw.trim().toLowerCase(Locale.ROOT);
+        return "success".equals(status) ? "success" : "error";
+    }
+
+    private static String determineTraceStatus(CallLog primaryLog, int errorSpanCount) {
+        if (primaryLog != null && !"success".equalsIgnoreCase(primaryLog.getStatus())) {
+            return "error";
+        }
+        return errorSpanCount > 0 ? "error" : "success";
+    }
+
+    private static Integer maxSpanDuration(List<TraceSpan> spans) {
+        return spans.stream()
+                .map(TraceSpan::getDuration)
+                .filter(Objects::nonNull)
+                .max(Integer::compareTo)
+                .orElse(0);
+    }
+
+    private static String extractFirstTraceLogMessage(Object rawLogs) {
+        if (!(rawLogs instanceof Iterable<?> iterable)) {
+            return null;
+        }
+        for (Object item : iterable) {
+            if (item instanceof Map<?, ?> map) {
+                String message = mapValue(map, "message");
+                if (StringUtils.hasText(message)) {
+                    return message.trim();
+                }
+            }
+        }
+        return null;
+    }
+
+    private static Object rowValue(Map<String, Object> row, String... keys) {
+        if (row == null || row.isEmpty()) {
+            return null;
+        }
+        for (String key : keys) {
+            if (!StringUtils.hasText(key)) {
+                continue;
+            }
+            if (row.containsKey(key)) {
+                return row.get(key);
+            }
+        }
+        return null;
+    }
+
+    private static String rowText(Map<String, Object> row, String... keys) {
+        Object value = rowValue(row, keys);
+        return value == null ? null : String.valueOf(value).trim();
+    }
+
+    private static Integer rowInt(Map<String, Object> row, String... keys) {
+        Object value = rowValue(row, keys);
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number n) {
+            return n.intValue();
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value).trim());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private static Long rowLong(Map<String, Object> row, String... keys) {
+        Object value = rowValue(row, keys);
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number n) {
+            return n.longValue();
+        }
+        try {
+            return Long.parseLong(String.valueOf(value).trim());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private static LocalDateTime rowDateTime(Map<String, Object> row, String... keys) {
+        return parseDateTime(rowValue(row, keys));
+    }
+
+    private static String mapValue(Map<?, ?> map, String key) {
+        if (map == null || !StringUtils.hasText(key)) {
+            return null;
+        }
+        Object value = map.get(key);
+        return value == null ? null : String.valueOf(value).trim();
+    }
+
+    @SafeVarargs
+    private static <T> T firstNonNull(T... values) {
+        if (values == null) {
+            return null;
+        }
+        for (T value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (StringUtils.hasText(value)) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private static Integer firstPositive(Integer... values) {
+        if (values == null) {
+            return 0;
+        }
+        for (Integer value : values) {
+            if (value != null && value > 0) {
+                return value;
+            }
+        }
+        return 0;
     }
 }

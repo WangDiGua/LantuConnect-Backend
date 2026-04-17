@@ -22,10 +22,11 @@ import com.lantu.connect.monitoring.dto.KpiMetric;
 import com.lantu.connect.monitoring.dto.PageQuery;
 import com.lantu.connect.monitoring.dto.PerformanceAnalysisVO;
 import com.lantu.connect.monitoring.dto.QualityHistoryPointVO;
+import com.lantu.connect.monitoring.dto.TraceDetailVO;
+import com.lantu.connect.monitoring.dto.TraceListItemVO;
 import com.lantu.connect.monitoring.entity.AlertRecord;
 import com.lantu.connect.monitoring.entity.AlertRule;
 import com.lantu.connect.monitoring.entity.CallLog;
-import com.lantu.connect.monitoring.entity.TraceSpan;
 import com.lantu.connect.monitoring.service.AlertCenterService;
 import com.lantu.connect.monitoring.service.AlertRuleService;
 import com.lantu.connect.monitoring.service.MonitoringService;
@@ -182,8 +183,14 @@ public class MonitoringController {
 
     @GetMapping("/traces")
     @RequirePermission({"monitor:view"})
-    public R<PageResult<TraceSpan>> traces(PageQuery query) {
+    public R<PageResult<TraceListItemVO>> traces(PageQuery query) {
         return R.ok(monitoringService.traces(query));
+    }
+
+    @GetMapping("/traces/{traceId}")
+    @RequirePermission({"monitor:view"})
+    public R<TraceDetailVO> traceDetail(@PathVariable String traceId) {
+        return R.ok(monitoringService.traceDetail(traceId));
     }
 
     @PostMapping("/alert-rules")

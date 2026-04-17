@@ -12,6 +12,7 @@ import com.lantu.connect.gateway.protocol.ProtocolInvokeContext;
 import com.lantu.connect.gateway.protocol.ProtocolInvokeResult;
 import com.lantu.connect.gateway.protocol.ProtocolInvokerRegistry;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
+import com.lantu.connect.monitoring.trace.TraceRecorder;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,6 +47,7 @@ public class GatewayBindingExpansionService {
     private final ProtocolInvokerRegistry protocolInvokerRegistry;
     private final ApiKeyScopeService apiKeyScopeService;
     private final GatewayInvokeProperties gatewayInvokeProperties;
+    private final TraceRecorder traceRecorder;
     private final ConcurrentHashMap<String, CachedIds> relationCache = new ConcurrentHashMap<>();
 
     public List<Long> listAgentBoundMcpIds(long agentResourceId) {
@@ -81,7 +83,7 @@ public class GatewayBindingExpansionService {
         List<ToolDispatchRouteVO> routes = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
         Set<String> usedFunctionNames = new HashSet<>();
-        String rpcTrace = StringUtils.hasText(traceId) ? traceId.trim() : UUID.randomUUID().toString();
+        String rpcTrace = traceRecorder.normalizeTraceId(traceId);
         boolean aggregateTruncated = false;
         int mcpListSuccessCount = 0;
 
@@ -97,22 +99,34 @@ public class GatewayBindingExpansionService {
                     .build();
         }
 
-        List<Long> effectiveIds = new ArrayList<>();
-        for (Long id : mcpIds) {
-            if (id != null && id > 0) {
-                effectiveIds.add(id);
+        TraceRecorder.TraceSpanScope aggregateSpan = traceRecorder.openSpan(
+                rpcTrace,
+                "binding.aggregate-tools",
+                "gateway-binding-expansion",
+                Map.of("spanKind", "internal"));
+        try (aggregateSpan) {
+            if (entry != null && !entry.isEmpty()) {
+                aggregateSpan.tag("entryResourceType", entry.get("resourceType"));
+                aggregateSpan.tag("entryResourceId", entry.get("resourceId"));
             }
-        }
-        int maxMcps = gatewayInvokeProperties.getCapabilities().getMaxMcpsPerAggregate();
-        if (maxMcps > 0 && effectiveIds.size() > maxMcps) {
-            warnings.add("aggregate truncated: maxMcpsPerAggregate=" + maxMcps + " (remaining MCP ids skipped)");
-            aggregateTruncated = true;
-            effectiveIds = new ArrayList<>(effectiveIds.subList(0, maxMcps));
-        }
-        int maxTools = gatewayInvokeProperties.getCapabilities().getMaxToolsPerResponse();
 
-        mcpLoop:
-        for (Long mcpId : effectiveIds) {
+            List<Long> effectiveIds = new ArrayList<>();
+            for (Long id : mcpIds) {
+                if (id != null && id > 0) {
+                    effectiveIds.add(id);
+                }
+            }
+            int maxMcps = gatewayInvokeProperties.getCapabilities().getMaxMcpsPerAggregate();
+            if (maxMcps > 0 && effectiveIds.size() > maxMcps) {
+                warnings.add("aggregate truncated: maxMcpsPerAggregate=" + maxMcps + " (remaining MCP ids skipped)");
+                aggregateTruncated = true;
+                effectiveIds = new ArrayList<>(effectiveIds.subList(0, maxMcps));
+            }
+            int maxTools = gatewayInvokeProperties.getCapabilities().getMaxToolsPerResponse();
+            aggregateSpan.tag("requestedMcpCount", effectiveIds.size());
+
+            mcpLoop:
+            for (Long mcpId : effectiveIds) {
             try {
                 apiKeyScopeService.ensureInvokeAllowed(apiKey, TYPE_MCP, String.valueOf(mcpId));
             } catch (BusinessException ex) {
@@ -139,6 +153,17 @@ public class GatewayBindingExpansionService {
                 continue;
             }
             try {
+                TraceRecorder.TraceSpanScope toolsListSpan = traceRecorder.openSpan(
+                        null,
+                        "mcp.tools/list",
+                        "gateway-binding-expansion",
+                        Map.of(
+                                "resourceType", TYPE_MCP,
+                                "resourceId", String.valueOf(mcpId),
+                                "protocol", protocol,
+                                "method", "tools/list",
+                                "spanKind", "internal"));
+                try (toolsListSpan) {
                 ProtocolInvokeContext protoCtx = ProtocolInvokeContext.of(apiKey.getId(), mcpId, userId);
                 Map<String, Object> listPayload = new LinkedHashMap<>();
                 listPayload.put("method", "tools/list");
@@ -150,13 +175,16 @@ public class GatewayBindingExpansionService {
                         listPayload,
                         mcpResolved.getSpec(),
                         protoCtx);
+                toolsListSpan.tag("statusCode", resp.statusCode());
                 if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+                    toolsListSpan.fail("tools/list HTTP " + resp.statusCode());
                     warnings.add("mcp " + mcpId + " tools/list HTTP " + resp.statusCode());
                     continue;
                 }
                 JsonNode root = objectMapper.readTree(resp.body() == null ? "{}" : resp.body());
                 JsonNode toolsNode = root.path("result").path("tools");
                 if (!toolsNode.isArray()) {
+                    toolsListSpan.fail("unexpected result.tools");
                     warnings.add("mcp " + mcpId + " tools/list: unexpected result.tools");
                     continue;
                 }
@@ -193,26 +221,32 @@ public class GatewayBindingExpansionService {
                         break mcpLoop;
                     }
                 }
+                toolsListSpan.tag("toolCount", toolsNode.size());
+                toolsListSpan.success();
+                }
             } catch (Exception ex) {
                 warnings.add("mcp " + mcpId + " tools/list failed: " + ex.getMessage());
             }
-        }
+            }
 
-        if (entry != null && !entry.isEmpty()) {
-            log.info("gateway.bindingExpansion aggregate mcpCount={} tools={} warnings={} entryType={} entryId={}",
-                    effectiveIds.size(), openAiTools.size(), warnings.size(),
-                    entry.get("resourceType"), entry.get("resourceId"));
-        }
+            if (entry != null && !entry.isEmpty()) {
+                log.info("gateway.bindingExpansion aggregate mcpCount={} tools={} warnings={} entryType={} entryId={}",
+                        effectiveIds.size(), openAiTools.size(), warnings.size(),
+                        entry.get("resourceType"), entry.get("resourceId"));
+            }
+            aggregateSpan.tag("toolFunctionCount", openAiTools.size());
+            aggregateSpan.success();
 
-        return AggregatedCapabilityToolsVO.builder()
-                .entry(entry)
-                .openAiTools(openAiTools)
-                .routes(routes)
-                .warnings(warnings)
-                .mcpQueriedCount(mcpListSuccessCount)
-                .toolFunctionCount(openAiTools.size())
-                .aggregateTruncated(aggregateTruncated)
-                .build();
+            return AggregatedCapabilityToolsVO.builder()
+                    .entry(entry)
+                    .openAiTools(openAiTools)
+                    .routes(routes)
+                    .warnings(warnings)
+                    .mcpQueriedCount(mcpListSuccessCount)
+                    .toolFunctionCount(openAiTools.size())
+                    .aggregateTruncated(aggregateTruncated)
+                    .build();
+        }
     }
 
     private List<Long> cachedRelationIds(String kind, long resourceId, String sql) {

@@ -36,9 +36,8 @@ import com.lantu.connect.gateway.service.ResourceBindingClosureService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
 import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import com.lantu.connect.monitoring.entity.CallLog;
-import com.lantu.connect.monitoring.entity.TraceSpan;
 import com.lantu.connect.monitoring.mapper.CallLogMapper;
-import com.lantu.connect.monitoring.mapper.TraceSpanMapper;
+import com.lantu.connect.monitoring.trace.TraceRecorder;
 import com.lantu.connect.useractivity.entity.UsageRecord;
 import com.lantu.connect.useractivity.mapper.UsageRecordMapper;
 import com.lantu.connect.usermgmt.entity.ApiKey;
@@ -87,7 +86,6 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
     private final CallLogMapper callLogMapper;
-    private final TraceSpanMapper traceSpanMapper;
     private final UsageRecordMapper usageRecordMapper;
     private final ObjectMapper objectMapper;
     private final ApiKeyScopeService apiKeyScopeService;
@@ -106,6 +104,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private final ResourceBindingClosureService resourceBindingClosureService;
     private final GatewayBindingExpansionService gatewayBindingExpansionService;
     private final GatewayInvokeProperties gatewayInvokeProperties;
+    private final TraceRecorder traceRecorder;
 
     /**
      * 统一资源目录查询：固定从新模型主表检索，再叠加用户权限和 API Key scope 裁剪。
@@ -546,6 +545,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         String reqId = UUID.randomUUID().toString();
         String type = requireType(request.getResourceType());
         Long id = parseId(request.getResourceId());
+        String effectiveTraceId = traceRecorder.normalizeTraceId(traceId);
         if (apiKey == null) {
             if (userId == null) {
                 throw new BusinessException(ResultCode.UNAUTHORIZED, "调用网关需要登录或有效的 X-Api-Key");
@@ -576,27 +576,59 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         String errMsg = null;
         Exception invokeCaught = null;
         GatewayGovernanceService.InvokeGovernanceLease governanceLease = null;
-        try {
+        TraceRecorder.TraceSpanScope gatewaySpan = traceRecorder.openSpan(
+                effectiveTraceId,
+                "gateway.invoke",
+                "unified-gateway",
+                Map.of(
+                        "requestId", reqId,
+                        "resourceType", type,
+                        "resourceId", String.valueOf(id),
+                        "method", "POST /invoke",
+                        "spanKind", "entry"));
+        try (gatewaySpan) {
+            gatewaySpan.tag("resourceCode", resolved.getResourceCode());
+            gatewaySpan.tag("protocol", protocol);
+            try {
             governanceLease = gatewayGovernanceService.applyPreInvoke(userId, apiKey, type, id, 1);
             ProtocolInvokeContext protoCtx = ProtocolInvokeContext.of(apiKey.getId(), id, userId);
             Map<String, Object> payloadForInvoke = request.getPayload();
             if (TYPE_AGENT.equals(type)
                     && gatewayInvokeProperties.getBindingExpansion().isEnabled()
                     && gatewayInvokeProperties.getBindingExpansion().isAgent()) {
-                payloadForInvoke = applyAgentBindingExpansionForInvoke(id, payloadForInvoke, traceId, apiKey, userId);
+                payloadForInvoke = applyAgentBindingExpansionForInvoke(id, payloadForInvoke, effectiveTraceId, apiKey, userId);
             }
-            ProtocolInvokeResult resp = protocolInvokerRegistry.invoke(
-                    protocol,
-                    resolved.getEndpoint(),
-                    timeoutSec,
-                    traceId,
-                    payloadForInvoke,
-                    resolved.getSpec(),
-                    protoCtx);
-            statusCode = resp.statusCode();
-            respBody = resp.body();
-            latencyMs = resp.latencyMs();
-            status = statusCode >= 200 && statusCode < 300 ? "success" : "error";
+            TraceRecorder.TraceSpanScope protocolSpan = traceRecorder.openSpan(
+                    null,
+                    "protocol.invoke",
+                    "protocol-registry",
+                    Map.of(
+                            "resourceType", type,
+                            "resourceId", String.valueOf(id),
+                            "protocol", protocol,
+                            "spanKind", "internal"));
+            try (protocolSpan) {
+                ProtocolInvokeResult resp = protocolInvokerRegistry.invoke(
+                        protocol,
+                        resolved.getEndpoint(),
+                        timeoutSec,
+                        effectiveTraceId,
+                        payloadForInvoke,
+                        resolved.getSpec(),
+                        protoCtx);
+                statusCode = resp.statusCode();
+                respBody = resp.body();
+                latencyMs = resp.latencyMs();
+                status = statusCode >= 200 && statusCode < 300 ? "success" : "error";
+                protocolSpan.tag("statusCode", statusCode);
+                if ("success".equals(status)) {
+                    protocolSpan.success();
+                } else {
+                    protocolSpan.fail(firstNonBlank(
+                            abbreviateForCallLog(resp.body(), 1024),
+                            "upstream status " + statusCode));
+                }
+            }
         } catch (Exception e) {
             invokeCaught = e;
             statusCode = 500;
@@ -610,11 +642,23 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         if (errMsg == null && "error".equals(status) && StringUtils.hasText(respBody)) {
             errMsg = abbreviateForCallLog(respBody, 4000);
         }
+            gatewaySpan.tag("statusCode", statusCode);
+            if (StringUtils.hasText(errMsg)) {
+                gatewaySpan.tag("errorMessage", errMsg);
+            }
+            if ("success".equals(status)) {
+                gatewaySpan.success();
+            } else if (invokeCaught != null) {
+                gatewaySpan.fail(invokeCaught);
+            } else {
+                gatewaySpan.fail(firstNonBlank(errMsg, abbreviateForCallLog(respBody, 1024), "gateway invoke failed"));
+            }
+        }
 
         Boolean circuitOutcome = classifyGatewayInvokeCircuitOutcome(status, statusCode, invokeCaught);
         CallLog log = new CallLog();
         log.setId(reqId);
-        log.setTraceId(traceId);
+        log.setTraceId(effectiveTraceId);
         log.setAgentId(String.valueOf(id));
         log.setAgentName(resolved.getResourceCode());
         log.setResourceType(StringUtils.hasText(type) ? type.trim().toLowerCase() : null);
@@ -626,25 +670,11 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         log.setErrorMessage(errMsg);
         log.setIp(StringUtils.hasText(ip) ? ip : "0.0.0.0");
         log.setCreateTime(LocalDateTime.now());
-        TraceSpan span = new TraceSpan();
-        span.setTraceId(traceId);
-        span.setOperationName("gateway.invoke");
-        span.setServiceName("unified-gateway");
-        span.setStartTime(LocalDateTime.now().minusNanos(Math.max(0L, latencyMs) * 1_000_000L));
-        span.setDuration((int) Math.max(0L, latencyMs));
-        span.setStatus(status);
-        span.setTags(Map.of(
-                "resourceType", type,
-                "resourceId", String.valueOf(id),
-                "statusCode", statusCode,
-                "requestId", reqId
-        ));
         final String finalStatus = status;
         final long finalLatencyMs = latencyMs;
         transactionTemplate.executeWithoutResult(tx -> {
             recordCircuitResult(type, resolved.getResourceCode(), circuitOutcome);
             callLogMapper.insert(log);
-            traceSpanMapper.insert(span);
             UsageRecord usageRecord = buildUsageRecord(userId, type, resolved, request, finalStatus, finalLatencyMs);
             if (usageRecord != null) {
                 usageRecordMapper.insert(usageRecord);
@@ -654,7 +684,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
         logGatewayInvokeOutcome(
                 "POST /invoke",
-                traceId,
+                effectiveTraceId,
                 reqId,
                 type,
                 id,
@@ -669,7 +699,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
         return InvokeResponse.builder()
                 .requestId(reqId)
-                .traceId(traceId)
+                .traceId(effectiveTraceId)
                 .resourceType(type)
                 .resourceId(String.valueOf(id))
                 .statusCode(statusCode)
@@ -699,6 +729,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                     "Skill 为上下文规范资源，请通过目录或 POST /catalog/resolve 获取；invoke-stream 不支持 resourceType=skill。");
         }
         Long id = parseId(request.getResourceId());
+        String effectiveTraceId = traceRecorder.normalizeTraceId(traceId);
         if (apiKey == null) {
             if (userId == null) {
                 throw new BusinessException(ResultCode.UNAUTHORIZED, "调用网关需要登录或有效的 X-Api-Key");
@@ -727,18 +758,44 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         String[] errMsg = {null};
         GatewayGovernanceService.InvokeGovernanceLease governanceLease = null;
         RuntimeException toRethrow = null;
-        try {
+        TraceRecorder.TraceSpanScope gatewaySpan = traceRecorder.openSpan(
+                effectiveTraceId,
+                "gateway.invoke-stream",
+                "unified-gateway",
+                Map.of(
+                        "requestId", reqId,
+                        "resourceType", type,
+                        "resourceId", String.valueOf(id),
+                        "method", "POST /invoke-stream",
+                        "spanKind", "entry"));
+        try (gatewaySpan) {
+            gatewaySpan.tag("resourceCode", resolved.getResourceCode());
+            gatewaySpan.tag("protocol", protocol);
+            try {
             governanceLease = gatewayGovernanceService.applyPreInvoke(userId, apiKey, type, id, 1);
             ProtocolInvokeContext protoCtx = ProtocolInvokeContext.of(apiKey.getId(), id, userId);
             Map<String, Object> payloadForStream = request.getPayload();
-            mcpJsonRpcProtocolInvoker.streamMcpHttpResponseTo(
-                    resolved.getEndpoint(),
-                    timeoutSec,
-                    traceId,
-                    payloadForStream,
-                    resolved.getSpec(),
-                    protoCtx,
-                    responseBody);
+            TraceRecorder.TraceSpanScope protocolSpan = traceRecorder.openSpan(
+                    null,
+                    "protocol.invoke-stream",
+                    "mcp-jsonrpc",
+                    Map.of(
+                            "resourceType", type,
+                            "resourceId", String.valueOf(id),
+                            "protocol", protocol,
+                            "spanKind", "internal"));
+            try (protocolSpan) {
+                mcpJsonRpcProtocolInvoker.streamMcpHttpResponseTo(
+                        resolved.getEndpoint(),
+                        timeoutSec,
+                        effectiveTraceId,
+                        payloadForStream,
+                        resolved.getSpec(),
+                        protoCtx,
+                        responseBody);
+                protocolSpan.tag("statusCode", 200);
+                protocolSpan.success();
+            }
         } catch (BusinessException e) {
             status[0] = "error";
             statusCode[0] = 500;
@@ -752,11 +809,23 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         } finally {
             gatewayGovernanceService.release(governanceLease);
         }
+            gatewaySpan.tag("statusCode", statusCode[0]);
+            if (StringUtils.hasText(errMsg[0])) {
+                gatewaySpan.tag("errorMessage", errMsg[0]);
+            }
+            if ("success".equals(status[0])) {
+                gatewaySpan.success();
+            } else if (toRethrow != null) {
+                gatewaySpan.fail(toRethrow);
+            } else {
+                gatewaySpan.fail(firstNonBlank(errMsg[0], "gateway stream failed"));
+            }
+        }
         long latencyMs = Math.max(0L, (System.nanoTime() - t0) / 1_000_000L);
         Boolean circuitOutcome = classifyGatewayInvokeCircuitOutcome(status[0], statusCode[0], toRethrow);
         CallLog log = new CallLog();
         log.setId(reqId);
-        log.setTraceId(traceId);
+        log.setTraceId(effectiveTraceId);
         log.setAgentId(String.valueOf(id));
         log.setAgentName(resolved.getResourceCode());
         log.setResourceType(StringUtils.hasText(type) ? type.trim().toLowerCase() : null);
@@ -768,25 +837,11 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         log.setErrorMessage(errMsg[0]);
         log.setIp(StringUtils.hasText(ip) ? ip : "0.0.0.0");
         log.setCreateTime(LocalDateTime.now());
-        TraceSpan span = new TraceSpan();
-        span.setTraceId(traceId);
-        span.setOperationName("gateway.invoke-stream");
-        span.setServiceName("unified-gateway");
-        span.setStartTime(LocalDateTime.now().minusNanos(latencyMs * 1_000_000L));
-        span.setDuration((int) latencyMs);
-        span.setStatus(status[0]);
-        span.setTags(Map.of(
-                "resourceType", type,
-                "resourceId", String.valueOf(id),
-                "statusCode", statusCode[0],
-                "requestId", reqId
-        ));
         String finalStatus = status[0];
         long finalLatencyMs = latencyMs;
         transactionTemplate.executeWithoutResult(tx -> {
             recordCircuitResult(type, resolved.getResourceCode(), circuitOutcome);
             callLogMapper.insert(log);
-            traceSpanMapper.insert(span);
             UsageRecord usageRecord = buildUsageRecord(userId, type, resolved, request, finalStatus, finalLatencyMs);
             if (usageRecord != null) {
                 usageRecordMapper.insert(usageRecord);
@@ -796,7 +851,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
         logGatewayInvokeOutcome(
                 "POST /invoke-stream",
-                traceId,
+                effectiveTraceId,
                 reqId,
                 type,
                 id,
@@ -1362,6 +1417,18 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             return defaultProtocol;
         }
         return s;
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (StringUtils.hasText(value)) {
+                return value.trim();
+            }
+        }
+        return null;
     }
 
     private static String normalizeType(String raw) {
@@ -1934,40 +2001,67 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                                                                     String traceId,
                                                                     ApiKey apiKey,
                                                                     Long userId) {
-        List<Long> boundMcps = new ArrayList<>(gatewayBindingExpansionService.listAgentBoundMcpIds(agentResourceId));
-        List<String> skillWarnings = new ArrayList<>();
-        if (gatewayInvokeProperties.getBindingExpansion().isMergeActiveSkillMcps()) {
-            for (Long sid : parseActiveSkillIds(payloadForInvoke)) {
-                try {
-                    ResourceResolveVO sr = getByTypeAndId(TYPE_SKILL, String.valueOf(sid), null, null, apiKey, userId, "invoke");
-                    ensurePublishedForInvoke(sr);
-                    boundMcps.addAll(gatewayBindingExpansionService.listSkillBoundMcpIds(sid));
-                } catch (BusinessException ex) {
-                    skillWarnings.add("activeSkillIds skip " + sid + ": " + ex.getMessage());
-                    log.debug("activeSkillIds skip {}: {}", sid, ex.getMessage());
+        TraceRecorder.TraceSpanScope expansionSpan = traceRecorder.openSpan(
+                traceId,
+                "agent.binding-expansion",
+                "unified-gateway",
+                Map.of(
+                        "resourceType", TYPE_AGENT,
+                        "resourceId", String.valueOf(agentResourceId),
+                        "spanKind", "internal"));
+        try (expansionSpan) {
+            List<Long> boundMcps = new ArrayList<>(gatewayBindingExpansionService.listAgentBoundMcpIds(agentResourceId));
+            List<String> skillWarnings = new ArrayList<>();
+            if (gatewayInvokeProperties.getBindingExpansion().isMergeActiveSkillMcps()) {
+                for (Long sid : parseActiveSkillIds(payloadForInvoke)) {
+                    TraceRecorder.TraceSpanScope skillSpan = traceRecorder.openSpan(
+                            null,
+                            "skill.binding-resolution",
+                            "unified-gateway",
+                            Map.of(
+                                    "resourceType", TYPE_SKILL,
+                                    "resourceId", String.valueOf(sid),
+                                    "spanKind", "internal"));
+                    try (skillSpan) {
+                        ResourceResolveVO sr = getByTypeAndId(TYPE_SKILL, String.valueOf(sid), null, null, apiKey, userId, "invoke");
+                        ensurePublishedForInvoke(sr);
+                        boundMcps.addAll(gatewayBindingExpansionService.listSkillBoundMcpIds(sid));
+                        skillSpan.success();
+                    } catch (BusinessException ex) {
+                        skillWarnings.add("activeSkillIds skip " + sid + ": " + ex.getMessage());
+                        log.debug("activeSkillIds skip {}: {}", sid, ex.getMessage());
+                        skillSpan.fail(ex);
+                    }
                 }
             }
-        }
-        List<Long> merged = dedupeMcpIdsPreserveOrder(boundMcps);
-        if (merged.isEmpty()) {
-            return payloadForInvoke;
-        }
-        Map<String, String> entry = Map.of("resourceType", TYPE_AGENT, "resourceId", String.valueOf(agentResourceId));
-        AggregatedCapabilityToolsVO agg = gatewayBindingExpansionService.aggregateMcpTools(
-                merged,
-                entry,
-                userId,
-                traceId,
-                apiKey,
-                mid -> getByTypeAndId(TYPE_MCP, String.valueOf(mid), null, null, apiKey, userId, "invoke"));
-        if (!skillWarnings.isEmpty()) {
-            List<String> w = new ArrayList<>(skillWarnings);
-            if (agg.getWarnings() != null) {
-                w.addAll(agg.getWarnings());
+            List<Long> merged = dedupeMcpIdsPreserveOrder(boundMcps);
+            expansionSpan.tag("candidateMcpCount", merged.size());
+            if (merged.isEmpty()) {
+                expansionSpan.success();
+                return payloadForInvoke;
             }
-            agg = agg.toBuilder().warnings(w).build();
+            Map<String, String> entry = Map.of("resourceType", TYPE_AGENT, "resourceId", String.valueOf(agentResourceId));
+            AggregatedCapabilityToolsVO agg = gatewayBindingExpansionService.aggregateMcpTools(
+                    merged,
+                    entry,
+                    userId,
+                    traceId,
+                    apiKey,
+                    mid -> getByTypeAndId(TYPE_MCP, String.valueOf(mid), null, null, apiKey, userId, "invoke"));
+            if (!skillWarnings.isEmpty()) {
+                List<String> w = new ArrayList<>(skillWarnings);
+                if (agg.getWarnings() != null) {
+                    w.addAll(agg.getWarnings());
+                }
+                agg = agg.toBuilder().warnings(w).build();
+            }
+            expansionSpan.tag("toolFunctionCount", agg.getToolFunctionCount());
+            expansionSpan.success();
+            return mergeBindingExpansionIntoPayload(payloadForInvoke, agg);
+        } catch (RuntimeException ex) {
+            expansionSpan.fail(ex);
+            throw ex;
         }
-        return mergeBindingExpansionIntoPayload(payloadForInvoke, agg);
     }
 
     private static List<Long> dedupeMcpIdsPreserveOrder(List<Long> boundMcps) {
