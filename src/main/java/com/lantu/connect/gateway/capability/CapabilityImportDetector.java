@@ -41,7 +41,10 @@ public class CapabilityImportDetector {
         try {
             JsonNode root = objectMapper.readTree(source);
             if (root.has("mcpServers") || root.has("jsonrpc") || root.has("transport") || root.has("command")) {
-                return buildSuggestion("mcp", "high", "识别到 MCP/JSON-RPC 配置特征", source, request, List.of());
+                List<String> warnings = root.has("command")
+                        ? List.of("检测到 command/stdio 配置；平台注册只接受远程可调用的 MCP，请先暴露为 http(s)/ws(s) 地址。")
+                        : List.of();
+                return buildSuggestion("mcp", "high", "识别到 MCP/JSON-RPC 配置特征", source, request, warnings);
             }
             if (root.has("anthropic_version") || root.has("messages")) {
                 return buildSuggestion("agent", "high", "识别到 Anthropic Messages 请求体特征", source, request, List.of());
@@ -76,7 +79,13 @@ public class CapabilityImportDetector {
         if (normalized.contains("dashscope") || normalized.contains("bailian")) {
             return buildSuggestion("agent", "high", "识别到百炼兼容地址", source, request, List.of());
         }
-        if (normalized.contains("openai.com") || normalized.contains("/v1/responses") || normalized.contains("/chat/completions")) {
+        if (normalized.contains("api.deepseek.com")
+                || normalized.contains("openrouter.ai")
+                || normalized.contains("ollama")
+                || normalized.contains("11434")
+                || normalized.contains("openai.com")
+                || normalized.contains("/v1/responses")
+                || normalized.contains("/chat/completions")) {
             return buildSuggestion("agent", "high", "识别到 OpenAI Compatible 地址", source, request, List.of());
         }
         if (normalized.contains("/mcp") || normalized.contains("sse")) {
@@ -149,17 +158,33 @@ public class CapabilityImportDetector {
             return capabilities;
         }
         String normalized = source == null ? "" : source.trim().toLowerCase(Locale.ROOT);
+        capabilities.put("agentType", "http_api");
+        capabilities.put("mode", "SUBAGENT");
         if (normalized.contains("anthropic.com") || normalized.contains("/v1/messages")) {
             capabilities.put("registrationProtocol", "anthropic_messages");
+            capabilities.put("providerPreset", "anthropic");
         } else if (normalized.contains("generativelanguage.googleapis.com") || normalized.contains(":generatecontent")) {
             capabilities.put("registrationProtocol", "gemini_generatecontent");
+            capabilities.put("providerPreset", "gemini");
         } else if (normalized.contains("dashscope") || normalized.contains("bailian")) {
             capabilities.put("registrationProtocol", "bailian_compatible");
+            capabilities.put("providerPreset", "bailian");
+        } else if (normalized.contains("api.deepseek.com") || normalized.contains("deepseek")) {
+            capabilities.put("registrationProtocol", "openai_compatible");
+            capabilities.put("providerPreset", "deepseek");
+        } else if (normalized.contains("openrouter.ai")) {
+            capabilities.put("registrationProtocol", "openai_compatible");
+            capabilities.put("providerPreset", "openrouter");
+        } else if (normalized.contains("ollama") || normalized.contains("11434")) {
+            capabilities.put("registrationProtocol", "openai_compatible");
+            capabilities.put("providerPreset", "ollama");
+        } else if (normalized.contains("openai.com")) {
+            capabilities.put("registrationProtocol", "openai_compatible");
+            capabilities.put("providerPreset", "openai");
         } else {
             capabilities.put("registrationProtocol", "openai_compatible");
+            capabilities.put("providerPreset", "other_openai");
         }
-        capabilities.put("agentType", "http_api");
-        capabilities.put("mode", "TOOL");
         return capabilities;
     }
 

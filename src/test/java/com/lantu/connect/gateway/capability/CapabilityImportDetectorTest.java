@@ -38,6 +38,18 @@ class CapabilityImportDetectorTest {
     }
 
     @Test
+    void shouldExposeDeepSeekAsOpenAiFamilyProviderPreset() {
+        CapabilityImportRequest request = new CapabilityImportRequest();
+        request.setSource("https://api.deepseek.com/v1/chat/completions");
+
+        CapabilityImportSuggestionVO suggestion = detector.detect(request);
+
+        assertEquals("agent", suggestion.getDetectedType());
+        assertEquals("openai_compatible", suggestion.getCapabilities().get("registrationProtocol"));
+        assertEquals("deepseek", suggestion.getCapabilities().get("providerPreset"));
+    }
+
+    @Test
     void shouldDetectPromptSkillFromPlainText() {
         CapabilityImportRequest request = new CapabilityImportRequest();
         request.setSource("""

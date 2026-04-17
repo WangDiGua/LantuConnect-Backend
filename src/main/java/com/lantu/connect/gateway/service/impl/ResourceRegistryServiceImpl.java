@@ -1957,7 +1957,14 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         }
         switch (type) {
             case "agent" -> {
-                requireText(request.getAgentType(), "agentType 不能为空");
+                if (!StringUtils.hasText(request.getAgentType())) {
+                    request.setAgentType("http_api");
+                } else {
+                    request.setAgentType(request.getAgentType().trim());
+                }
+                if (!StringUtils.hasText(request.getMode())) {
+                    request.setMode("SUBAGENT");
+                }
                 if (request.getSpec() == null) {
                     throw new BusinessException(ResultCode.PARAM_ERROR, "agent spec 不能为 null（可传 {}）");
                 }
@@ -2008,13 +2015,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 Map<String, Object> ac = request.getAuthConfig() == null ? Map.of() : request.getAuthConfig();
                 String transport = stringValue(ac.get("transport"));
                 if ("stdio".equalsIgnoreCase(transport)) {
-                    requireText(request.getEndpoint(), "stdio MCP 须将本机边车 HTTP(S) 地址填入 endpoint");
-                    if (!isHttpOrHttpsUrl(request.getEndpoint().trim())) {
-                        throw new BusinessException(ResultCode.PARAM_ERROR, "stdio 边车 endpoint 须为 http(s) URL");
-                    }
-                } else {
-                    requireText(request.getEndpoint(), "endpoint 不能为空");
+                    throw new BusinessException(ResultCode.PARAM_ERROR, "MCP 注册不再支持 stdio，请先将服务暴露为 http(s)/ws(s) 地址");
                 }
+                requireText(request.getEndpoint(), "endpoint 不能为空");
                 String protocol = defaultString(request.getProtocol(), "mcp");
                 if (!protocolInvokerRegistry.isSupported(protocol)) {
                     throw new BusinessException(ResultCode.PARAM_ERROR, "MCP 协议不可调用: " + protocol);
