@@ -227,7 +227,8 @@ public class MonitoringServiceImpl implements MonitoringService {
         pageArgs.add(pageSize);
         pageArgs.add((page - 1L) * pageSize);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                baseSql + " ORDER BY CASE WHEN status = 'error' THEN 0 ELSE 1 END ASC, startedAt DESC LIMIT ? OFFSET ?",
+                "SELECT * FROM (" + baseSql + ") trace_page "
+                        + "ORDER BY CASE WHEN trace_page.status = 'error' THEN 0 ELSE 1 END ASC, trace_page.startedAt DESC LIMIT ? OFFSET ?",
                 pageArgs.toArray());
 
         List<TraceListItemVO> list = rows == null

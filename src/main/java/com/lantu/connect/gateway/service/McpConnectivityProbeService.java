@@ -6,6 +6,7 @@ import com.lantu.connect.gateway.dto.McpConnectivityProbeRequest;
 import com.lantu.connect.gateway.dto.McpConnectivityProbeResult;
 import com.lantu.connect.gateway.protocol.McpJsonRpcProtocolInvoker;
 import com.lantu.connect.gateway.protocol.McpOutboundHeaderBuilder;
+import com.lantu.connect.gateway.protocol.ProtocolInvokeContext;
 import com.lantu.connect.gateway.protocol.ProtocolInvokeResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,10 @@ public class McpConnectivityProbeService {
     private final McpJsonRpcProtocolInvoker mcpJsonRpcProtocolInvoker;
 
     public McpConnectivityProbeResult probe(McpConnectivityProbeRequest request) {
+        return probe(request, null);
+    }
+
+    public McpConnectivityProbeResult probe(McpConnectivityProbeRequest request, ProtocolInvokeContext ctx) {
         String endpoint = request.getEndpoint() == null ? "" : request.getEndpoint().trim();
         if (!StringUtils.hasText(endpoint)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "endpoint 不能为空");
@@ -60,7 +65,7 @@ public class McpConnectivityProbeService {
         String traceId = "probe-" + UUID.randomUUID();
         try {
             ProtocolInvokeResult r = mcpJsonRpcProtocolInvoker.invoke(
-                    endpoint, PROBE_TIMEOUT_SEC, traceId, payload, spec, null);
+                    endpoint, PROBE_TIMEOUT_SEC, traceId, payload, spec, ctx);
             return toResult(r);
         } catch (BusinessException ex) {
             return McpConnectivityProbeResult.builder()

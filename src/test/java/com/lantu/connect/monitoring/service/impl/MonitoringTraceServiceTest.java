@@ -76,6 +76,27 @@ class MonitoringTraceServiceTest {
     }
 
     @Test
+    void tracesWrapsPagedSqlBeforeOrderingByComputedAliases() {
+        PageQuery query = new PageQuery();
+        query.setPage(1);
+        query.setPageSize(20);
+
+        doReturn(0L)
+                .when(jdbcTemplate)
+                .queryForObject(anyString(), eq(Long.class), any(Object[].class));
+        doReturn(List.of())
+                .when(jdbcTemplate)
+                .queryForList(anyString(), any(Object[].class));
+
+        monitoringService.traces(query);
+
+        org.mockito.Mockito.verify(jdbcTemplate).queryForList(
+                org.mockito.ArgumentMatchers.argThat((String sql) -> sql.contains("SELECT * FROM (")
+                        && sql.contains(") trace_page ORDER BY CASE WHEN trace_page.status = 'error' THEN 0 ELSE 1 END ASC, trace_page.startedAt DESC")),
+                any(Object[].class));
+    }
+
+    @Test
     void traceDetailBuildsSummaryRootCauseAndOrderedSpans() {
         doReturn(List.of(traceDetailRow()))
                 .when(jdbcTemplate)

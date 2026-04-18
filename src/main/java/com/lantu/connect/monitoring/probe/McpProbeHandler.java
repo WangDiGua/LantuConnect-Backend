@@ -50,7 +50,8 @@ public class McpProbeHandler implements ResourceProbeHandler {
         if (StringUtils.hasText(transport)) {
             initRequest.setTransport(transport);
         }
-        McpConnectivityProbeResult initialize = mcpConnectivityProbeService.probe(initRequest);
+        ProtocolInvokeContext protoCtx = ProtocolInvokeContext.of(probeSessionKey(target), target.resourceId(), null);
+        McpConnectivityProbeResult initialize = mcpConnectivityProbeService.probe(initRequest, protoCtx);
         long latencyMs = Math.max(0L, initialize.getLatencyMs());
         if (!initialize.isOk()) {
             String failureReason = initialize.getMessage() == null ? "mcp initialize failed" : initialize.getMessage();
@@ -71,6 +72,7 @@ public class McpProbeHandler implements ResourceProbeHandler {
             spec.put("transport", transport);
         }
         try {
+            sendInitializedNotification(target, spec, protoCtx);
             ProtocolInvokeResult toolsList = protocolInvokerRegistry.invoke(
                     "mcp",
                     target.endpoint(),
@@ -78,7 +80,7 @@ public class McpProbeHandler implements ResourceProbeHandler {
                     "health-" + UUID.randomUUID(),
                     Map.of("method", "tools/list"),
                     spec,
-                    ProtocolInvokeContext.of(null, target.resourceId(), null));
+                    protoCtx);
             JsonNode root = objectMapper.readTree(toolsList.body() == null ? "{}" : toolsList.body());
             JsonNode tools = root.path("result").path("tools");
             int toolCount = tools.isArray() ? tools.size() : 0;
@@ -119,8 +121,37 @@ public class McpProbeHandler implements ResourceProbeHandler {
         }
     }
 
+    /**
+     * MCP initialize 成功后补发 initialized 通知，避免部分上游在进入 steady state 前拒绝 tools/list。
+     * 该通知采用 best-effort：即使上游返回 202/空体或其他非致命响应，也继续尝试 tools/list。
+     */
+    private void sendInitializedNotification(ResourceProbeTarget target,
+                                             Map<String, Object> spec,
+                                             ProtocolInvokeContext ctx) {
+        try {
+            protocolInvokerRegistry.invoke(
+                    "mcp",
+                    target.endpoint(),
+                    normalizedTimeout(target.timeoutSec(), 20),
+                    "health-init-" + UUID.randomUUID(),
+                    Map.of("method", "notifications/initialized"),
+                    spec,
+                    ctx);
+        } catch (Exception ignored) {
+            // Some MCP servers do not require or do not explicitly acknowledge this notification.
+        }
+    }
+
     private static String strategy(ResourceProbeTarget target) {
         return target != null && "stdio".equalsIgnoreCase(target.protocol()) ? "mcp_stdio" : "mcp_jsonrpc";
+    }
+
+    private static String probeSessionKey(ResourceProbeTarget target) {
+        if (target != null && target.resourceId() != null) {
+            return "health-probe:mcp:" + target.resourceId();
+        }
+        String endpoint = target == null || target.endpoint() == null ? "unknown" : target.endpoint().trim().toLowerCase(Locale.ROOT);
+        return "health-probe:mcp:" + endpoint;
     }
 
     private static int normalizedTimeout(Integer timeoutSec, int fallback) {

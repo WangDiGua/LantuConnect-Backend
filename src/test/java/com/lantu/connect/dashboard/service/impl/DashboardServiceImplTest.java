@@ -118,7 +118,8 @@ class DashboardServiceImplTest {
                 "resource_count", 2L)))
                 .when(jdbcTemplate)
                 .queryForList(
-                        argThat((String sql) -> sql.contains("LEFT JOIN t_resource r ON r.id = CAST(cl.agent_id AS UNSIGNED)")),
+                        argThat((String sql) -> sql.contains("LEFT JOIN t_user u ON u.user_id = r.created_by")
+                                && sql.contains("COALESCE(r.created_by, 0) AS owner_user_id")),
                         org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class),
                         org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class));
         doReturn(List.of(Map.of(
@@ -138,5 +139,27 @@ class DashboardServiceImplTest {
         assertTrue(breakdown.containsKey("departmentUsage"));
         assertTrue(breakdown.containsKey("ownerUsage"));
         assertTrue(breakdown.containsKey("topResources"));
+    }
+
+    @Test
+    void usageStatsBuildsOwnerUsageFromCreatedByAndUserProfile() {
+        when(callLogMapper.selectMaps(any(QueryWrapper.class))).thenReturn(List.of());
+        when(callLogMapper.selectTodayCount()).thenReturn(0L);
+        doReturn(List.of())
+                .when(jdbcTemplate)
+                .queryForList(
+                        any(String.class),
+                        org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class),
+                        org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class));
+
+        service.usageStats("7d");
+
+        org.mockito.Mockito.verify(jdbcTemplate).queryForList(
+                argThat((String sql) -> sql.contains("LEFT JOIN t_user u ON u.user_id = r.created_by")
+                        && sql.contains("COALESCE(r.created_by, 0) AS owner_user_id")
+                        && !sql.contains("r.owner_id")
+                        && !sql.contains("r.owner_name")),
+                org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class),
+                org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class));
     }
 }
