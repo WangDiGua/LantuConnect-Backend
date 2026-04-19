@@ -31,7 +31,7 @@
 | 阶段 | 角色（`AuditController`） | 服务层行为（`AuditServiceImpl` 注释与实现） |
 |------|---------------------------|-----------------------------------------------|
 | 列表与 **approve / reject** | `platform_admin` **或** `dept_admin` | `dept_admin`：仅能看到 **本部门提交人** 的审核项（`DeptScopeHelper.isDeptAdminOnly` + `submitter in 部门用户`）。`platform_admin`：全量。 |
-| **publish（上线发布）** | `platform_admin` / `admin` / **同资源代管范围**（owner、同 menu 的 dept_admin） | 将状态从 `testing` → `published`；服务层 `ensureMayPublishAuditedResource`（与历史 Grant 代管无表级耦合）。 |
+| **publish（上线发布）** | 已移除 | 审核通过后直接发布，不再保留单独上线动作。 |
 | **平台强制下架** | `platform_admin` | `POST /audit/resources/{id}/platform-force-deprecate` → `deprecated`；与开发者自助 `resource-center/.../deprecate` 区分。 |
 
 结论：**部门已部分专精（只看本部门队列）**；上线发布已与 **资源拥有者 / 本部 dept_admin / 平台** 对齐；超管保留 **跨租户强制下架**。
@@ -59,7 +59,7 @@
 | 敏感词、部分标签管理 | `platform_admin` |
 | 用户管理部分接口 | `platform_admin` ± `dept_admin` |
 
-结论：**平台配置与监控** 已在超管侧。Grant 工单已下线；**publish** 权已下放至 owner/本部 dept_admin/平台（见审核服务），超管在日常消费上不必再充当唯一入口。
+结论：**平台配置与监控** 已在超管侧。Grant 工单已下线；资源审核通过后即直接上线，超管在日常消费上不必再充当唯一入口。
 
 ---
 
@@ -82,7 +82,7 @@
 |--------|--------------|--------------|
 | 无角色访问 | 过滤器白名单，已对齐大方向 | 可继续细化是否暴露 swagger 等 |
 | 审核队列可见范围 | 部门管理员已按部门过滤 | 保持；平台管理员全量 |
-| **资源发布 publish** | owner / 同部门 dept_admin / platform_admin、admin（服务层校验） | **与 Grant 代管范围一致的自发布**；超管兜底 |
+| **资源审核 approve** | owner / 同部门 dept_admin / platform_admin、admin（服务层校验） | 审核通过后即直接上线；超管兜底 |
 | **Grant 直接写入** | owner + dept_admin + platform_admin | **主路径：owner**；dept_admin **限定本部资源**；超管兜底 |
 | **Grant 申请待办/审批** | 仅 `platform_admin`，且无部门过滤 | **owner 审批** 或 **部门审批（限本部）**；超管兜底/升级 |
 | **公开消费（当前）** | **无 Grant 表**：`ensureApiKeyGranted` 仅保留 owner/平台 Key 等规则；**不**再按 `access_policy` 分支 | 组织级可见若需细化，应在 **Key scope 产品规则** 落实（见 `PRODUCT_DEFINITION.md` §4） |
@@ -97,45 +97,45 @@
 
 ### 阶段 A：产品策略与数据模型（阻塞项）— **已完成（2026-04-03）**
 
-1. 枚举与库字段：`ResourceAccessPolicy` + `t_resource.access_policy`（Flyway `V6__resource_access_policy.sql`；全量基线见 `sql/lantu_connect.sql`）。  
-2. API：`ResourceUpsertRequest.accessPolicy`（可选，缺省/空=创建时 `grant_required`；**更新时未传则保留原值**）、`ResourceManageVO` / `ResourceCatalogItemVO` 回传。  
+1. 枚举与库字段：`ResourceAccessPolicy` + `t_resource.access_policy`（Flyway `V6__resource_access_policy.sql`；全量基线见 `sql/lantu_connect.sql`）。
+2. API：`ResourceUpsertRequest.accessPolicy`（可选，缺省/空=创建时 `grant_required`；**更新时未传则保留原值**）、`ResourceManageVO` / `ResourceCatalogItemVO` 回传。
 3. 文档：`PRODUCT_DEFINITION.md` §4、本文；实施详情见 `docs/resource-registration-authorization-invocation-guide.md` §3.1。**网关按策略短路 Grant 属阶段 B**。
 
 > **读档提示（2026-04-09）**：自 **`t_resource_invoke_grant` / 工单表删除** 起，下方 **阶段 B、C** 等仅为 **迁移前实施存档**；其中 **`grant_required` 表行校验、工单路由、`ensureMayReviewGrantApplication`** 等 **不再**对应线上可调 API。真值见文首 §真值变更 与 §2.3–2.4。
 
 ### 阶段 B：网关与 Grant 核心逻辑 — **已完成（2026-04-03）**（历史存档）
 
-1. **`ResourceInvokeGrantService.ensureApiKeyGranted`**：`access_policy=open_platform` 时免 Grant（仍走上层 Key 与 scope）；`open_org` 时仅当 **API Key 为 user 归属**且 **Key 所属用户与资源 owner 的 `menuId` 相同**时免 Grant；`grant_required` 不变。技能包下载等走同一方法的路径一并生效。  
-2. **`catalog_read`**：与 grant 表中的 `catalog` 动作对齐（校验时视同为 `catalog`）。  
+1. **`ResourceInvokeGrantService.ensureApiKeyGranted`**：`access_policy=open_platform` 时免 Grant（仍走上层 Key 与 scope）；`open_org` 时仅当 **API Key 为 user 归属**且 **Key 所属用户与资源 owner 的 `menuId` 相同**时免 Grant；`grant_required` 不变。技能包下载等走同一方法的路径一并生效。
+2. **`catalog_read`**：与 grant 表中的 `catalog` 动作对齐（校验时视同为 `catalog`）。
 3. **`ensureCanManageGrant`**：`dept_admin` 仅当 **资源 owner 与操作者 `menuId` 相同** 可管理 Grant；`platform_admin` / `admin` 仍全局；owner 本人不变。
 
 ### 阶段 C：Grant 工单路由 — **已完成（2026-04-03）**（历史存档；路由已删）
 
-1. `GET /grant-applications/pending`：凭 `X-User-Id` 过滤待办 — **platform_admin/admin** 全量；**dept_admin（且非平台）** 仅 **资源 owner 与本部门 `menu_id` 一致** 的申请；**其他用户** 仅 **自己名下资源**（`t_resource.created_by`）上的申请。  
-2. `POST .../approve`、`reject`：**不再限定 platform_admin**；由 `ResourceInvokeGrantService.ensureMayReviewGrantApplication` 校验（与 Grant 管理同款：owner / 同部门 dept_admin / 平台）。  
+1. `GET /grant-applications/pending`：凭 `X-User-Id` 过滤待办 — **platform_admin/admin** 全量；**dept_admin（且非平台）** 仅 **资源 owner 与本部门 `menu_id` 一致** 的申请；**其他用户** 仅 **自己名下资源**（`t_resource.created_by`）上的申请。
+2. `POST .../approve`、`reject`：**不再限定 platform_admin**；由 `ResourceInvokeGrantService.ensureMayReviewGrantApplication` 校验（与 Grant 管理同款：owner / 同部门 dept_admin / 平台）。
 3. **新申请通知**：除原平台管理员广播外，**额外通知资源 owner**。
 
-### 阶段 D241：**审核与发布权** — **已完成（2026-04-03）**
+### 阶段 D241：**审核权与直接上线** — **已完成（2026-04-03）**
 
-1. `AuditController`：`publish*` `@RequireRole({"platform_admin","admin","dept_admin","developer"})`；**发布权**由 `ResourceInvokeGrantService.ensureMayPublishAuditedResource` 收紧（owner / 同 menu dept_admin / platform_admin、admin）；仍仅 **testing → published**。  
-2. `POST /audit/resources/{id}/platform-force-deprecate`：**仅** `platform_admin`，资源 → `deprecated`，审核队列表记可选标记 `platform_force_deprecated`，并通知 owner（`platform_resource_force_deprecated`）。  
-3. 开发者自助下线仍用 `POST /resource-center/resources/{id}/deprecate`（owner/管理员既有逻辑）。  
+1. `AuditController`：保留 `approve*` / `reject*` 审核接口；审核通过后直接进入 `published`，不再存在独立 `publish*` 步骤。
+2. `POST /audit/resources/{id}/platform-force-deprecate`：**仅** `platform_admin`，资源 → `deprecated`，审核队列表记可选标记 `platform_force_deprecated`，并通知 owner（`platform_resource_force_deprecated`）。
+3. 开发者自助下线仍用 `POST /resource-center/resources/{id}/deprecate`（owner/管理员既有逻辑）。
 
 ### 阶段 E：Casbin 与无角色白名单 — **已完成（2026-04-03）**
 
-1. **developer** 角色已与 `GatewayUserPermissionService` 对齐：`agent`→`agent:read`∨`skill:read`；**`mcp` 与 `skill` 共用 `skill:read`**（代码注释已写明）；`app`→`app:view`；`dataset`→`dataset:read`。资源注册接口本身不挂细粒度 Casbin，由 owner/状态机约束。  
-2. 新增 **`consumer`** 系统角色（Flyway `V7__consumer_role_and_catalog_alignment.sql` + `sql/lantu_connect.sql`）：`agent:read`、`skill:read`、`app:view`、`dataset:read`，供「只逛市场」账号；`/catalog/resources/trending` 与 `/search-suggestions` 已按**同一类型谓词**过滤（与主目录一致）。  
-3. **`lantu.security.expose-api-docs`**：`SecurityProperties` 默认值改为 **false**，与 `application.yml` 主配置一致；关文档时 `SecurityConfig` 与 `UnassignedUserAccessFilter` 均不放开 Swagger（未赋权账号不暴露 OpenAPI）。dev profile 仍可覆盖为 `true`。  
+1. **developer** 角色已与 `GatewayUserPermissionService` 对齐：`agent`→`agent:read`∨`skill:read`；**`mcp` 与 `skill` 共用 `skill:read`**（代码注释已写明）；`app`→`app:view`；`dataset`→`dataset:read`。资源注册接口本身不挂细粒度 Casbin，由 owner/状态机约束。
+2. 新增 **`consumer`** 系统角色（Flyway `V7__consumer_role_and_catalog_alignment.sql` + `sql/lantu_connect.sql`）：`agent:read`、`skill:read`、`app:view`、`dataset:read`，供「只逛市场」账号；`/catalog/resources/trending` 与 `/search-suggestions` 已按**同一类型谓词**过滤（与主目录一致）。
+3. **`lantu.security.expose-api-docs`**：`SecurityProperties` 默认值改为 **false**，与 `application.yml` 主配置一致；关文档时 `SecurityConfig` 与 `UnassignedUserAccessFilter` 均不放开 Swagger（未赋权账号不暴露 OpenAPI）。dev profile 仍可覆盖为 `true`。
 
 ### 阶段 F：开发者统计 — **已完成（2026-04-03）**
 
-1. **`GET /dashboard/owner-resource-stats`**：`periodDays`（默认 7）、可选 `ownerUserId`。聚合 **`t_call_log`**（归属 owner 资源的网关调用）、**`t_usage_record`**（`action=invoke` 且可归因到资源）、**`t_skill_pack_download_event`**（技能包下载埋点）。  
-2. **权限**：本人；**同 `menu_id` 的 dept_admin** 只读他人；**platform_admin/admin** 可查任意 owner。不依赖 `monitor:view`。  
-3. **Flyway `V8`**：`t_usage_record.resource_id`（invoke 写入）；新表 **`t_skill_pack_download_event`**；成功流式下载技能包后由 `SkillArtifactDownloadService` 记一行。  
+1. **`GET /dashboard/owner-resource-stats`**：`periodDays`（默认 7）、可选 `ownerUserId`。聚合 **`t_call_log`**（归属 owner 资源的网关调用）、**`t_usage_record`**（`action=invoke` 且可归因到资源）、**`t_skill_pack_download_event`**（技能包下载埋点）。
+2. **权限**：本人；**同 `menu_id` 的 dept_admin** 只读他人；**platform_admin/admin** 可查任意 owner。不依赖 `monitor:view`。
+3. **Flyway `V8`**：`t_usage_record.resource_id`（invoke 写入）；新表 **`t_skill_pack_download_event`**；成功流式下载技能包后由 `SkillArtifactDownloadService` 记一行。
 
 ### 阶段 G：回归与安全 — **已完成（2026-04-03）**
 
-1. **`ResourceInvokeGrantServicePolicyTest`**：`open_platform` 免 Grant；`grant_required` 无 Grant 则拒绝；**dept_admin** 跨 `menu_id` 不可审 Grant 工单（`ensureMayReviewGrantApplication`）。  
+1. **`ResourceInvokeGrantServicePolicyTest`**：`open_platform` 免 Grant；`grant_required` 无 Grant 则拒绝；**dept_admin** 跨 `menu_id` 不可审 Grant 工单（`ensureMayReviewGrantApplication`）。
 2. **`AuditLog`**：`AuditController` 的 approve / reject / publish（agent/skill/resource）及既有 `platform_force_deprecate`；Grant 工单 approve/reject 保持原有注解。
 
 ---

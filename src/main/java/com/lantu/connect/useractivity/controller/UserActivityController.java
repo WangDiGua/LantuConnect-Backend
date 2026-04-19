@@ -36,8 +36,10 @@ public class UserActivityController {
             @RequestHeader("X-User-Id") Long userId,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int pageSize,
-            @RequestParam(required = false) String type) {
-        return R.ok(userActivityService.pageUsageRecords(userId, page, pageSize, type));
+            @RequestParam(required = false) String range,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) String keyword) {
+        return R.ok(userActivityService.pageUsageRecords(userId, page, pageSize, range, type, keyword));
     }
 
     @GetMapping("/favorites")
@@ -80,10 +82,13 @@ public class UserActivityController {
     }
 
     @GetMapping("/recent-use")
-    public R<List<RecentUseVO>> recentUse(
+    public R<PageResult<RecentUseVO>> recentUse(
             @RequestHeader("X-User-Id") Long userId,
-            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize,
+            @RequestParam(required = false) Integer limit,
             @RequestParam(required = false) String type) {
-        return R.ok(userActivityService.recentUse(userId, limit, type));
+        int effectivePageSize = limit != null ? limit : pageSize;
+        return R.ok(userActivityService.pageRecentUse(userId, page, effectivePageSize, type));
     }
 }

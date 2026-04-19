@@ -14,7 +14,7 @@
 2. 更新资源：`PUT /resource-center/resources/{id}`（可选）
 3. 提审：`POST /resource-center/resources/{id}/submit`
 4. 审核通过：`POST /audit/resources/{auditId}/approve`（管理员）
-5. 发布：`POST /audit/resources/{auditId}/publish`（管理员）
+5. 审核通过后即上线：无单独发布步骤（管理员执行 `POST /audit/resources/{auditId}/approve`）
 6. 下线：`POST /resource-center/resources/{id}/deprecate`（资源拥有者或管理员）
 
 ## 3. 创建请求体（按类型）

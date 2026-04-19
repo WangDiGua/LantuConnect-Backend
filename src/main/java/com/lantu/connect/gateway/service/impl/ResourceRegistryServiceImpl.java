@@ -1029,6 +1029,18 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 WHERE target_id = ?
                 ORDER BY COALESCE(review_time, submit_time, create_time) ASC
                 """, resourceId);
+        LinkedHashSet<Long> actorIds = new LinkedHashSet<>();
+        for (Map<String, Object> item : audits) {
+            Long submitterId = longValue(item.get("submitter"));
+            Long reviewerId = longValue(item.get("reviewer_id"));
+            if (submitterId != null) {
+                actorIds.add(submitterId);
+            }
+            if (reviewerId != null) {
+                actorIds.add(reviewerId);
+            }
+        }
+        Map<Long, String> actorNames = userDisplayNameResolver.resolveDisplayNames(actorIds);
         events.add(LifecycleTimelineVO.Event.builder()
                 .eventType("created")
                 .title("资源创建")
@@ -1045,7 +1057,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     .eventType("submitted")
                     .title("提交审核")
                     .status("pending_review")
-                    .actor(stringValue(item.get("submitter")))
+                    .actor(resolveTimelineActor(actorNames, item.get("submitter")))
                     .eventTime(submitTime)
                     .build());
             String st = stringValue(item.get("status"));
@@ -1055,20 +1067,22 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                         .eventType(st)
                         .title("审核结果: " + st)
                         .status(st)
-                        .actor(stringValue(item.get("reviewer_id")))
+                        .actor(resolveTimelineActor(actorNames, item.get("reviewer_id")))
                         .reason(stringValue(item.get("reject_reason")))
                         .eventTime(reviewTime)
                         .build());
             }
         }
-        if ("published".equalsIgnoreCase(detail.getStatus())) {
+        boolean hasPublishedEvent = events.stream().anyMatch(event -> "published".equalsIgnoreCase(event.getEventType()));
+        boolean hasDeprecatedEvent = events.stream().anyMatch(event -> "deprecated".equalsIgnoreCase(event.getEventType()));
+        if ("published".equalsIgnoreCase(detail.getStatus()) && !hasPublishedEvent) {
             events.add(LifecycleTimelineVO.Event.builder()
                     .eventType("published")
                     .title("资源已发布")
                     .status("published")
                     .eventTime(detail.getUpdateTime())
                     .build());
-        } else if ("deprecated".equalsIgnoreCase(detail.getStatus())) {
+        } else if ("deprecated".equalsIgnoreCase(detail.getStatus()) && !hasDeprecatedEvent) {
             events.add(LifecycleTimelineVO.Event.builder()
                     .eventType("deprecated")
                     .title("资源已暂停对外开放")
@@ -1453,11 +1467,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 actions.add("createVersion");
             }
             case "pending_review" -> actions.add("withdraw");
-            case "testing" -> {
-                actions.add("withdraw");
-                actions.add("deprecate");
-            }
             case "published" -> {
+                actions.add("withdraw");
                 actions.add("createVersion");
                 actions.add("switchVersion");
                 actions.add("deprecate");
@@ -1505,7 +1516,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         return switch (s) {
             case "draft" -> "草稿态，可编辑后重新提审";
             case "pending_review" -> "审核进行中，可撤回到草稿";
-            case "testing" -> "测试阶段，建议观察稳定性后发布";
             case "published" -> "已上架：可在平台内检索并经网关调用；不代表上游实例当前已启动，连通性以「运行健康」或健康检查/试调用为准";
             case "rejected" -> StringUtils.hasText(rejectReason) ? "已驳回：" + rejectReason : "已驳回，请修改后重提";
             case "deprecated" -> "已暂停对外开放，可修复后重新提审";
@@ -2906,6 +2916,17 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         return value == null ? null : String.valueOf(value);
     }
 
+    private String resolveTimelineActor(Map<Long, String> actorNames, Object rawActorId) {
+        Long actorId = longValue(rawActorId);
+        if (actorId != null && actorNames != null) {
+            String displayName = actorNames.get(actorId);
+            if (StringUtils.hasText(displayName)) {
+                return displayName;
+            }
+        }
+        return stringValue(rawActorId);
+    }
+
     private static Long longValue(Object value) {
         if (value == null) {
             return null;
@@ -3164,4 +3185,3 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         records.forEach(item -> item.setCreatedByName(names.get(item.getCreatedBy())));
     }
 }
-

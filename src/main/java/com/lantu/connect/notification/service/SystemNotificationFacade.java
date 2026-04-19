@@ -449,7 +449,7 @@ public class SystemNotificationFacade {
         if (isResourcePublicationEvent(type) && StringUtils.hasText(n.getSourceId())) {
             n.setCategory("workflow");
             n.setAggregateKey("resource:" + n.getSourceId().trim() + ":publication");
-            n.setTotalSteps(4);
+            n.setTotalSteps(2);
             if (!StringUtils.hasText(n.getActionLabel())) {
                 n.setActionLabel(NotificationEventCodes.RESOURCE_SUBMITTED.equals(type) ? "处理审核" : "查看资源");
             }
@@ -457,16 +457,13 @@ public class SystemNotificationFacade {
             if (NotificationEventCodes.RESOURCE_SUBMITTED.equals(type)) {
                 setStep(n, 1, "submitted", "提交审核", "done", "资源已进入审核队列");
             } else if (NotificationEventCodes.AUDIT_APPROVED.equals(type)) {
-                setStep(n, 2, "reviewed", "审核通过", "done", "资源已通过审核，等待测试灰度或发布上线");
+                setStep(n, 2, "reviewed", "审核通过", "done", "资源已通过审核并直接发布上线");
+                n.setFlowStatus("success");
                 n.setSeverity("success");
             } else if (NotificationEventCodes.AUDIT_REJECTED.equals(type)) {
                 setStep(n, 2, "rejected", "审核驳回", "failed", "资源审核未通过，请查看原因后重新提交");
                 n.setFlowStatus("failed");
                 n.setSeverity("warning");
-            } else if (NotificationEventCodes.RESOURCE_PUBLISHED.equals(type)) {
-                setStep(n, 4, "published", "发布上线", "done", "资源已进入平台可用资源池");
-                n.setFlowStatus("success");
-                n.setSeverity("success");
             }
             return;
         }
@@ -538,8 +535,7 @@ public class SystemNotificationFacade {
     private static boolean isResourcePublicationEvent(String type) {
         return NotificationEventCodes.RESOURCE_SUBMITTED.equals(type)
                 || NotificationEventCodes.AUDIT_APPROVED.equals(type)
-                || NotificationEventCodes.AUDIT_REJECTED.equals(type)
-                || NotificationEventCodes.RESOURCE_PUBLISHED.equals(type);
+                || NotificationEventCodes.AUDIT_REJECTED.equals(type);
     }
 
     private static boolean isResourceGovernanceEvent(String type) {

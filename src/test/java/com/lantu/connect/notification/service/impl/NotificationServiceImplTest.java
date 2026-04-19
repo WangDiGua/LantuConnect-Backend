@@ -63,7 +63,7 @@ class NotificationServiceImplTest {
         notification.setAggregateKey("resource:42:publication");
         notification.setFlowStatus("running");
         notification.setCurrentStep(1);
-        notification.setTotalSteps(4);
+        notification.setTotalSteps(2);
         notification.setStepKey("submitted");
         notification.setStepTitle("提交审核");
         notification.setStepStatus("done");
@@ -103,7 +103,7 @@ class NotificationServiceImplTest {
         existing.setAggregateKey("resource:42:publication");
         existing.setFlowStatus("running");
         existing.setCurrentStep(1);
-        existing.setTotalSteps(4);
+        existing.setTotalSteps(2);
         existing.setIsRead(true);
         existing.setStepsJson("""
                 [{"key":"submitted","title":"提交审核","status":"done","summary":"已进入审核队列","time":"2026-04-13T10:00:00"}]
@@ -116,7 +116,7 @@ class NotificationServiceImplTest {
         notification.setUserId(7L);
         notification.setType("audit_approved");
         notification.setTitle("资源发布流程");
-        notification.setBody("资源审核通过，请进入测试灰度");
+        notification.setBody("资源审核通过并直接发布上线");
         notification.setSourceType("mcp");
         notification.setSourceId("42");
         notification.setCategory("workflow");
@@ -124,11 +124,11 @@ class NotificationServiceImplTest {
         notification.setAggregateKey("resource:42:publication");
         notification.setFlowStatus("running");
         notification.setCurrentStep(2);
-        notification.setTotalSteps(4);
+        notification.setTotalSteps(2);
         notification.setStepKey("reviewed");
         notification.setStepTitle("审核通过");
         notification.setStepStatus("done");
-        notification.setStepSummary("请在资源中心执行发布上线");
+        notification.setStepSummary("资源已通过审核并直接发布上线");
 
         service.send(notification);
 
@@ -166,7 +166,7 @@ class NotificationServiceImplTest {
         existing.setSeverity("info");
         existing.setFlowStatus("running");
         existing.setCurrentStep(1);
-        existing.setTotalSteps(4);
+        existing.setTotalSteps(2);
         existing.setIsRead(true);
         existing.setStepsJson("[]");
 
@@ -188,11 +188,11 @@ class NotificationServiceImplTest {
         notification.setAggregateKey("resource:42:publication");
         notification.setFlowStatus("running");
         notification.setCurrentStep(2);
-        notification.setTotalSteps(4);
+        notification.setTotalSteps(2);
         notification.setStepKey("reviewed");
         notification.setStepTitle("审核通过");
         notification.setStepStatus("done");
-        notification.setStepSummary("请继续发布");
+        notification.setStepSummary("资源已通过审核并直接发布上线");
 
         service.send(notification);
 

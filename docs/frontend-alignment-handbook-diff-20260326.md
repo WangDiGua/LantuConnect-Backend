@@ -85,16 +85,14 @@
 
 **手册现状（§4.11）：**
 ```
-POST /audit/agents/{id}/publish    @RequireRole(platform_admin/dept_admin)
-POST /audit/skills/{id}/publish    @RequireRole(platform_admin/dept_admin)
-POST /audit/resources/{id}/publish @RequireRole(platform_admin/dept_admin)
+无独立 `/audit/agents/{id}/publish`、`/audit/skills/{id}/publish` 端点
+无独立 `/audit/resources/{id}/publish` 端点
 ```
 
 **代码真值：**
 ```
-POST /audit/agents/{id}/publish    @RequireRole({"platform_admin"})     ← 仅 platform_admin
-POST /audit/skills/{id}/publish    @RequireRole({"platform_admin"})     ← 仅 platform_admin
-POST /audit/resources/{id}/publish @RequireRole({"platform_admin"})     ← 仅 platform_admin
+无独立 `/audit/agents/{id}/publish`、`/audit/skills/{id}/publish` 端点
+无独立 `/audit/resources/{id}/publish` 端点
 ```
 
 **影响：** 前端审核页面中，dept_admin 角色不应显示"发布"按钮；仅 platform_admin 可执行发布操作。这是两级审核模型的核心约束。
@@ -123,9 +121,9 @@ POST /audit/agents/{id}/reject    header: X-User-Id; @RequireRole(platform_admin
 
 **影响：**
 - 所有审核接口现在需要传 `X-User-Id` header
-- 列表接口支持按 `status` 过滤（可查 `pending_review` / `testing` / `published` / `rejected` 等状态的审核项）
+- 列表接口支持按 `status` 过滤（可查 `pending_review` / `published` / `rejected` 等状态的审核项）
 - dept_admin 调用列表接口时，后端自动按部门 menuId 过滤，只能看到本部门提交的审核项
-- approve/reject/publish 现在会记录 `reviewerId`
+- approve/reject 现在会记录 `reviewerId`
 
 ---
 
@@ -254,10 +252,10 @@ GET /dashboard/admin-overview    @RequirePermission(monitor:view) + header: X-Us
 **手册现状（§2.8）：** 描述了角色模型，但未说明审核流程的两级分离。
 
 **代码真值：**
-- **第一级（部门审核）：** `dept_admin` 执行 `approve`（pending_review → testing）或 `reject`
-- **第二级（平台发布）：** `platform_admin` 执行 `publish`（testing → published）
+- **第一级（部门审核）：** `dept_admin` 执行 `approve`（pending_review → published）或 `reject`
+- 无独立平台发布阶段：审核通过后直接进入 `published`
 - `dept_admin` 调用审核列表时，只能看到本部门提交的审核项（按 submitter 的 menuId 过滤）
-- 审核通过/驳回/发布操作均自动向资源提交者发送站内通知
+- 审核通过/驳回操作均自动向资源提交者发送站内通知
 
 **手册需在 §2.8 或 §4.11 补充两级审核说明。**
 

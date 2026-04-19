@@ -34,15 +34,15 @@
 
 ### 3.1 资源状态（目录主状态）
 - `draft`：草稿
-- `testing`：测试中
+- `pending_review`：待审核
 - `published`：已发布
 - `deprecated`：已废弃（可读，默认不建议新接入）
 
 允许流转：
-- `draft -> testing`
-- `testing -> published`
+- `draft -> pending_review`
+- `审核通过即 published`
 - `published -> deprecated`
-- `testing -> draft`（回退修订）
+- `pending_review -> rejected`
 
 不允许直接流转：
 - `draft -> published`

@@ -17,7 +17,7 @@
 | 字段语义 | 允许 value（与前端类型一致） | 定义位置 |
 |----------|------------------------------|----------|
 | 资源类型 `resourceType` | `agent`、`skill`、`mcp`、`app`、`dataset` | `catalog.ts` → `ResourceType` |
-| 资源审核状态 | `pending_review`、`testing`、`published`、`rejected`（及列表筛选用 `all` 为前端占位） | `audit.ts`、`resource-center` 相关 VO |
+| 资源审核状态 | `pending_review`、`published`、`rejected`（及列表筛选用 `all` 为前端占位） | `audit.ts`、`resource-center` 相关 VO |
 | 授权动作 `actions` | `catalog`、`resolve`、`invoke`、`*` | `catalog.ts` |
 | 目录排序 | `sortOrder`: `asc` \| `desc`；`sortBy` 见各 Query | `catalog.ts` 等 |
 
@@ -27,7 +27,7 @@
 |------|------------|----------|
 | `agentType` | `mcp`、`http_api`、`builtin` | `agent.ts` |
 | `sourceType` | `internal`、`partner`、`cloud` | `agent.ts` |
-| `AgentStatus` | `draft`、`pending_review`、`testing`、`published`、`rejected`、`deprecated` | `agent.ts` |
+| `AgentStatus` | `draft`、`pending_review`、`published`、`rejected`、`deprecated` | `agent.ts` |
 | `mode`（Skill） | `TOOL`（Skill）；`SUBAGENT` \| `ALL` 等见 Agent | `skill.ts` / `agent.ts` |
 | `DisplayTemplate` | `file`、`image`、`audio`、`video`、`app`、`microService`、`search_web`、`search_file`、`answer`、`ai_answer` | `agent.ts` |
 
@@ -38,7 +38,7 @@
 | 字段 | 允许 value | 定义位置 |
 |------|------------|----------|
 | `embedType` | `iframe`、`micro_frontend`、`redirect` | `smart-app.ts` |
-| `AppStatus` | `draft`、`published`、`testing`、`deprecated` | `smart-app.ts` |
+| `AppStatus` | `draft`、`published`、`deprecated` | `smart-app.ts` |
 | `sourceType`（展示） | `internal`、`partner` 等 | `smart-app.ts` |
 
 ### 1.4 数据集 Dataset
@@ -47,7 +47,7 @@
 |------|------------|----------|
 | `DatasetSourceType` | `department`、`knowledge`、`third_party` | `dataset.ts` |
 | `DatasetDataType` | `document`、`structured`、`image`、`audio`、`video`、`mixed` | `dataset.ts` |
-| `DatasetStatus` | `draft`、`published`、`testing`、`deprecated` | `dataset.ts` |
+| `DatasetStatus` | `draft`、`published`、`deprecated` | `dataset.ts` |
 
 ### 1.5 提供商 Provider
 
@@ -136,7 +136,7 @@
 | `CallLogPage` | 调用状态 | `all`、`success`、`error`、`timeout` |
 | `AlertMgmtPage` | 级别 / 告警状态 | `critical`、`warning`、`info`；`firing`、`resolved`、`silenced` |
 | `AlertRulesPage` | 规则级别筛选 + 表单 | 同上 + `METRIC_OPTIONS`、`OPERATOR_OPTIONS`、`CHANNEL_OPTIONS` |
-| `ResourceAuditList` | 资源类型 / 状态 | 见 §1.1 + `pending_review`、`testing`、`rejected`、`published` |
+| `ResourceAuditList` | 资源类型 / 状态 | 见 §1.1 + `pending_review`、`rejected`、`published` |
 | `ResourceCenterManagementPage` | 资源类型等 | 与 `ResourceType` 一致 |
 | `ProviderList` / `ProviderManagementPage` | 提供商类型 / 状态 | `internal`/`partner`/`cloud`；`active`/`inactive` |
 | `ProviderManagementPage` | `authType` | `none`、`api_key`、`oauth2`、`basic` |

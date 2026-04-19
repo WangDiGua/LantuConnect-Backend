@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 public class RecentUseVO {
 
     private Long recordId;
+    private Long targetId;
     private String type;
     private String targetCode;
     private String targetName;
@@ -24,4 +25,5 @@ public class RecentUseVO {
     private String status;
     private Integer latencyMs;
     private LocalDateTime createTime;
+    private LocalDateTime lastUsedTime;
 }

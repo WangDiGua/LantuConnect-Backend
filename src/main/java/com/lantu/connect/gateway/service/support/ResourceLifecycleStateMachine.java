@@ -15,7 +15,6 @@ public final class ResourceLifecycleStateMachine {
 
     public static final String STATUS_DRAFT = "draft";
     public static final String STATUS_PENDING_REVIEW = "pending_review";
-    public static final String STATUS_TESTING = "testing";
     public static final String STATUS_PUBLISHED = "published";
     public static final String STATUS_REJECTED = "rejected";
     public static final String STATUS_DEPRECATED = "deprecated";
@@ -23,8 +22,7 @@ public final class ResourceLifecycleStateMachine {
     private static final Map<String, Set<String>> TRANSITIONS = Map.of(
             STATUS_DRAFT, Set.of(STATUS_PENDING_REVIEW, STATUS_REJECTED, STATUS_DEPRECATED),
             STATUS_REJECTED, Set.of(STATUS_DRAFT, STATUS_PENDING_REVIEW, STATUS_DEPRECATED),
-            STATUS_PENDING_REVIEW, Set.of(STATUS_TESTING, STATUS_REJECTED, STATUS_DRAFT),
-            STATUS_TESTING, Set.of(STATUS_PUBLISHED, STATUS_REJECTED, STATUS_DEPRECATED),
+            STATUS_PENDING_REVIEW, Set.of(STATUS_PUBLISHED, STATUS_REJECTED, STATUS_DRAFT),
             STATUS_PUBLISHED, Set.of(STATUS_DEPRECATED),
             STATUS_DEPRECATED, Set.of(STATUS_DRAFT, STATUS_PENDING_REVIEW)
     );
@@ -64,7 +62,7 @@ public final class ResourceLifecycleStateMachine {
         if (STATUS_PUBLISHED.equals(s)) {
             throw new BusinessException(ResultCode.CANNOT_DELETE_PUBLISHED);
         }
-        if (STATUS_PENDING_REVIEW.equals(s) || STATUS_TESTING.equals(s)) {
+        if (STATUS_PENDING_REVIEW.equals(s)) {
             throw new BusinessException(ResultCode.ILLEGAL_STATE_TRANSITION, "审核流程中的资源不可删除");
         }
     }

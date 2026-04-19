@@ -9,7 +9,7 @@
 
 资源类型集合：`agent` | `skill` | `mcp` | `app` | `dataset` — [`ResourceRegistryServiceImpl.RESOURCE_TYPES`](../../src/main/java/com/lantu/connect/gateway/service/impl/ResourceRegistryServiceImpl.java)。
 
-状态机：[`ResourceLifecycleStateMachine`](../../src/main/java/com/lantu/connect/gateway/service/support/ResourceLifecycleStateMachine.java)（draft / pending_review / testing / published / rejected / deprecated）。
+状态机：[`ResourceLifecycleStateMachine`](../../src/main/java/com/lantu/connect/gateway/service/support/ResourceLifecycleStateMachine.java)（draft / pending_review / published / rejected / deprecated）。
 
 | 类型 | 注册 / 扩展表 | 生命周期 + 审核 | 消费侧（目录 / 解析 / 调用） | 监控与可观测 |
 |------|----------------|-----------------|-----------------------------|----------------|

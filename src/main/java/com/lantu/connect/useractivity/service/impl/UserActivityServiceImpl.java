@@ -33,6 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -43,14 +44,30 @@ public class UserActivityServiceImpl implements UserActivityService {
     private final JdbcTemplate jdbcTemplate;
 
     @Override
-    public PageResult<UsageRecord> pageUsageRecords(Long userId, int page, int pageSize, String type) {
+    public PageResult<UsageRecord> pageUsageRecords(Long userId, int page, int pageSize, String range, String type, String keyword) {
+        int safePage = Math.max(page, 1);
+        int safePageSize = Math.max(1, Math.min(pageSize, 100));
         LambdaQueryWrapper<UsageRecord> q = new LambdaQueryWrapper<UsageRecord>()
                 .eq(UsageRecord::getUserId, userId)
                 .orderByDesc(UsageRecord::getCreateTime);
         if (StringUtils.hasText(type)) {
             q.eq(UsageRecord::getType, type);
         }
-        Page<UsageRecord> p = new Page<>(page, pageSize);
+        LocalDateTime from = resolveUsageRangeStart(range);
+        if (from != null) {
+            q.ge(UsageRecord::getCreateTime, from);
+        }
+        if (StringUtils.hasText(keyword)) {
+            q.and(wrapper -> wrapper
+                    .like(UsageRecord::getDisplayName, keyword)
+                    .or()
+                    .like(UsageRecord::getAgentName, keyword)
+                    .or()
+                    .like(UsageRecord::getAction, keyword)
+                    .or()
+                    .like(UsageRecord::getInputPreview, keyword));
+        }
+        Page<UsageRecord> p = new Page<>(safePage, safePageSize);
         Page<UsageRecord> result = usageRecordMapper.selectPage(p, q);
         return PageResults.from(result);
     }
@@ -231,21 +248,26 @@ public class UserActivityServiceImpl implements UserActivityService {
     }
 
     @Override
-    public List<RecentUseVO> recentUse(Long userId, int limit, String type) {
-        int safeLimit = Math.max(1, Math.min(limit, 100));
+    public PageResult<RecentUseVO> pageRecentUse(Long userId, int page, int pageSize, String type) {
+        int safePage = Math.max(page, 1);
+        int safePageSize = Math.max(1, Math.min(pageSize, 100));
         LambdaQueryWrapper<UsageRecord> query = new LambdaQueryWrapper<UsageRecord>()
                 .eq(UsageRecord::getUserId, userId)
-                .orderByDesc(UsageRecord::getCreateTime)
-                .last("LIMIT " + safeLimit);
+                .orderByDesc(UsageRecord::getCreateTime);
         if (StringUtils.hasText(type)) {
             query.eq(UsageRecord::getType, type);
         }
 
         List<UsageRecord> rows = usageRecordMapper.selectList(query);
-        List<RecentUseVO> result = new ArrayList<>(rows.size());
+        Map<String, RecentUseVO> deduplicated = new LinkedHashMap<>();
         for (UsageRecord row : rows) {
-            result.add(RecentUseVO.builder()
+            String key = recentUseKey(row);
+            if (deduplicated.containsKey(key)) {
+                continue;
+            }
+            RecentUseVO item = RecentUseVO.builder()
                     .recordId(row.getId())
+                    .targetId(row.getResourceId())
                     .type(row.getType())
                     .targetCode(row.getAgentName())
                     .targetName(row.getDisplayName())
@@ -253,9 +275,41 @@ public class UserActivityServiceImpl implements UserActivityService {
                     .status(row.getStatus())
                     .latencyMs(row.getLatencyMs())
                     .createTime(row.getCreateTime())
-                    .build());
+                    .lastUsedTime(row.getCreateTime())
+                    .build();
+            deduplicated.put(key, item);
         }
-        return result;
+        List<RecentUseVO> result = new ArrayList<>(deduplicated.values());
+        int from = (safePage - 1) * safePageSize;
+        if (from >= result.size()) {
+            return PageResult.empty(safePage, safePageSize);
+        }
+        int to = Math.min(from + safePageSize, result.size());
+        return PageResult.of(result.subList(from, to), result.size(), safePage, safePageSize);
+    }
+
+    private static LocalDateTime resolveUsageRangeStart(String range) {
+        if (!StringUtils.hasText(range)) {
+            return null;
+        }
+        String normalized = range.trim().toLowerCase(Locale.ROOT);
+        LocalDate today = LocalDate.now();
+        return switch (normalized) {
+            case "today" -> today.atStartOfDay();
+            case "7d" -> today.minusDays(6).atStartOfDay();
+            case "30d" -> today.minusDays(29).atStartOfDay();
+            default -> null;
+        };
+    }
+
+    private static String recentUseKey(UsageRecord row) {
+        if (row.getResourceId() != null && row.getResourceId() > 0) {
+            return row.getType() + ":" + row.getResourceId();
+        }
+        if (StringUtils.hasText(row.getAgentName())) {
+            return row.getType() + ":code:" + row.getAgentName();
+        }
+        return row.getType() + ":name:" + String.valueOf(row.getDisplayName());
     }
 
     private static AuthorizedSkillVO toAuthorizedSkillVO(Map<String, Object> row, String source, LocalDateTime lastUsedTime) {

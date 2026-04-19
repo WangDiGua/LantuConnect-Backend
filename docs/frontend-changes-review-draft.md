@@ -86,7 +86,7 @@
 
 ### 6.1 后端
 
-- `publish`：owner / 同部门 dept_admin / platform_admin、admin；仅 `testing → published`。
+- `publish`：owner / 同部门 dept_admin / platform_admin、admin；仅 `审核通过即 published`。
 - `POST /audit/resources/{id}/platform-force-deprecate`：仅 platform_admin。
 
 ### 6.2 前端建议

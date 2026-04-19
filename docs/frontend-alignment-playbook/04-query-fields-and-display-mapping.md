@@ -51,7 +51,7 @@
 ### 审核中心页
 - `AuditTable`：`displayName/resourceType/status/submitter/submitTime`
 - `ActionModal`：`rejectReason`（驳回时必填）
-- `StatusBadge`：`pending_review/testing/published/rejected`
+- `StatusBadge`：`pending_review/published/rejected`
 
 ### 授权中心页
 - `GrantTable`：`granteeApiKeyId/actions/expiresAt/status`

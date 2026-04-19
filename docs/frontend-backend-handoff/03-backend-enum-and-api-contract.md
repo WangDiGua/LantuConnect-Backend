@@ -11,7 +11,7 @@
 | 语义 | 允许值 |
 |------|--------|
 | `resourceType` | `agent`, `skill`, `mcp`, `app`, `dataset` |
-| 资源审核状态 | `pending_review`, `testing`, `published`, `rejected`；列表可用 `all` |
+| 资源审核状态 | `pending_review`, `published`, `rejected`；列表可用 `all` |
 | 授权 `actions` | `catalog`, `resolve`, `invoke`, `*` |
 
 **`skill` 与 `mcp`（硬语义）**
@@ -44,7 +44,7 @@
 | `agentType` | `mcp`, `http_api`, `builtin` |
 | Skill 类型 `skillType`（仅 `resourceType=skill`） | `context_v1` |
 | `sourceType` | `internal`, `partner`, `cloud` |
-| Agent 等资源状态 | `draft`, `pending_review`, `testing`, `published`, `rejected`, `deprecated`（以各资源为准） |
+| Agent 等资源状态 | `draft`, `pending_review`, `published`, `rejected`, `deprecated`（以各资源为准） |
 | Provider `providerType` | `internal`, `partner`, `cloud` |
 | Provider `authType` | `api_key`, `oauth2`, `basic`, `none` |
 | Provider `status` | `active`, `inactive` |

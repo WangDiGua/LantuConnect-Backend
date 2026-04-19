@@ -10,7 +10,6 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.PageResult;
 import com.lantu.connect.common.result.PageResults;
 import com.lantu.connect.common.result.ResultCode;
-import com.lantu.connect.common.security.CasbinAuthorizationService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,7 +17,6 @@ import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
-import com.lantu.connect.gateway.security.ResourceInvokeGrantService;
 import com.lantu.connect.gateway.security.AgentApiKeyService;
 import com.lantu.connect.notification.service.NotificationEventCodes;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
@@ -38,8 +36,8 @@ import java.util.Set;
 
 /**
  * 审核Audit服务实现：
- * 1. 审核员（reviewer）或平台超管执行 approve / reject（pending_review → testing / rejected）
- * 2. publish（testing → published）：资源 owner、全平台审核员（reviewer）或 platform_admin/admin（与 {@link com.lantu.connect.gateway.security.ResourceInvokeGrantService#ensureMayPublishAuditedResource} 一致）
+ * 1. 审核员（reviewer）或平台超管执行 approve / reject（pending_review → published / rejected）
+ * 2. 资源审核通过后直接上线，不再存在 testing 中间态或单独发布步骤
  *
  * 审核队列不按部门隔离；具备审核角色的账号可查看全平台待审项。
  * 通过、驳回、发布对 {@code t_audit_item} 与 {@code t_resource} 使用「期望状态」条件更新（乐观并发控制），避免多名审核员重复处理同一条。
@@ -52,7 +50,6 @@ import java.util.Set;
 public class AuditServiceImpl implements AuditService {
 
     private static final String STATUS_PENDING = "pending_review";
-    private static final String STATUS_TESTING = "testing";
     private static final String STATUS_PUBLISHED = "published";
     private static final String STATUS_REJECTED = "rejected";
     private static final String STATUS_MERGED_LIVE = "merged_live";
@@ -69,9 +66,7 @@ public class AuditServiceImpl implements AuditService {
     private final JdbcTemplate jdbcTemplate;
     private final SystemNotificationFacade systemNotificationFacade;
     private final UserDisplayNameResolver userDisplayNameResolver;
-    private final ResourceInvokeGrantService resourceInvokeGrantService;
     private final AgentApiKeyService agentApiKeyService;
-    private final CasbinAuthorizationService casbinAuthorizationService;
     private final ResourceRegistryService resourceRegistryService;
     private final ResourceHealthService resourceHealthService;
     private final ObjectMapper objectMapper;
@@ -178,17 +173,17 @@ public class AuditServiceImpl implements AuditService {
         int n = auditItemMapper.update(null, new LambdaUpdateWrapper<AuditItem>()
                 .eq(AuditItem::getId, item.getId())
                 .eq(AuditItem::getStatus, STATUS_PENDING)
-                .set(AuditItem::getStatus, STATUS_TESTING)
+                .set(AuditItem::getStatus, STATUS_PUBLISHED)
                 .set(AuditItem::getReviewerId, reviewerId)
                 .set(AuditItem::getReviewTime, LocalDateTime.now()));
         if (n != 1) {
             throw new BusinessException(ResultCode.CONFLICT, MSG_AUDIT_CONCURRENT);
         }
-        syncResourceStatusIf(item, STATUS_TESTING, ResourceLifecycleStateMachine.STATUS_PENDING_REVIEW);
+        finalizePublishedResource(item, reviewerId, ResourceLifecycleStateMachine.STATUS_PENDING_REVIEW);
 
         notifySubmitter(item, NotificationEventCodes.AUDIT_APPROVED,
                 "资源审核通过",
-                "您的资源「" + item.getDisplayName() + "」已通过审核，请在资源中心对处于测试灰度（testing）的资源执行「发布上线」。");
+                "您的资源「" + item.getDisplayName() + "」已通过审核并已直接发布上线。");
         auditPendingPushDebouncer.requestFlush();
     }
 
@@ -208,24 +203,6 @@ public class AuditServiceImpl implements AuditService {
     @Transactional(rollbackFor = Exception.class)
     public void rejectResource(Long id, String reason, Long reviewerId) {
         reject(id, null, reason, reviewerId);
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void publishAgent(Long id, Long reviewerId) {
-        publish(id, TARGET_AGENT, reviewerId);
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void publishSkill(Long id, Long reviewerId) {
-        publish(id, TARGET_SKILL, reviewerId);
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void publishResource(Long id, Long reviewerId) {
-        publish(id, null, reviewerId);
     }
 
     private void reject(Long id, String expectedTargetType, String reason, Long reviewerId) {
@@ -312,6 +289,14 @@ public class AuditServiceImpl implements AuditService {
         return item;
     }
 
+    private void finalizePublishedResource(AuditItem item, Long operatorUserId, String expectedCurrentStatus) {
+        syncResourceStatusIf(item, STATUS_PUBLISHED, expectedCurrentStatus);
+        ensureDefaultVersion(item.getTargetId());
+        if ("agent".equalsIgnoreCase(item.getTargetType())) {
+            agentApiKeyService.ensureActiveKeyForAgent(item.getTargetId(), operatorUserId);
+        }
+    }
+
     /**
      * 按路径 id 解析审核行：先 {@code target_id} + 期望状态（资源 ID），再回退 {@code t_audit_item.id}。
      */
@@ -342,58 +327,6 @@ public class AuditServiceImpl implements AuditService {
         }
         return item;
     }
-
-    private void publish(Long id, String expectedTargetType, Long reviewerId) {
-        AuditItem item = resolvePreferredAuditItem(id, expectedTargetType, STATUS_TESTING);
-        if (item == null) {
-            AuditItem hint = auditItemMapper.selectOne(new LambdaQueryWrapper<AuditItem>()
-                    .eq(AuditItem::getTargetId, id)
-                    .eq(StringUtils.hasText(expectedTargetType), AuditItem::getTargetType, expectedTargetType)
-                    .orderByDesc(AuditItem::getSubmitTime)
-                    .last("LIMIT 1"));
-            if (hint == null) {
-                hint = auditItemMapper.selectById(id);
-            }
-            if (hint != null) {
-                if (StringUtils.hasText(expectedTargetType) && !expectedTargetType.equals(hint.getTargetType())) {
-                    throw new BusinessException(ResultCode.PARAM_ERROR, "目标类型不匹配");
-                }
-                if (!STATUS_TESTING.equals(hint.getStatus())) {
-                    throw new BusinessException(ResultCode.ILLEGAL_STATE_TRANSITION, "仅 testing 状态可发布");
-                }
-                item = hint;
-            }
-        }
-        if (item == null) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "审核项不存在");
-        }
-        normalizeTargetType(item.getTargetType());
-        resourceInvokeGrantService.ensureMayPublishAuditedResource(reviewerId, item.getTargetType(), item.getTargetId());
-        int n = auditItemMapper.update(null, new LambdaUpdateWrapper<AuditItem>()
-                .eq(AuditItem::getId, item.getId())
-                .eq(AuditItem::getStatus, STATUS_TESTING)
-                .set(AuditItem::getStatus, STATUS_PUBLISHED)
-                .set(AuditItem::getReviewerId, reviewerId)
-                .set(AuditItem::getReviewTime, LocalDateTime.now()));
-        if (n != 1) {
-            throw new BusinessException(ResultCode.CONFLICT, MSG_AUDIT_CONCURRENT);
-        }
-        syncResourceStatusIf(item, STATUS_PUBLISHED, ResourceLifecycleStateMachine.STATUS_TESTING);
-        ensureDefaultVersion(item.getTargetId());
-        if ("agent".equalsIgnoreCase(item.getTargetType())) {
-            agentApiKeyService.ensureActiveKeyForAgent(item.getTargetId(), reviewerId);
-        }
-
-        boolean platformActor = casbinAuthorizationService.hasAnyRole(reviewerId, new String[]{"platform_admin", "admin"});
-        String detail = platformActor
-                ? "您的资源「" + item.getDisplayName() + "」已由平台管理员上线发布，现已进入平台可用资源池。"
-                : "您的资源「" + item.getDisplayName() + "」已发布上线，现已进入平台可用资源池。";
-        notifySubmitter(item, NotificationEventCodes.RESOURCE_PUBLISHED,
-                "资源已上线发布",
-                detail);
-        auditPendingPushDebouncer.requestFlush();
-    }
-
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void platformForceDeprecateResource(Long resourceId, Long operatorUserId, String reason) {
@@ -478,18 +411,6 @@ public class AuditServiceImpl implements AuditService {
             rejectResource(id, reason, reviewerId);
         }
     }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void batchPublishResources(List<Long> ids, Long reviewerId) {
-        if (ids == null || ids.isEmpty()) {
-            return;
-        }
-        for (Long id : ids) {
-            publishResource(id, reviewerId);
-        }
-    }
-
     private void ensureDefaultVersion(Long resourceId) {
         if (resourceId == null) {
             return;

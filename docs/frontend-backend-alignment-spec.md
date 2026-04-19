@@ -482,12 +482,9 @@
 | POST | `/audit/skills/{id}/approve` | `@RequireRole(platform_admin/dept_admin)` | 保留（过渡） |
 | POST | `/audit/agents/{id}/reject` | `@RequireRole(platform_admin/dept_admin)` + body:`RejectBody` | 保留（过渡） |
 | POST | `/audit/skills/{id}/reject` | `@RequireRole(platform_admin/dept_admin)` + body:`RejectBody` | 保留（过渡） |
-| POST | `/audit/agents/{id}/publish` | `@RequireRole(platform_admin/dept_admin)` | 新增：审核通过后发布到可调用状态 |
-| POST | `/audit/skills/{id}/publish` | `@RequireRole(platform_admin/dept_admin)` | 新增：审核通过后发布到可调用状态 |
 | GET | `/audit/resources` | query:`resourceType?,page,pageSize` | 保留（新增，统一资源审核列表） |
 | POST | `/audit/resources/{id}/approve` | `@RequireRole(platform_admin/dept_admin)` | 保留（新增，统一资源审核） |
 | POST | `/audit/resources/{id}/reject` | `@RequireRole(platform_admin/dept_admin)` + body:`ResourceRejectRequest` | 保留（新增，统一资源审核） |
-| POST | `/audit/resources/{id}/publish` | `@RequireRole(platform_admin/dept_admin)` | 保留（新增，统一资源发布） |
 | GET | `/tags` | 默认需认证上下文 | 保留 |
 | POST | `/tags` | `@RequireRole(platform_admin)` + body:`TagCreateRequest` | 保留 |
 | POST | `/tags/batch` | `@RequireRole(platform_admin)` + body:`List<TagCreateRequest>` | 保留 |
@@ -620,10 +617,9 @@
 | 接口 | 语义 | 状态流转 |
 |---|---|---|
 | `POST /resource-center/resources/{id}/submit` | 提审 | `draft/rejected/deprecated -> pending_review` |
-| `POST /audit/resources/{id}/approve` | 审核通过 | `pending_review -> testing` |
-| `POST /audit/resources/{id}/reject` | 审核驳回 | `pending_review/testing -> rejected` |
-| `POST /audit/resources/{id}/publish` | 发布 | `testing -> published` |
-| `POST /resource-center/resources/{id}/deprecate` | 下线 | `published/testing -> deprecated` |
+| `POST /audit/resources/{id}/approve` | 审核通过 | `pending_review -> published` |
+| `POST /audit/resources/{id}/reject` | 审核驳回 | `pending_review -> rejected` |
+| `POST /resource-center/resources/{id}/deprecate` | 下线 | `published -> deprecated` |
 
 表结构说明：
 

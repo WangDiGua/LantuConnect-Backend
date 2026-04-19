@@ -17,9 +17,15 @@ class ResourceLifecycleStateMachineTest {
     }
 
     @Test
-    void shouldRejectPublishedToTesting() {
+    void shouldAllowPendingReviewToPublished() {
+        assertDoesNotThrow(() ->
+                ResourceLifecycleStateMachine.ensureTransitionAllowed("pending_review", "published"));
+    }
+
+    @Test
+    void shouldRejectPendingReviewToDeprecated() {
         BusinessException ex = assertThrows(BusinessException.class, () ->
-                ResourceLifecycleStateMachine.ensureTransitionAllowed("published", "testing"));
+                ResourceLifecycleStateMachine.ensureTransitionAllowed("pending_review", "deprecated"));
         assertEquals(ResultCode.ILLEGAL_STATE_TRANSITION.getCode(), ex.getCode());
     }
 

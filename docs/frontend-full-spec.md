@@ -357,12 +357,10 @@
 | `resourceAuditService.list` | GET | `/audit/resources` | 在用(代码+页面) | 统一资源审核列表 |
 | `resourceAuditService.approve` | POST | `/audit/resources/{id}/approve` | 在用(代码+页面) | 审核通过 |
 | `resourceAuditService.reject` | POST | `/audit/resources/{id}/reject` | 在用(代码+页面) | 审核驳回 |
-| `resourceAuditService.publish` | POST | `/audit/resources/{id}/publish` | 在用(代码+页面) | 审核发布 |
 | `auditService.listPendingAgents` | GET | `/audit/agents` | 在用(代码+页面) | Agent 过渡审核队列 |
 | `auditService.listPendingSkills` | GET | `/audit/skills` | 在用(代码+页面) | Skill 过渡审核队列 |
 | `auditService.approve` | POST | `/audit/{type}s/{id}/approve` | 在用(代码+页面) | 过渡审核通过 |
 | `auditService.reject` | POST | `/audit/{type}s/{id}/reject` | 在用(代码+页面) | 过渡审核驳回 |
-| `auditService.publish` | POST | `/audit/{type}s/{id}/publish` | 在用(代码+页面) | 过渡审核发布 |
 
 ### B3.7 开发者入驻
 
@@ -547,17 +545,16 @@
 
 ### B4.1 统一资源状态（resource-center + audit）
 
-`draft -> pending_review -> testing -> published`
+`draft -> pending_review -> published`
 
 异常分支：`rejected`（驳回）、`deprecated`（下线）
 
 | 接口 | 语义 | 状态流转 |
 |---|---|---|
 | `POST /resource-center/resources/{id}/submit` | 提审 | `draft/rejected/deprecated -> pending_review` |
-| `POST /audit/resources/{id}/approve` | 审核通过 | `pending_review -> testing` |
-| `POST /audit/resources/{id}/reject` | 审核驳回 | `pending_review/testing -> rejected` |
-| `POST /audit/resources/{id}/publish` | 发布 | `testing -> published` |
-| `POST /resource-center/resources/{id}/deprecate` | 下线 | `published/testing -> deprecated` |
+| `POST /audit/resources/{id}/approve` | 审核通过 | `pending_review -> published` |
+| `POST /audit/resources/{id}/reject` | 审核驳回 | `pending_review -> rejected` |
+| `POST /resource-center/resources/{id}/deprecate` | 下线 | `published -> deprecated` |
 
 ### B4.2 告警与熔断
 

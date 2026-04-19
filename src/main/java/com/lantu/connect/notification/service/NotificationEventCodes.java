@@ -19,7 +19,6 @@ public final class NotificationEventCodes {
 
     public static final String AUDIT_APPROVED = "audit_approved";
     public static final String AUDIT_REJECTED = "audit_rejected";
-    public static final String RESOURCE_PUBLISHED = "resource_published";
 
     public static final String ONBOARDING_SUBMITTED = "onboarding_submitted";
     public static final String ONBOARDING_APPROVED = "onboarding_approved";

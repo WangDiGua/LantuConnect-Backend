@@ -2,7 +2,7 @@
 
 ## 1) 资源状态机（统一）
 
-`draft -> pending_review -> testing -> published -> deprecated`  
+`draft -> pending_review -> published -> deprecated`
 异常分支：`rejected`
 
 ## 2) 生命周期按钮流程卡
@@ -28,17 +28,16 @@
 ### 审核通过
 - 前置：`pending_review`
 - 接口：`POST /audit/resources/{id}/approve`
-- 成功：状态 `testing`
+- 成功：状态 `published`
 - 失败：提示并刷新行状态
 
-### 发布上架
-- 前置：`testing`
-- 接口：`POST /audit/resources/{id}/publish`
+### 审核通过即上线
+- 原独立发布步骤已取消，审核通过即直接上线。
+- 接口：`POST /audit/resources/{id}/approve`
 - 成功：状态 `published`，市场可见
-- 失败：阻断文案 `当前资源未进入 testing，不能直接发布`
 
 ### 下线
-- 前置：`published/testing`
+- 前置：`published`
 - 接口：`POST /resource-center/resources/{id}/deprecate`
 - 成功：状态 `deprecated`
 - 失败：提示并刷新
@@ -99,7 +98,7 @@
 1. 在 `*-register` 保存草稿。
 2. 回到 `*-list` 点击 `提交审核`。
 3. 在 `audit-center/*-audit` 点击 `审核通过`。
-4. 状态变为 `testing` 后点击 `发布上架`。
+4. 审核通过后资源直接进入 `published`。
 5. 在市场页检索到该资源（`published`）。
 
 ### ~~授权 -> 调用 -> 撤销~~（历史）
@@ -116,7 +115,7 @@
 |---|---|---|---|
 | `draft` | 保存、提交审核、删除 | 撤回、发布、下线 | 草稿不会在市场展示 |
 | `pending_review` | 撤回审核、查看进度 | 编辑、删除、发布、下线 | 审核中不可修改内容 |
-| `testing` | 发布、下线、版本管理 | 提交审核、编辑、删除 | 测试中不等于已上架 |
+| `published` | 下线、版本管理 | 提交审核、编辑、删除 | 审核通过后直接上架 |
 | `published` | 下线、版本管理 | 提交审核、撤回审核 | 已上架可检索可使用（~~授权管理~~ 已随 Grant 删） |
 | `deprecated` | 新建版本、查看历史 | 发布、提交审核 | 已下线不可调用 |
 
@@ -124,7 +123,7 @@
 
 - [x] 生命周期六大按钮流程完整（保存/提审/撤回/通过/发布/下线）
 - [x] 调用按钮流程完整（~~grant 申请/新增/撤销~~ 已删；`resolve`/`invoke` 仍须覆盖）
-- [x] 状态机矩阵完整（`draft/pending_review/testing/published/deprecated`）
+- [x] 状态机矩阵完整（`draft/pending_review/published/deprecated`）
 - [x] 阻断文案已定义
 - [x] 评分评论成功/失败脚本完整
 - [x] 市场使用成功/失败脚本完整

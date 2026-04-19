@@ -89,7 +89,9 @@ class AuthChainWebMvcTest {
         when(casbinAuthorizationService.hasPermissions(eq(1L), any(String[].class), any())).thenReturn(false);
         when(casbinAuthorizationService.hasPermissions(eq(2L), any(String[].class), any())).thenReturn(true);
 
-        when(userActivityService.pageUsageRecords(anyLong(), anyInt(), anyInt(), any()))
+        when(userActivityService.pageUsageRecords(anyLong(), anyInt(), anyInt(), any(), any(), any()))
+                .thenReturn(PageResult.of(Collections.emptyList(), 0, 1, 20));
+        when(userActivityService.pageRecentUse(anyLong(), anyInt(), anyInt(), any()))
                 .thenReturn(PageResult.of(Collections.emptyList(), 0, 1, 20));
         when(dashboardService.usageStats(anyString()))
                 .thenReturn(UsageStatsVO.builder()

@@ -1,8 +1,8 @@
 # 五类资源注册-审核-授权-调用超详细实施文档（后端真值版）
 
-> 版本：v1.0  
-> 适用对象：前端开发、产品、测试、联调负责人  
-> 目标：避免前端流程继续“想当然”，按后端真实能力完整落地 `mcp/agent/skill/dataset/app` 五类资源闭环  
+> 版本：v1.0
+> 适用对象：前端开发、产品、测试、联调负责人
+> 目标：避免前端流程继续“想当然”，按后端真实能力完整落地 `mcp/agent/skill/dataset/app` 五类资源闭环
 > 后端上下文路径以部署为准（`server.servlet.context-path`，常见为 `/api` 或 `/regis`），与前端 `VITE_API_BASE_URL` 一致。
 
 ---
@@ -30,7 +30,7 @@
   - 下线自己的资源
   - （历史）per-resource Grant / 授权工单已下线，无独立「授权管理」主路径
 - 部门管理员（dept_admin）
-  - 审核资源（approve/reject/publish）
+  - 审核资源（approve/reject）
   - 可操作资源（由后端 owner/admin 判断）
 - 平台管理员（platform_admin）
   - 同部门管理员，且具备更高全局权限
@@ -43,7 +43,7 @@
   - 提审/下线/版本页面
 - 管理员侧
   - 审核列表（pending_review）
-  - 审核详情（approve/reject/publish）
+  - 审核详情（approve/reject）
 - 用户/调用侧
   - 资源市场（目录）
   - 资源详情（resolve）
@@ -61,16 +61,16 @@
 - `DELETE /resource-center/resources/{id}` 删除（受状态机限制）
 - `POST /resource-center/resources/{id}/submit` 提审（进入 `pending_review`）
 - `POST /resource-center/resources/{id}/withdraw` 撤回提审（回 `draft`）
-- `POST /resource-center/resources/{id}/deprecate` 下线（通常从 `published/testing` 到 `deprecated`）
+- `POST /resource-center/resources/{id}/deprecate` 下线（通常从 `published` 到 `deprecated`）
 - `GET /resource-center/resources/mine` 我的资源分页
 - `GET /resource-center/resources/{id}` 资源详情（owner 或 admin）
 
 ## 3.2 审核中心（管理员）
 
 - `GET /audit/resources` 待审核列表（`pending_review`）
-- `POST /audit/resources/{auditId}/approve` 审核通过（到 `testing`）
+- `POST /audit/resources/{auditId}/approve` 审核通过并直接发布
 - `POST /audit/resources/{auditId}/reject` 审核驳回（到 `rejected`）
-- `POST /audit/resources/{auditId}/publish` 发布（**testing → published**）。服务层校验：调用者须为 **资源 owner**、**与 owner 同 `menu_id` 的 dept_admin** 或 **platform_admin/admin**（`ensureMayPublishAuditedResource`）；`@RequireRole` 含 `developer`、`dept_admin`、`platform_admin`、`admin`。
+- `POST /audit/resources/{auditId}/approve` 发布（**审核通过即 published**）。服务层校验：调用者须为 **资源 owner**、**与 owner 同 `menu_id` 的 dept_admin** 或 **platform_admin/admin**（`ensureMayPublishAuditedResource`）；`@RequireRole` 含 `developer`、`dept_admin`、`platform_admin`、`admin`。
 - `POST /audit/resources/{id}/platform-force-deprecate` **平台强制下架**（body 可选 `{"reason"}`），**仅 platform_admin** → 资源 `deprecated`，并与开发者自助 `POST /resource-center/resources/{id}/deprecate` 区分。
 
 ## 3.2.1 ~~授权申请工单~~（已下线）
@@ -114,7 +114,7 @@
 
 - `draft`：草稿，未提审
 - `pending_review`：待审核
-- `testing`：审核通过待发布（灰度/测试阶段）
+- `published`：审核通过直接上线
 - `published`：已发布（可视为上架）
 - `rejected`：驳回
 - `deprecated`：下线
@@ -124,11 +124,10 @@
 ```mermaid
 flowchart TD
     draftState[Draft] -->|submit| pendingReview
-    pendingReview[PendingReview] -->|approve| testingState
+    pendingReview[PendingReview] -->|approve| publishedState
     pendingReview -->|reject| rejectedState
     pendingReview -->|withdraw| draftState
-    testingState[Testing] -->|publish| publishedState
-    testingState -->|deprecate| deprecatedState
+    publishedState -->|deprecate| deprecatedState
     publishedState[Published] -->|deprecate| deprecatedState
     rejectedState[Rejected] -->|editAndSubmit| pendingReview
     deprecatedState[Deprecated] -->|resubmit| pendingReview
@@ -144,7 +143,7 @@ flowchart TD
   - 开发者可见：撤回提审
   - 管理员可见：通过、驳回
   - 不应允许编辑/删除
-- `testing`
+- `published`
   - **发布**：资源 owner、同部门 dept_admin 或 platform_admin/admin（`ensureMayPublishAuditedResource`）；驳回仍可由审核管理员操作（按产品策略）
   - 开发者可见：下线（若业务允许）
 - `published`
@@ -228,17 +227,16 @@ flowchart TD
 
 后端是分段状态：
 
-1. `approve`：`pending_review -> testing`
-2. `publish`：`testing -> published`
+1. `approve`：`pending_review -> published`
+2. `publish`：`审核通过即 published`
 
 只有 `published` 才应在前端标记为“已上架可用”。
 
 ## 6.2 审核接口调用顺序（管理员）
 
-1) 审核列表拉取 `GET /audit/resources?resourceType=mcp&page=1&pageSize=20`  
-2) 通过：`POST /audit/resources/{auditId}/approve`  
-3) 发布：`POST /audit/resources/{auditId}/publish`  
-
+1) 审核列表拉取 `GET /audit/resources?resourceType=mcp&page=1&pageSize=20`
+2) 通过：`POST /audit/resources/{auditId}/approve`
+3) 审核通过：`POST /audit/resources/{auditId}/approve`
 驳回路径：`POST /audit/resources/{auditId}/reject`（body 要有 `reason`）
 
 ---
@@ -273,11 +271,11 @@ flowchart LR
 
 ## 7.4 常见误区
 
-- 误区1：只要有 scope 就一定 resolve/invoke 成功  
+- 误区1：只要有 scope 就一定 resolve/invoke 成功
   - 错：资源可能非 `published`、类型不允许调用、或 Key 与资源状态不满足网关规则。
-- 误区2：`accessPolicy=grant_required` 表示必须找 owner 开 Grant  
+- 误区2：`accessPolicy=grant_required` 表示必须找 owner 开 Grant
   - 错：该值为历史枚举；迁移后库中多为 `open_platform`，且网关 **不**再按 Grant 表裁决。
-- 误区3：存在「授权链接」可免 Key  
+- 误区3：存在「授权链接」可免 Key
   - 错：调用链仍以 **API Key**（及 scope）为主；App 启动等若有 ticket，见 `AppLaunchTokenService` 等专门文档。
 
 ---
@@ -290,8 +288,7 @@ flowchart LR
 flowchart TD
     createRes["POST /resource-center/resources"] --> submitAudit["POST /resource-center/resources/{id}/submit"]
     submitAudit --> adminApprove["POST /audit/resources/{auditId}/approve"]
-    adminApprove --> adminPublish["POST /audit/resources/{auditId}/publish"]
-    adminPublish --> catalogList["GET /catalog/resources?resourceType=...&status=published"]
+    adminApprove --> catalogList["GET /catalog/resources?resourceType=...&status=published"]
     catalogList --> resolveRes["POST /catalog/resolve"]
     resolveRes --> useByType{"resourceType"}
     useByType -->|agent/mcp| invokeCall["POST /invoke"]
@@ -431,7 +428,7 @@ flowchart TD
   - 驳回 -> `reject`（必须填写 reason）
   - 发布 -> `publish`
 - 强提醒：
-  - 通过后卡片状态应显示 `testing`，不要显示“已上架”
+  - 通过后卡片状态应显示 `published`
   - 发布成功后才显示“已上架/可使用”
 
 ## 11.4 市场页
@@ -480,15 +477,14 @@ flowchart TD
 
 ## 13.1 MCP 完整验收
 
-1. 开发者创建 MCP 成功（状态 `draft`）  
-2. 提审成功（状态 `pending_review`）  
-3. 管理员 approve 后状态 `testing`  
-4. 管理员 publish 后状态 `published`  
-5. 市场 `resourceType=mcp&status=published` 可见  
-6. resolve 返回 endpoint/spec 正确  
-7. invoke 可成功  
-8. **另一用户**的有效 Key：若 scope 不足或非 published，应拒绝；scope 正确且资源已发布则 **应允许**（无 Grant 行概念）  
-9. ~~授权 / 撤销 Grant~~：接口已删除，验收删除本步骤  
+1. 开发者创建 MCP 成功（状态 `draft`）
+2. 提审成功（状态 `pending_review`）
+3. 管理员 approve 后状态 `published`
+4. 市场 `resourceType=mcp&status=published` 可见
+6. resolve 返回 endpoint/spec 正确
+7. invoke 可成功
+8. **另一用户**的有效 Key：若 scope 不足或非 published，应拒绝；scope 正确且资源已发布则 **应允许**（无 Grant 行概念）
+9. ~~授权 / 撤销 Grant~~：接口已删除，验收删除本步骤
 10. 复核：403 原因应来自 **scope / 状态 / RBAC**，而非「无 Grant」
 
 ## 13.2 其余四类验收最小集
@@ -501,7 +497,7 @@ flowchart TD
 
 ## 14. 最后两条硬规则（防再跑偏）
 
-- 规则1：**任何“上架成功”文案必须以 `published` 为准**，不能以 `approve` 为准。  
+- 规则1：**任何“上架成功”文案必须以 `published` 为准**，不能以 `approve` 为准。
 - 规则2：**对接集成文案以「API Key + scope + published」为准**；勿再写「逐资源 Grant / 授权工单」主路径。App 等若有 launch ticket，单独说明。
 
 ---
@@ -517,4 +513,3 @@ flowchart TD
 - `src/main/java/com/lantu/connect/gateway/service/impl/UnifiedGatewayServiceImpl.java`
 - `src/main/java/com/lantu/connect/gateway/security/ResourceInvokeGrantService.java`
 - `src/main/java/com/lantu/connect/gateway/security/ApiKeyScopeService.java`
-

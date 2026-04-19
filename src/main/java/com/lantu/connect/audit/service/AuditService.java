@@ -24,22 +24,14 @@ public interface AuditService {
 
     void rejectSkill(Long id, String reason, Long reviewerId);
 
-    void publishAgent(Long id, Long reviewerId);
-
-    void publishSkill(Long id, Long reviewerId);
-
     void approveResource(Long id, Long reviewerId);
 
     void rejectResource(Long id, String reason, Long reviewerId);
-
-    void publishResource(Long id, Long reviewerId);
 
     /** 单事务：任一条失败则全部回滚。 */
     void batchApproveResources(List<Long> ids, Long reviewerId);
 
     void batchRejectResources(List<Long> ids, String reason, Long reviewerId);
-
-    void batchPublishResources(List<Long> ids, Long reviewerId);
 
     /**
      * 平台强制下架：仅应由 {@code platform_admin} 调用（控制器层校验）。资源进入 {@code deprecated}，并可选更新审核队列表记。

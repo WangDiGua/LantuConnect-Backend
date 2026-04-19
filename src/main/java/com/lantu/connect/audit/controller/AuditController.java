@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.*;
 /**
  * 审核 Audit 控制器：
  * reviewer / platform_admin 负责 approve、reject（全平台队列，不按部门隔离）；
- * publish（testing→published）由资源 owner、reviewer、platform_admin/admin 执行；
+ * 新流程审核通过后直接上线；不再存在 testing 或单独发布步骤；
  * 平台对任意已上架资源的强制下架见 {@code /resources/{id}/platform-force-deprecate}。
  */
 @RestController
@@ -91,22 +91,6 @@ public class AuditController {
         return R.ok();
     }
 
-    @PostMapping("/agents/{id}/publish")
-    @RequireRole({"platform_admin", "admin", "reviewer", "developer"})
-    @AuditLog(action = "audit_publish_agent", resource = "audit")
-    public R<Void> publishAgent(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
-        auditService.publishAgent(id, userId);
-        return R.ok();
-    }
-
-    @PostMapping("/skills/{id}/publish")
-    @RequireRole({"platform_admin", "admin", "reviewer", "developer"})
-    @AuditLog(action = "audit_publish_skill", resource = "audit")
-    public R<Void> publishSkill(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
-        auditService.publishSkill(id, userId);
-        return R.ok();
-    }
-
     @PostMapping("/resources/{id}/approve")
     @RequireRole({"platform_admin", "reviewer"})
     @AuditLog(action = "audit_approve_resource", resource = "audit")
@@ -121,14 +105,6 @@ public class AuditController {
     public R<Void> rejectResource(@RequestHeader("X-User-Id") Long userId,
                                   @PathVariable Long id, @RequestBody ResourceRejectRequest body) {
         auditService.rejectResource(id, body != null ? body.getReason() : null, userId);
-        return R.ok();
-    }
-
-    @PostMapping("/resources/{id}/publish")
-    @RequireRole({"platform_admin", "admin", "reviewer", "developer"})
-    @AuditLog(action = "audit_publish_resource", resource = "audit")
-    public R<Void> publishResource(@RequestHeader("X-User-Id") Long userId, @PathVariable Long id) {
-        auditService.publishResource(id, userId);
         return R.ok();
     }
 
@@ -147,15 +123,6 @@ public class AuditController {
     public R<Void> batchRejectResource(@RequestHeader("X-User-Id") Long userId,
                                        @Valid @RequestBody IdsWithReasonRequest body) {
         auditService.batchRejectResources(body.getIds(), body.getReason(), userId);
-        return R.ok();
-    }
-
-    @PostMapping("/resources/batch-publish")
-    @RequireRole({"platform_admin", "admin", "reviewer", "developer"})
-    @AuditLog(action = "audit_batch_publish_resource", resource = "audit")
-    public R<Void> batchPublishResource(@RequestHeader("X-User-Id") Long userId,
-                                         @Valid @RequestBody LongIdsRequest body) {
-        auditService.batchPublishResources(body.getIds(), userId);
         return R.ok();
     }
 

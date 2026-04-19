@@ -18,7 +18,7 @@
 
 - ~~`resource-grant-management`~~ **已下线**（2026-04-09）：`/resource-grants*` 已删；前端宜移除菜单项。
 - `provider-management` 仅做 provider 元数据与跳转，不承载授权主流程。
-- 审核入口统一在 `audit-center`，资源管理目录不做 `approve/reject/publish`。
+- 审核入口统一在 `audit-center`，资源管理目录不做 `approve/reject`。
 - 市场固定五类，不允许把 `mcp` 并回 `skill`。
 
 ## 3) 页面结构蓝图（通用骨架）
@@ -32,13 +32,13 @@
 ## 3.1 统一组件与交互设计规范（UI 基线）
 
 ### 按钮层级
-- 主按钮（Primary）：每个区域只允许 1 个，如“提交审核”“发布上架”（~~“新增授权”~~ 随 Grant 下线移除）。
+- 主按钮（Primary）：每个区域只允许 1 个，如“提交审核”“审核通过”（~~“新增授权”~~ 随 Grant 下线移除）。
 - 次按钮（Secondary）：辅助动作，如“保存草稿”“撤回审核”。
 - 危险按钮（Danger）：删除、下线等破坏性操作，必须二次确认弹窗。
 
 ### 表格与列表
 - 列表首列固定业务主键可读字段（`displayName` 或 `resourceCode`），末列固定操作列。
-- 状态标签统一：`draft/pending_review/testing/published/rejected/deprecated` 使用固定文案与颜色语义。
+- 状态标签统一：`draft/pending_review/published/rejected/deprecated` 使用固定文案与颜色语义。
 - 列表页必须支持：加载态骨架、空态引导、错误态重试。
 
 ### 表单与弹窗
@@ -55,9 +55,9 @@
 
 | 页面 | 分区 | 必显字段 | 状态要求 |
 |---|---|---|---|
-| `*-list` | Header + FilterBar + Table + Pagination | `resourceCode/displayName/status/version/updateTime` | 显示 `draft/pending_review/testing/published/deprecated` |
+| `*-list` | Header + FilterBar + Table + Pagination | `resourceCode/displayName/status/version/updateTime` | 显示 `draft/pending_review/published/deprecated` |
 | `*-register` | Header + Form + StickyActionBar | 公共字段 + 类型字段 | 保存后 `draft`，提审后 `pending_review` |
-| `audit-center/*-audit` | Header + FilterBar + AuditList + ActionModal | `displayName/resourceType/status/submitter/submitTime` | 通过->`testing`，发布->`published` |
+| `audit-center/*-audit` | Header + FilterBar + AuditList + ActionModal | `displayName/resourceType/status/submitter/submitTime` | 通过->`published` |
 | ~~`resource-grant-management`~~ | **已下线** | — | ~~`/resource-grants*`~~ **已删** |
 | `monitoring/call-logs` | FilterBar + LogTable | `traceId/statusCode/latencyMs/time` | 支持 trace 定位 |
 | `system-config/*` | ConfigTabs + Form + SaveBar | 配置项键值 + 更新时间 | 保存失败不丢已编辑内容 |
@@ -208,7 +208,7 @@ flowchart TD
   publish["MyPublishListPage"] --> h["Header: 新建资源"]
   publish --> f["FilterBar: type/status/keyword"]
   publish --> t["Table: resource + status + version + actions"]
-  publish --> step["StepHint: 注册->提审->审核->发布"]
+  publish --> step["StepHint: 注册->提审->审核通过"]
   publish --> p["Pagination"]
 ```
 

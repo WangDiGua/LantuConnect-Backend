@@ -19,7 +19,7 @@ import java.util.Map;
  */
 public interface UserActivityService {
 
-    PageResult<UsageRecord> pageUsageRecords(Long userId, int page, int pageSize, String type);
+    PageResult<UsageRecord> pageUsageRecords(Long userId, int page, int pageSize, String range, String type, String keyword);
 
     List<Favorite> listFavorites(Long userId);
 
@@ -35,5 +35,5 @@ public interface UserActivityService {
 
     PageResult<AuthorizedSkillVO> pageAuthorizedSkills(Long userId, int page, int pageSize);
 
-    List<RecentUseVO> recentUse(Long userId, int limit, String type);
+    PageResult<RecentUseVO> pageRecentUse(Long userId, int page, int pageSize, String type);
 }

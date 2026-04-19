@@ -60,7 +60,7 @@
 
 | 区域 | Controller | reviewer |
 |------|------------|----------|
-| 审核 | `AuditController` | approve/reject/publish（除 platform-force-deprecate） |
+| 审核 | `AuditController` | approve/reject（除 platform-force-deprecate） |
 | 入驻 | `DeveloperApplicationController` | 列表与审批 |
 | ~~授权工单~~ | ~~`GrantApplicationController`~~ | **已删除** |
 | 用户管理 | `UserMgmtController` | 无类级别角色门槛；具体方法由 `RequirePermission` / `RequireRole` 约束；列表只读需 `user:read` |
