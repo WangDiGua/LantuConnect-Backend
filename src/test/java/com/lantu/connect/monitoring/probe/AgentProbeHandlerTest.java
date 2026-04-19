@@ -104,4 +104,48 @@ class AgentProbeHandlerTest {
         assertEquals("dify", specCaptor.getValue().get("x_adapter_id"));
         assertEquals("dify_agent_app", specCaptor.getValue().get("transformProfile"));
     }
+
+    @Test
+    void probe_should_merge_platform_probe_defaults_into_existing_canary_payload() throws Exception {
+        ProtocolInvokerRegistry protocolInvokerRegistry = mock(ProtocolInvokerRegistry.class);
+        when(protocolInvokerRegistry.invoke(
+                eq("openai_compatible"),
+                eq("https://api.dify.ai/v1/chat-messages"),
+                anyInt(),
+                anyString(),
+                anyMap(),
+                anyMap(),
+                any()))
+                .thenReturn(new ProtocolInvokeResult(200, "{\"answer\":\"ok\"}", 45L));
+
+        AgentProbeHandler handler = new AgentProbeHandler(protocolInvokerRegistry);
+
+        ResourceProbeTarget target = ResourceProbeTarget.builder()
+                .resourceId(71L)
+                .resourceType("agent")
+                .resourceCode("dify-course-agent")
+                .displayName("Dify Course Agent")
+                .registrationProtocol("openai_compatible")
+                .upstreamEndpoint("https://api.dify.ai/v1/chat-messages")
+                .canaryPayload(Map.of("query", "health check"))
+                .specExtra(Map.of(
+                        "x_adapter_id", "dify",
+                        "x_protocol_family", "openai_compatible"))
+                .build();
+
+        handler.probe(target);
+
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(protocolInvokerRegistry).invoke(
+                eq("openai_compatible"),
+                eq("https://api.dify.ai/v1/chat-messages"),
+                anyInt(),
+                anyString(),
+                payloadCaptor.capture(),
+                anyMap(),
+                any());
+        assertEquals("health check", payloadCaptor.getValue().get("query"));
+        assertEquals("test-session", payloadCaptor.getValue().get("session_id"));
+        assertEquals("hello", payloadCaptor.getValue().get("input"));
+    }
 }

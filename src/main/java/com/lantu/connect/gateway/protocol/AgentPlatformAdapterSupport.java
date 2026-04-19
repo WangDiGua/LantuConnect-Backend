@@ -35,6 +35,8 @@ public final class AgentPlatformAdapterSupport {
     public static final String ADAPTER_DIFY = "dify";
     public static final String ADAPTER_OPENAI_AGENTS = "openai_agents";
     public static final String ADAPTER_TENCENT_YUANQI = "tencent_yuanqi";
+    private static final int PLATFORM_AGENT_TIMEOUT_SEC = 45;
+    private static final long PLATFORM_AGENT_LATENCY_THRESHOLD_MS = 45_000L;
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final Map<String, AdapterMeta> REGISTRY = createRegistry();
@@ -209,6 +211,30 @@ public final class AgentPlatformAdapterSupport {
         return Optional.of(payload);
     }
 
+    public static Optional<Map<String, Object>> suggestedProbeConfig(Map<String, Object> spec,
+                                                                     String upstreamEndpoint,
+                                                                     String registrationProtocol,
+                                                                     String upstreamAgentId,
+                                                                     String transformProfile) {
+        String adapterId = resolveAdapterId(spec, upstreamEndpoint, registrationProtocol, upstreamAgentId, transformProfile);
+        if (!isPlatformAdapter(adapterId)) {
+            return Optional.empty();
+        }
+        return Optional.of(Map.of("latencyThresholdMs", PLATFORM_AGENT_LATENCY_THRESHOLD_MS));
+    }
+
+    public static Optional<Integer> suggestedTimeoutSec(Map<String, Object> spec,
+                                                        String upstreamEndpoint,
+                                                        String registrationProtocol,
+                                                        String upstreamAgentId,
+                                                        String transformProfile) {
+        String adapterId = resolveAdapterId(spec, upstreamEndpoint, registrationProtocol, upstreamAgentId, transformProfile);
+        if (!isPlatformAdapter(adapterId)) {
+            return Optional.empty();
+        }
+        return Optional.of(PLATFORM_AGENT_TIMEOUT_SEC);
+    }
+
     public static ProviderProtocolRequest buildPlatformRequest(String endpoint,
                                                                Map<String, Object> payload,
                                                                Map<String, Object> spec,
@@ -267,6 +293,9 @@ public final class AgentPlatformAdapterSupport {
                 text(spec == null ? null : spec.get("registrationProtocol")),
                 text(spec == null ? null : spec.get("upstreamAgentId")),
                 text(spec == null ? null : spec.get("transformProfile")));
+        if (ADAPTER_DIFY.equals(adapterId)) {
+            return extractDifyText(rawBody);
+        }
         if (ADAPTER_TENCENT_YUANQI.equals(adapterId)) {
             return extractTencentYuanqiText(rawBody);
         }
@@ -300,7 +329,7 @@ public final class AgentPlatformAdapterSupport {
         } else {
             body.put("inputs", inputs);
             body.put("query", query);
-            body.put("response_mode", "blocking");
+            body.put("response_mode", "streaming");
             body.put("user", user);
             String conversationId = text(payload == null ? null : payload.get("conversation_id"));
             if (StringUtils.hasText(conversationId)) {
@@ -311,6 +340,7 @@ public final class AgentPlatformAdapterSupport {
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put("Content-Type", "application/json");
         headers.put("X-Trace-Id", traceId);
+        headers.put("Accept", path.contains("/workflows/run") ? "application/json" : "text/event-stream");
         if (StringUtils.hasText(resolvedCredential)) {
             headers.put("Authorization", "Bearer " + resolvedCredential.trim());
         }
@@ -475,6 +505,54 @@ public final class AgentPlatformAdapterSupport {
         return messages.isEmpty() ? null : String.join("\n", messages);
     }
 
+    private static String extractDifyText(String rawBody) {
+        if (!StringUtils.hasText(rawBody)) {
+            return null;
+        }
+        try {
+            JsonNode node = OBJECT_MAPPER.readTree(rawBody);
+            return firstText(
+                    textFromPath(node, "answer"),
+                    textFromPath(node, "data.answer"),
+                    textFromPath(node, "data.outputs.answer"),
+                    textFromPath(node, "data.outputs.text"),
+                    firstScalarFromNode(nodeAt(node, "data.outputs")));
+        } catch (Exception ignored) {
+            // Fall through to SSE parsing below.
+        }
+        List<String> fragments = new ArrayList<>();
+        String[] lines = rawBody.split("\\R");
+        for (String rawLine : lines) {
+            String line = rawLine == null ? "" : rawLine.trim();
+            if (!line.startsWith("data:")) {
+                continue;
+            }
+            String data = line.substring(5).trim();
+            if (!StringUtils.hasText(data) || "[DONE]".equalsIgnoreCase(data)) {
+                continue;
+            }
+            try {
+                JsonNode node = OBJECT_MAPPER.readTree(data);
+                String answer = rawTextFromPath(node, "answer");
+                if (!StringUtils.hasText(answer)) {
+                    answer = rawTextFromPath(node, "data.answer");
+                }
+                if (!StringUtils.hasText(answer)) {
+                    answer = rawTextFromPath(node, "data.outputs.answer");
+                }
+                if (!StringUtils.hasText(answer)) {
+                    answer = rawTextFromPath(node, "data.outputs.text");
+                }
+                if (answer != null) {
+                    fragments.add(answer);
+                }
+            } catch (Exception ignored) {
+                // Ignore malformed SSE fragments and keep scanning the stream.
+            }
+        }
+        return fragments.isEmpty() ? null : String.join("", fragments);
+    }
+
     private static String firstScalarFromNode(JsonNode node) {
         if (node == null || node.isMissingNode() || node.isNull()) {
             return null;
@@ -540,6 +618,15 @@ public final class AgentPlatformAdapterSupport {
         }
         String value = node.asText(null);
         return StringUtils.hasText(value) ? value : null;
+    }
+
+    private static String rawTextFromPath(JsonNode root, String path) {
+        JsonNode node = nodeAt(root, path);
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        String value = node.asText(null);
+        return value == null || value.isEmpty() ? null : value;
     }
 
     private static Map<String, Object> extractInputs(Map<String, Object> payload) {

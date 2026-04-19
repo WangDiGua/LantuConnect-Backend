@@ -2,6 +2,7 @@ package com.lantu.connect.monitoring.service.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lantu.connect.gateway.protocol.AgentPlatformAdapterSupport;
 import com.lantu.connect.gateway.service.GatewayBindingExpansionService;
 import com.lantu.connect.monitoring.ResourceCircuitHealthBridge;
 import com.lantu.connect.monitoring.dto.ResourceHealthDependencyVO;
@@ -55,12 +56,9 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
         String probeStrategy = defaultProbeStrategy(row.resourceType, row.protocol);
         String checkType = defaultCheckType(row.resourceType, row.protocol);
         String checkUrl = defaultCheckUrl(row.resourceType, row.upstreamEndpoint, row.endpoint);
-        Map<String, Object> probeConfig = row.probeConfig == null || row.probeConfig.isEmpty()
-                ? defaultProbeConfig(row.resourceType, row.protocol)
-                : row.probeConfig;
-        Map<String, Object> canaryPayload = row.canaryPayload == null || row.canaryPayload.isEmpty()
-                ? defaultCanaryPayload(row)
-                : row.canaryPayload;
+        Map<String, Object> probeConfig = effectiveProbeConfig(row);
+        Map<String, Object> canaryPayload = effectiveCanaryPayload(row);
+        int timeoutSec = effectiveTimeout(row);
         String healthStatus = normalizeHealthStatus(row.healthStatus);
         String circuitState = normalizeCircuitState(row.currentState);
         String callabilityState = computeCallabilityState(row, healthStatus, circuitState);
@@ -87,7 +85,7 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
                     writeJson(canaryPayload),
                     defaultInterval(row.resourceType),
                     defaultHealthyThreshold(row.resourceType),
-                    defaultTimeout(row.resourceType),
+                    timeoutSec,
                     healthStatus,
                     circuitState,
                     callabilityState,
@@ -105,6 +103,7 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
                             check_type = COALESCE(NULLIF(TRIM(?), ''), check_type),
                             check_url = COALESCE(NULLIF(TRIM(?), ''), check_url),
                             probe_strategy = COALESCE(NULLIF(TRIM(?), ''), probe_strategy),
+                            timeout_sec = COALESCE(?, timeout_sec),
                             probe_config_json = COALESCE(?, probe_config_json),
                             canary_payload_json = COALESCE(?, canary_payload_json),
                             callability_state = ?,
@@ -118,6 +117,7 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
                 checkType,
                 checkUrl,
                 probeStrategy,
+                timeoutSec,
                 writeJson(probeConfig),
                 writeJson(canaryPayload),
                 callabilityState,
@@ -510,6 +510,7 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
             row.credentialRef = str(ext.get("credential_ref"));
             row.transformProfile = str(ext.get("transform_profile"));
             row.modelAlias = str(ext.get("model_alias"));
+            row.specExtra = parseMap(ext.get("spec_json"));
         } else if (TYPE_SKILL.equalsIgnoreCase(resourceType)) {
             row.resourceEnabled = true;
             row.executionMode = str(ext.get("execution_mode"));
@@ -539,7 +540,7 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
         List<Map<String, Object>> rows = switch (resourceType.trim().toLowerCase(Locale.ROOT)) {
             case TYPE_AGENT -> jdbcTemplate.queryForList("""
                     SELECT enabled, registration_protocol, upstream_endpoint, upstream_agent_id,
-                           credential_ref, transform_profile, model_alias
+                           credential_ref, transform_profile, model_alias, spec_json
                     FROM t_resource_agent_ext
                     WHERE resource_id = ?
                     LIMIT 1
@@ -681,6 +682,20 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
         return 20;
     }
 
+    private int defaultTimeout(ResourceRow row) {
+        int fallback = defaultTimeout(row == null ? null : row.resourceType);
+        if (row == null) {
+            return fallback;
+        }
+        return AgentPlatformAdapterSupport.suggestedTimeoutSec(
+                        row.specExtra,
+                        row.upstreamEndpoint,
+                        row.registrationProtocol,
+                        row.upstreamAgentId,
+                        row.transformProfile)
+                .orElse(fallback);
+    }
+
     private Map<String, Object> defaultProbeConfig(String resourceType, String protocol) {
         if (TYPE_AGENT.equalsIgnoreCase(resourceType)) {
             return Map.of("latencyThresholdMs", 1500);
@@ -696,12 +711,37 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
         return Map.of();
     }
 
+    private Map<String, Object> defaultProbeConfig(ResourceRow row) {
+        Map<String, Object> config = new LinkedHashMap<>(
+                defaultProbeConfig(row == null ? null : row.resourceType, row == null ? null : row.protocol));
+        if (row == null) {
+            return config;
+        }
+        AgentPlatformAdapterSupport.suggestedProbeConfig(
+                        row.specExtra,
+                        row.upstreamEndpoint,
+                        row.registrationProtocol,
+                        row.upstreamAgentId,
+                        row.transformProfile)
+                .ifPresent(config::putAll);
+        return config;
+    }
+
     private Map<String, Object> defaultCanaryPayload(ResourceRow row) {
         if (row == null) {
             return Map.of();
         }
         if (TYPE_AGENT.equalsIgnoreCase(row.resourceType)) {
-            return Map.of("query", "health check");
+            Map<String, Object> payload = new LinkedHashMap<>(
+                    AgentPlatformAdapterSupport.suggestedPayload(
+                                    row.specExtra,
+                                    row.upstreamEndpoint,
+                                    row.registrationProtocol,
+                                    row.upstreamAgentId,
+                                    row.transformProfile)
+                            .orElse(Map.of()));
+            payload.putIfAbsent("query", "health check");
+            return payload;
         }
         if (TYPE_SKILL.equalsIgnoreCase(row.resourceType)) {
             if (row.parametersSchema != null && !row.parametersSchema.isEmpty()) {
@@ -713,6 +753,67 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
             return Map.of("topic", row.displayName);
         }
         return Map.of();
+    }
+
+    private int effectiveTimeout(ResourceRow row) {
+        int suggested = defaultTimeout(row);
+        if (row == null || row.timeoutSec == null) {
+            return suggested;
+        }
+        int genericDefault = defaultTimeout(row.resourceType);
+        if (TYPE_AGENT.equalsIgnoreCase(row.resourceType)
+                && row.timeoutSec <= genericDefault
+                && suggested > row.timeoutSec) {
+            return suggested;
+        }
+        return row.timeoutSec;
+    }
+
+    private Map<String, Object> effectiveProbeConfig(ResourceRow row) {
+        Map<String, Object> suggested = defaultProbeConfig(row);
+        if (row == null || row.probeConfig == null || row.probeConfig.isEmpty()) {
+            return suggested;
+        }
+        Map<String, Object> merged = new LinkedHashMap<>(row.probeConfig);
+        for (Map.Entry<String, Object> entry : suggested.entrySet()) {
+            if (!merged.containsKey(entry.getKey())
+                    || shouldUpgradeProbeConfigValue(row, entry.getKey(), merged.get(entry.getKey()), entry.getValue())) {
+                merged.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return merged;
+    }
+
+    private Map<String, Object> effectiveCanaryPayload(ResourceRow row) {
+        Map<String, Object> suggested = defaultCanaryPayload(row);
+        if (row == null || row.canaryPayload == null || row.canaryPayload.isEmpty()) {
+            return suggested;
+        }
+        Map<String, Object> merged = new LinkedHashMap<>(row.canaryPayload);
+        for (Map.Entry<String, Object> entry : suggested.entrySet()) {
+            merged.putIfAbsent(entry.getKey(), entry.getValue());
+        }
+        return merged;
+    }
+
+    private boolean shouldUpgradeProbeConfigValue(ResourceRow row,
+                                                  String key,
+                                                  Object currentValue,
+                                                  Object suggestedValue) {
+        if (!TYPE_AGENT.equalsIgnoreCase(row == null ? null : row.resourceType)) {
+            return false;
+        }
+        if (!"latencyThresholdMs".equalsIgnoreCase(firstText(key, ""))) {
+            return false;
+        }
+        Long current = longObject(currentValue);
+        Long genericDefault = longObject(defaultProbeConfig(TYPE_AGENT, null).get("latencyThresholdMs"));
+        Long suggested = longObject(suggestedValue);
+        return current != null
+                && genericDefault != null
+                && suggested != null
+                && current <= genericDefault
+                && suggested > current;
     }
 
     private Map<String, Object> generatePayloadFromSchema(Map<String, Object> schema) {

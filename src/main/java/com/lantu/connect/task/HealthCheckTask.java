@@ -37,9 +37,9 @@ public class HealthCheckTask {
         }
         try {
             List<Long> targets = jdbcTemplate.query("""
-                            SELECT p.resource_id
-                            FROM t_resource_runtime_policy p
-                            INNER JOIN t_resource r ON r.id = p.resource_id
+                            SELECT r.id
+                            FROM t_resource r
+                            LEFT JOIN t_resource_runtime_policy p ON p.resource_id = r.id
                             WHERE r.deleted = 0
                               AND r.resource_type IN ('agent', 'skill')
                               AND LOWER(r.status) = 'published'

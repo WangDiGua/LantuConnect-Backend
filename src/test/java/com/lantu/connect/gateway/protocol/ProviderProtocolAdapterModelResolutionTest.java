@@ -125,9 +125,10 @@ class ProviderProtocolAdapterModelResolutionTest {
                 "trace-6");
 
         assertEquals("hello", OBJECT_MAPPER.readTree(request.body()).path("query").asText());
-        assertEquals("blocking", OBJECT_MAPPER.readTree(request.body()).path("response_mode").asText());
+        assertEquals("streaming", OBJECT_MAPPER.readTree(request.body()).path("response_mode").asText());
         assertEquals("session-1", OBJECT_MAPPER.readTree(request.body()).path("user").asText());
         assertEquals("Bearer secret", request.headers().get("Authorization"));
+        assertEquals("text/event-stream", request.headers().get("Accept"));
     }
 
     @Test
@@ -182,5 +183,41 @@ class ProviderProtocolAdapterModelResolutionTest {
                         """);
 
         assertEquals("第一段\n第二段", text);
+    }
+    @Test
+    void platformSupportExtractsDifyReplyTextFromSseStream() {
+        String text = AgentPlatformAdapterSupport.extractResponseText(
+                Map.of("x_adapter_id", "dify"),
+                """
+                        data: {"event":"agent_thought","thought":""}
+
+                        data: {"event":"agent_message","answer":"Hello"}
+
+                        data: {"event":"agent_message","answer":" world"}
+
+                        data: [DONE]
+                        """);
+
+        assertEquals("Hello world", text);
+    }
+
+    @Test
+    void platformSupportSuggestsRelaxedHealthDefaultsForDify() {
+        Map<String, Object> probeConfig = AgentPlatformAdapterSupport.suggestedProbeConfig(
+                Map.of("x_adapter_id", "dify"),
+                "https://api.dify.ai/v1/chat-messages",
+                "openai_compatible",
+                null,
+                "dify_agent_app").orElseThrow();
+
+        int timeoutSec = AgentPlatformAdapterSupport.suggestedTimeoutSec(
+                Map.of("x_adapter_id", "dify"),
+                "https://api.dify.ai/v1/chat-messages",
+                "openai_compatible",
+                null,
+                "dify_agent_app").orElseThrow();
+
+        assertEquals(45_000L, ((Number) probeConfig.get("latencyThresholdMs")).longValue());
+        assertEquals(45, timeoutSec);
     }
 }

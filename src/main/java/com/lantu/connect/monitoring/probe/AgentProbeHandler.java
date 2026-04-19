@@ -44,14 +44,19 @@ public class AgentProbeHandler implements ResourceProbeHandler {
         spec.put("credentialRef", target.credentialRef());
         spec.put("transformProfile", target.transformProfile());
         spec.put("modelAlias", target.modelAlias());
-        Map<String, Object> payload = new LinkedHashMap<>(target.canaryPayload() == null
-                ? AgentPlatformAdapterSupport.suggestedPayload(
+        Map<String, Object> suggestedPayload = AgentPlatformAdapterSupport.suggestedPayload(
                 spec,
                 target.upstreamEndpoint(),
                 protocol,
                 target.upstreamAgentId(),
-                target.transformProfile()).orElse(Map.of("query", "health check"))
-                : target.canaryPayload());
+                target.transformProfile()).orElse(Map.of());
+        Map<String, Object> payload = new LinkedHashMap<>(suggestedPayload);
+        if (target.canaryPayload() != null && !target.canaryPayload().isEmpty()) {
+            payload.putAll(target.canaryPayload());
+        }
+        if (payload.isEmpty()) {
+            payload.put("query", "health check");
+        }
         payload.putIfAbsent("_probe", true);
         try {
             ProtocolInvokeResult result = protocolInvokerRegistry.invoke(
