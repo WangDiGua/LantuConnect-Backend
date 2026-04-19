@@ -17,6 +17,15 @@ public class OpenAiCompatibleAdapter extends AbstractProviderProtocolAdapter {
 
     @Override
     public ProviderProtocolRequest buildRequest(String endpoint, Map<String, Object> payload, Map<String, Object> spec, String resolvedCredential, String traceId) {
+        ProviderProtocolRequest platformRequest = AgentPlatformAdapterSupport.buildPlatformRequest(
+                endpoint,
+                payload,
+                spec,
+                resolvedCredential,
+                traceId);
+        if (platformRequest != null) {
+            return platformRequest;
+        }
         String path = endpointPath(endpoint);
         String query = extractQuery(payload);
         String model = resolveModel(spec, "default");

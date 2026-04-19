@@ -614,6 +614,8 @@ CREATE TABLE `t_resource_app_ext`  (
   `icon` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
   `screenshots` json NULL,
   `is_public` tinyint(1) NULL DEFAULT 0,
+  `agent_exposure` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '椤甸潰鍨?Agent 鏆撮湶褰㈡€侊紱unified_agent 琛ㄧず绾冲叆 Agent 瑙嗗浘',
+  `agent_delivery_mode` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '椤甸潰鍨?Agent 浜ゅ粯妯″紡锛屽綋鍓嶄粎 page',
   `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '应用介绍 Markdown（选填）',
   PRIMARY KEY (`resource_id`) USING BTREE,
   CONSTRAINT `fk_resource_app_ext_resource` FOREIGN KEY (`resource_id`) REFERENCES `t_resource` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
@@ -622,9 +624,9 @@ CREATE TABLE `t_resource_app_ext`  (
 -- ----------------------------
 -- Records of t_resource_app_ext
 -- ----------------------------
-INSERT INTO `t_resource_app_ext` VALUES (23, 'https://card.lzu.edu.cn', 'iframe', NULL, '[]', 1, NULL);
-INSERT INTO `t_resource_app_ext` VALUES (24, 'https://lib.lzu.edu.cn/seat', 'iframe', NULL, '[]', 1, NULL);
-INSERT INTO `t_resource_app_ext` VALUES (25, 'https://jwc.lzu.edu.cn/course', 'micro_frontend', NULL, '[]', 1, NULL);
+INSERT INTO `t_resource_app_ext` VALUES (23, 'https://card.lzu.edu.cn', 'iframe', NULL, '[]', 1, NULL, NULL, NULL);
+INSERT INTO `t_resource_app_ext` VALUES (24, 'https://lib.lzu.edu.cn/seat', 'iframe', NULL, '[]', 1, NULL, NULL, NULL);
+INSERT INTO `t_resource_app_ext` VALUES (25, 'https://jwc.lzu.edu.cn/course', 'micro_frontend', NULL, '[]', 1, NULL, NULL, NULL);
 
 -- ----------------------------
 -- Table structure for t_resource_circuit_breaker

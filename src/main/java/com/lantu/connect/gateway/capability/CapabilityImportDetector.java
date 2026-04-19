@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.gateway.capability.dto.CapabilityImportRequest;
 import com.lantu.connect.gateway.capability.dto.CapabilityImportSuggestionVO;
+import com.lantu.connect.gateway.protocol.AgentPlatformAdapterSupport;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -23,7 +24,7 @@ public class CapabilityImportDetector {
         String source = request == null || request.getSource() == null ? "" : request.getSource().trim();
         String preferredType = normalizeType(request == null ? null : request.getPreferredType());
         if (StringUtils.hasText(preferredType)) {
-            return buildSuggestion(preferredType, "medium", "由用户指定类型", source, request, List.of());
+            return buildSuggestion(preferredType, "medium", "Type specified by caller", source, request, List.of());
         }
         if (looksLikeJson(source)) {
             CapabilityImportSuggestionVO byJson = detectFromJson(source, request);
@@ -34,7 +35,7 @@ public class CapabilityImportDetector {
         if (looksLikeUrl(source)) {
             return detectFromUrl(source, request);
         }
-        return buildSuggestion("skill", "medium", "按提示词/能力描述识别为可调用技能", source, request, List.of());
+        return buildSuggestion("skill", "medium", "Detected as prompt-style capability from plain text", source, request, List.of());
     }
 
     private CapabilityImportSuggestionVO detectFromJson(String source, CapabilityImportRequest request) {
@@ -42,22 +43,27 @@ public class CapabilityImportDetector {
             JsonNode root = objectMapper.readTree(source);
             if (root.has("mcpServers") || root.has("jsonrpc") || root.has("transport") || root.has("command")) {
                 List<String> warnings = root.has("command")
-                        ? List.of("检测到 command/stdio 配置；平台注册只接受远程可调用的 MCP，请先暴露为 http(s)/ws(s) 地址。")
+                        ? List.of("Detected command/stdio MCP config. Registration only supports remotely reachable MCP services over http(s)/ws(s).")
                         : List.of();
-                return buildSuggestion("mcp", "high", "识别到 MCP/JSON-RPC 配置特征", source, request, warnings);
+                return buildSuggestion("mcp", "high", "Detected MCP / JSON-RPC config traits", source, request, warnings);
             }
             if (root.has("anthropic_version") || root.has("messages")) {
-                return buildSuggestion("agent", "high", "识别到 Anthropic Messages 请求体特征", source, request, List.of());
+                return buildSuggestion("agent", "high", "Detected Anthropic Messages request shape", source, request, List.of());
             }
             if (root.has("contents") || root.has("generationConfig")) {
-                return buildSuggestion("agent", "high", "识别到 Gemini generateContent 请求体特征", source, request, List.of());
+                return buildSuggestion("agent", "high", "Detected Gemini generateContent request shape", source, request, List.of());
             }
             if (root.has("contextPrompt") || root.has("parametersSchema") || root.has("bindings")) {
-                return buildSuggestion("skill", "high", "识别到 Skill Prompt / Schema 特征", source, request, List.of());
+                return buildSuggestion("skill", "high", "Detected Skill prompt / schema traits", source, request, List.of());
             }
             if (root.has("openapi") || root.has("paths")) {
-                return buildSuggestion("skill", "low", "识别到 OpenAPI 文档，默认映射为可编排能力草稿", source, request,
-                        List.of("OpenAPI 需要人工确认映射方式；若要直接接模型协议，请切换到高级模式。"));
+                return buildSuggestion(
+                        "skill",
+                        "low",
+                        "Detected OpenAPI document, mapped to composable capability draft by default",
+                        source,
+                        request,
+                        List.of("OpenAPI imports still need human confirmation before publishing."));
             }
         } catch (Exception ignored) {
             return null;
@@ -67,17 +73,21 @@ public class CapabilityImportDetector {
 
     private CapabilityImportSuggestionVO detectFromUrl(String source, CapabilityImportRequest request) {
         String normalized = source.trim().toLowerCase(Locale.ROOT);
+        String adapterId = AgentPlatformAdapterSupport.resolveAdapterId(Map.of(), source, null, null, null);
+        if (AgentPlatformAdapterSupport.ADAPTER_TENCENT_YUANQI.equals(adapterId)) {
+            return buildSuggestion("agent", "high", "Detected Tencent Yuanqi agent endpoint", source, request, List.of());
+        }
         if (normalized.startsWith("ws://") || normalized.startsWith("wss://")) {
-            return buildSuggestion("mcp", "high", "识别到 WebSocket MCP 地址", source, request, List.of());
+            return buildSuggestion("mcp", "high", "Detected WebSocket MCP endpoint", source, request, List.of());
         }
         if (normalized.contains("anthropic.com") || normalized.contains("/v1/messages")) {
-            return buildSuggestion("agent", "high", "识别到 Anthropic 上游地址", source, request, List.of());
+            return buildSuggestion("agent", "high", "Detected Anthropic upstream endpoint", source, request, List.of());
         }
         if (normalized.contains("generativelanguage.googleapis.com") || normalized.contains(":generatecontent")) {
-            return buildSuggestion("agent", "high", "识别到 Gemini 上游地址", source, request, List.of());
+            return buildSuggestion("agent", "high", "Detected Gemini upstream endpoint", source, request, List.of());
         }
         if (normalized.contains("dashscope") || normalized.contains("bailian")) {
-            return buildSuggestion("agent", "high", "识别到百炼兼容地址", source, request, List.of());
+            return buildSuggestion("agent", "high", "Detected Bailian upstream endpoint", source, request, List.of());
         }
         if (normalized.contains("api.deepseek.com")
                 || normalized.contains("openrouter.ai")
@@ -85,14 +95,22 @@ public class CapabilityImportDetector {
                 || normalized.contains("11434")
                 || normalized.contains("openai.com")
                 || normalized.contains("/v1/responses")
-                || normalized.contains("/chat/completions")) {
-            return buildSuggestion("agent", "high", "识别到 OpenAI Compatible 地址", source, request, List.of());
+                || normalized.contains("/chat/completions")
+                || normalized.contains("/v1/chat-messages")
+                || normalized.contains("/v1/workflows/run")
+                || normalized.contains("/v2/agent/ai_assistant/run")) {
+            return buildSuggestion("agent", "high", "Detected remote agent / provider endpoint", source, request, List.of());
         }
         if (normalized.contains("/mcp") || normalized.contains("sse")) {
-            return buildSuggestion("mcp", "medium", "识别到 MCP 服务地址特征", source, request, List.of());
+            return buildSuggestion("mcp", "medium", "Detected MCP service traits from endpoint", source, request, List.of());
         }
-        return buildSuggestion("agent", "low", "识别到 HTTP 能力端点，默认映射为远程 Agent", source, request,
-                List.of("若这是 MCP / OpenAPI / Prompt 能力，请在确认页切换类型。"));
+        return buildSuggestion(
+                "agent",
+                "low",
+                "Detected generic HTTP capability endpoint and mapped to remote agent by default",
+                source,
+                request,
+                List.of("If this is actually MCP, OpenAPI, or prompt capability, please switch the type on the confirmation step."));
     }
 
     private CapabilityImportSuggestionVO buildSuggestion(String type,
@@ -147,6 +165,11 @@ public class CapabilityImportDetector {
             defaults.put("endpoint", source.trim());
         }
         if ("agent".equals(type)) {
+            String adapterId = AgentPlatformAdapterSupport.resolveAdapterId(Map.of(), source, null, null, null);
+            String transformProfile = AgentPlatformAdapterSupport.defaultTransformProfile(adapterId, null);
+            if (StringUtils.hasText(transformProfile)) {
+                defaults.put("transformProfile", transformProfile);
+            }
             defaults.put("modelAlias", inferModelAlias(source));
         }
         return defaults;
@@ -158,9 +181,13 @@ public class CapabilityImportDetector {
             return capabilities;
         }
         String normalized = source == null ? "" : source.trim().toLowerCase(Locale.ROOT);
+        String adapterId = AgentPlatformAdapterSupport.resolveAdapterId(Map.of(), source, null, null, null);
         capabilities.put("agentType", "http_api");
         capabilities.put("mode", "SUBAGENT");
-        if (normalized.contains("anthropic.com") || normalized.contains("/v1/messages")) {
+        if (StringUtils.hasText(adapterId)) {
+            capabilities.put("registrationProtocol", AgentPlatformAdapterSupport.protocolFamily(adapterId, "openai_compatible"));
+            capabilities.put("providerPreset", adapterId);
+        } else if (normalized.contains("anthropic.com") || normalized.contains("/v1/messages")) {
             capabilities.put("registrationProtocol", "anthropic_messages");
             capabilities.put("providerPreset", "anthropic");
         } else if (normalized.contains("generativelanguage.googleapis.com") || normalized.contains(":generatecontent")) {
@@ -230,6 +257,10 @@ public class CapabilityImportDetector {
     private String inferModelAlias(String source) {
         if (!StringUtils.hasText(source)) {
             return "default-model";
+        }
+        String adapterId = AgentPlatformAdapterSupport.resolveAdapterId(Map.of(), source, null, null, null);
+        if (AgentPlatformAdapterSupport.isPlatformAdapter(adapterId)) {
+            return "default-agent";
         }
         String normalized = source.toLowerCase(Locale.ROOT);
         if (normalized.contains("gpt")) {

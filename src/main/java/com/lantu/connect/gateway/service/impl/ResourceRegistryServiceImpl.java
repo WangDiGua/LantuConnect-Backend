@@ -15,9 +15,11 @@ import com.lantu.connect.gateway.dto.ResourceUpsertRequest;
 import com.lantu.connect.gateway.dto.ResourceVersionCreateRequest;
 import com.lantu.connect.gateway.dto.ResourceVersionVO;
 import com.lantu.connect.gateway.model.ResourceAccessPolicy;
+import com.lantu.connect.gateway.protocol.AgentPlatformAdapterSupport;
 import com.lantu.connect.gateway.protocol.McpOutboundHeaderBuilder;
 import com.lantu.connect.gateway.protocol.ProtocolInvokerRegistry;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
+import com.lantu.connect.gateway.support.UnifiedAgentSupport;
 import com.lantu.connect.monitoring.service.ResourceHealthService;
 import com.lantu.connect.monitoring.dto.ResourceHealthSnapshotVO;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
@@ -189,6 +191,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     public ResourceManageVO submitForAudit(Long operatorUserId, Long resourceId) {
         ensureAuthenticated(operatorUserId);
         ResourceRow row = requireManageableResource(operatorUserId, resourceId);
+        String auditTargetType = resolveAuditTargetType(row, resourceId);
         String st = ResourceLifecycleStateMachine.normalizeStatus(row.status());
 
         Integer pending = jdbcTemplate.queryForObject("""
@@ -197,7 +200,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                         WHERE target_type = ? AND target_id = ? AND status = 'pending_review'
                         """,
                 Integer.class,
-                row.resourceType(),
+                auditTargetType,
                 resourceId);
         if (pending != null && pending > 0) {
             throw new BusinessException(ResultCode.DUPLICATE_SUBMIT, "该资源已有待审核记录");
@@ -229,7 +232,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                                 资源: %s/%s
                                 说明: 低风险修改已由具备权限的管理员直接合并上线，线上默认版本已更新。
                                 """.formatted(LocalDateTime.now(), row.resourceType(), resourceId),
-                        row.resourceType(),
+                        auditTargetType,
                         resourceId,
                         null,
                         "/c/resource-audit",
@@ -287,7 +290,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             systemNotificationFacade.notifyResourceSubmitted(
                     operatorUserId,
                     resourceId,
-                    row.resourceType(),
+                    auditTargetType,
                     merged.getDisplayName() != null ? merged.getDisplayName() : row.displayName(),
                     true);
             auditPendingPushDebouncer.requestFlush();
@@ -520,9 +523,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         countArgs.add(listOwnerUserId);
         listArgs.add(listOwnerUserId);
         if (StringUtils.hasText(normalizedType)) {
-            where.append(" AND resource_type = ? ");
-            countArgs.add(normalizedType);
-            listArgs.add(normalizedType);
+            appendRequestedTypeClause(where, countArgs, normalizedType, null);
+            appendRequestedTypeClause(where, listArgs, normalizedType, null);
         }
         if (StringUtils.hasText(status)) {
             where.append(" AND status = ? ");
@@ -542,15 +544,17 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         Long total = jdbcTemplate.queryForObject("SELECT COUNT(1) FROM t_resource " + where, Long.class, countArgs.toArray());
         listArgs.add(ps);
         listArgs.add(offset);
-        String whereAliased = where.toString()
-                .replace(" WHERE deleted = 0 ", " WHERE r.deleted = 0 ")
-                .replace(" AND created_by IN (", " AND r.created_by IN (")
-                .replace(" AND created_by = ? ", " AND r.created_by = ? ")
-                .replace(" AND resource_type = ? ", " AND r.resource_type = ? ")
-                .replace(" AND status = ? ", " AND r.status = ? ")
-                .replace("display_name LIKE ?", "r.display_name LIKE ?")
-                .replace("resource_code LIKE ?", "r.resource_code LIKE ?")
-                .replace("description LIKE ?", "r.description LIKE ?");
+        StringBuilder whereAliased = new StringBuilder(" WHERE r.deleted = 0 ");
+        whereAliased.append(" AND r.created_by = ? ");
+        if (StringUtils.hasText(normalizedType)) {
+            appendRequestedTypeClause(whereAliased, new ArrayList<>(), normalizedType, "r");
+        }
+        if (StringUtils.hasText(status)) {
+            whereAliased.append(" AND r.status = ? ");
+        }
+        if (StringUtils.hasText(keyword)) {
+            whereAliased.append(" AND (r.display_name LIKE ? OR r.resource_code LIKE ? OR r.description LIKE ?) ");
+        }
         String orderColumn = switch (StringUtils.hasText(sortBy) ? sortBy.trim().toLowerCase(Locale.ROOT) : "") {
             case "create_time" -> "r.create_time";
             case "display_name" -> "r.display_name";
@@ -716,6 +720,17 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 stringValue(row.get("status")),
                 stringValue(row.get("source_type"))
         );
+    }
+
+    private String resolveAuditTargetType(ResourceRow row, Long resourceId) {
+        if (row == null || !"app".equals(normalizeType(row.resourceType()))) {
+            return row == null ? null : row.resourceType();
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT agent_exposure FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1",
+                resourceId);
+        String exposure = rows.isEmpty() ? null : stringValue(rows.get(0).get("agent_exposure"));
+        return UnifiedAgentSupport.isUnifiedAgentExposure(exposure) ? "agent" : "app";
     }
 
     private void persistUpsertToMainAndExtensions(Long resourceId, String rowResourceType, String normalizedType,
@@ -1181,6 +1196,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         if (vo.getScreenshots() != null) {
             req.setScreenshots(new ArrayList<>(vo.getScreenshots()));
         }
+        req.setAgentExposure(vo.getAgentExposure());
+        req.setAgentDeliveryMode(vo.getAgentDeliveryMode());
         req.setDataType(vo.getDataType());
         req.setFormat(vo.getFormat());
         req.setRecordCount(vo.getRecordCount());
@@ -1324,6 +1341,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     }
                     if (appSpec.containsKey("screenshots")) {
                         req.setScreenshots(toStringListFromJsonColumn(appSpec.get("screenshots")));
+                    }
+                    if (appSpec.containsKey("agentExposure")) {
+                        req.setAgentExposure(stringValue(appSpec.get("agentExposure")));
+                    }
+                    if (appSpec.containsKey("agentDeliveryMode")) {
+                        req.setAgentDeliveryMode(stringValue(appSpec.get("agentDeliveryMode")));
                     }
                 }
                 if (snap.containsKey("serviceDetailMd")) {
@@ -1836,11 +1859,31 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         return v == null ? null : String.valueOf(v);
     }
 
+    private static String normalizeAgentExposure(String raw) {
+        return UnifiedAgentSupport.isUnifiedAgentExposure(raw)
+                ? UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE
+                : null;
+    }
+
+    private static String resolveAppAgentDeliveryMode(String agentExposure, String rawDeliveryMode) {
+        if (!UnifiedAgentSupport.isUnifiedAgentExposure(agentExposure)) {
+            return null;
+        }
+        String normalized = UnifiedAgentSupport.normalize(rawDeliveryMode);
+        if (UnifiedAgentSupport.DELIVERY_MODE_PAGE.equals(normalized)) {
+            return UnifiedAgentSupport.DELIVERY_MODE_PAGE;
+        }
+        return UnifiedAgentSupport.DELIVERY_MODE_PAGE;
+    }
+
     private void upsertAppExt(Long resourceId, ResourceUpsertRequest request) {
         String serviceMd = resolveExtServiceDetailMd("t_resource_app_ext", resourceId, request.getServiceDetailMd());
+        String agentExposure = normalizeAgentExposure(request.getAgentExposure());
+        String agentDeliveryMode = resolveAppAgentDeliveryMode(agentExposure, request.getAgentDeliveryMode());
         int updated = jdbcTemplate.update("""
                         UPDATE t_resource_app_ext
-                        SET app_url = ?, embed_type = ?, icon = ?, screenshots = CAST(? AS JSON), is_public = ?, service_detail_md = ?
+                        SET app_url = ?, embed_type = ?, icon = ?, screenshots = CAST(? AS JSON), is_public = ?, service_detail_md = ?,
+                            agent_exposure = ?, agent_delivery_mode = ?
                         WHERE resource_id = ?
                         """,
                 request.getAppUrl(),
@@ -1849,11 +1892,13 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 writeJson(defaultList(request.getScreenshots())),
                 toBoolNumber(request.getIsPublic()),
                 serviceMd,
+                agentExposure,
+                agentDeliveryMode,
                 resourceId);
         if (updated == 0) {
             jdbcTemplate.update("""
-                            INSERT INTO t_resource_app_ext(resource_id, app_url, embed_type, icon, screenshots, is_public, service_detail_md)
-                            VALUES(?, ?, ?, ?, CAST(? AS JSON), ?, ?)
+                            INSERT INTO t_resource_app_ext(resource_id, app_url, embed_type, icon, screenshots, is_public, service_detail_md, agent_exposure, agent_delivery_mode)
+                            VALUES(?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?)
                             """,
                     resourceId,
                     request.getAppUrl(),
@@ -1861,7 +1906,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     request.getIcon(),
                     writeJson(defaultList(request.getScreenshots())),
                     toBoolNumber(request.getIsPublic()),
-                    serviceMd);
+                    serviceMd,
+                    agentExposure,
+                    agentDeliveryMode);
         }
     }
 
@@ -1970,6 +2017,13 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 }
                 String protocol = defaultString(request.getRegistrationProtocol(), "openai_compatible")
                         .trim().toLowerCase(Locale.ROOT);
+                String adapterId = AgentPlatformAdapterSupport.resolveAdapterId(
+                        defaultMap(request.getSpec()),
+                        request.getUpstreamEndpoint(),
+                        protocol,
+                        request.getUpstreamAgentId(),
+                        request.getTransformProfile());
+                protocol = AgentPlatformAdapterSupport.protocolFamily(adapterId, protocol);
                 if (!AGENT_REG_PROTOCOLS.contains(protocol)) {
                     throw new BusinessException(ResultCode.PARAM_ERROR, "registrationProtocol 不支持: " + protocol);
                 }
@@ -1984,11 +2038,22 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     throw new BusinessException(ResultCode.PARAM_ERROR, "upstreamEndpoint 必须是 http(s) URL");
                 }
                 request.setUpstreamEndpoint(request.getUpstreamEndpoint().trim());
+                if (!StringUtils.hasText(request.getTransformProfile())) {
+                    request.setTransformProfile(AgentPlatformAdapterSupport.defaultTransformProfile(adapterId, null));
+                }
+                if (!StringUtils.hasText(request.getModelAlias()) && StringUtils.hasText(request.getUpstreamAgentId())) {
+                    request.setModelAlias(request.getUpstreamAgentId().trim());
+                }
                 if (!StringUtils.hasText(request.getModelAlias()) && StringUtils.hasText(request.getResourceCode())) {
                     request.setModelAlias(request.getResourceCode().trim());
                 }
                 requireText(request.getModelAlias(), "modelAlias 不能为空");
                 request.setModelAlias(request.getModelAlias().trim());
+                request.setSpec(AgentPlatformAdapterSupport.mergeSpecMeta(
+                        defaultMap(request.getSpec()),
+                        adapterId,
+                        request.getModelAlias(),
+                        protocol));
                 if (request.getEnabled() == null) {
                     request.setEnabled(Boolean.TRUE);
                 }
@@ -2183,6 +2248,32 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         return normalized;
     }
 
+    private void appendRequestedTypeClause(StringBuilder where, List<Object> args, String requestedType, String alias) {
+        String requested = normalizeType(requestedType);
+        String prefix = StringUtils.hasText(alias) ? alias.trim() + "." : "";
+        String typeColumn = prefix + "resource_type";
+        String idColumn = prefix + "id";
+        switch (requested) {
+            case "agent" -> where.append(" AND (")
+                    .append(typeColumn)
+                    .append(" = 'agent' OR (")
+                    .append(typeColumn)
+                    .append(" = 'app' AND EXISTS (SELECT 1 FROM t_resource_app_ext app_ext WHERE app_ext.resource_id = ")
+                    .append(idColumn)
+                    .append(" AND LOWER(COALESCE(app_ext.agent_exposure, '')) = '")
+                    .append(UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE)
+                    .append("'))) ");
+            case "app" -> where.append(" AND ")
+                    .append(typeColumn)
+                    .append(" = 'app' AND NOT EXISTS (SELECT 1 FROM t_resource_app_ext app_ext WHERE app_ext.resource_id = ")
+                    .append(idColumn)
+                    .append(" AND LOWER(COALESCE(app_ext.agent_exposure, '')) = '")
+                    .append(UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE)
+                    .append("') ) ");
+            default -> where.append(" AND ").append(typeColumn).append(" = '").append(requested).append("' ");
+        }
+    }
+
     private static String normalizeVersion(String raw) {
         if (!StringUtils.hasText(raw)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "version 不能为空");
@@ -2294,6 +2385,14 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     appSpec.put("icon", request.getIcon().trim());
                 }
                 appSpec.put("screenshots", defaultList(request.getScreenshots()));
+                String agentExposure = normalizeAgentExposure(request.getAgentExposure());
+                String agentDeliveryMode = resolveAppAgentDeliveryMode(agentExposure, request.getAgentDeliveryMode());
+                if (agentExposure != null) {
+                    appSpec.put("agentExposure", agentExposure);
+                }
+                if (agentDeliveryMode != null) {
+                    appSpec.put("agentDeliveryMode", agentDeliveryMode);
+                }
                 snapshot.put("spec", appSpec);
                 if (StringUtils.hasText(request.getServiceDetailMd())) {
                     snapshot.put("serviceDetailMd", request.getServiceDetailMd().trim());
@@ -2402,7 +2501,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             }
             case "app" -> {
                 Map<String, Object> ext = jdbcTemplate.queryForList(
-                                "SELECT app_url, embed_type, icon, screenshots, service_detail_md FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1", resourceId)
+                                "SELECT app_url, embed_type, icon, screenshots, service_detail_md, agent_exposure, agent_delivery_mode FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1", resourceId)
                         .stream().findFirst().orElse(Map.of());
                 snapshot.put("invokeType", "redirect");
                 snapshot.put("endpoint", stringValue(ext.get("app_url")));
@@ -2412,6 +2511,14 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     appSpec.put("icon", stringValue(ext.get("icon")));
                 }
                 appSpec.put("screenshots", toStringListFromJsonColumn(ext.get("screenshots")));
+                String agentExposure = normalizeAgentExposure(stringValue(ext.get("agent_exposure")));
+                String agentDeliveryMode = resolveAppAgentDeliveryMode(agentExposure, stringValue(ext.get("agent_delivery_mode")));
+                if (agentExposure != null) {
+                    appSpec.put("agentExposure", agentExposure);
+                }
+                if (agentDeliveryMode != null) {
+                    appSpec.put("agentDeliveryMode", agentDeliveryMode);
+                }
                 snapshot.put("spec", appSpec);
                 if (StringUtils.hasText(stringValue(ext.get("service_detail_md")))) {
                     snapshot.put("serviceDetailMd", stringValue(ext.get("service_detail_md")).trim());
@@ -2612,7 +2719,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private void enrichAppFields(ResourceManageVO vo, Long resourceId) {
         var rows = jdbcTemplate.queryForList(
-                "SELECT app_url, embed_type, icon, screenshots, is_public, service_detail_md FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1",
+                "SELECT app_url, embed_type, icon, screenshots, is_public, service_detail_md, agent_exposure, agent_delivery_mode FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1",
                 resourceId);
         if (rows.isEmpty()) {
             return;
@@ -2624,6 +2731,9 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         vo.setScreenshots(toStringListFromJsonColumn(r.get("screenshots")));
         vo.setIsPublic(boolObject(r.get("is_public")));
         vo.setServiceDetailMd(stringValue(r.get("service_detail_md")));
+        String agentExposure = normalizeAgentExposure(stringValue(r.get("agent_exposure")));
+        vo.setAgentExposure(agentExposure);
+        vo.setAgentDeliveryMode(resolveAppAgentDeliveryMode(agentExposure, stringValue(r.get("agent_delivery_mode"))));
     }
 
     private void enrichDatasetFields(ResourceManageVO vo, Long resourceId) {

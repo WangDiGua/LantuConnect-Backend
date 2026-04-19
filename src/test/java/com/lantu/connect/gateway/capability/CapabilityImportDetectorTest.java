@@ -50,6 +50,32 @@ class CapabilityImportDetectorTest {
     }
 
     @Test
+    void shouldDetectDifyAgentEndpointAsPlatformAdapter() {
+        CapabilityImportRequest request = new CapabilityImportRequest();
+        request.setSource("https://api.dify.ai/v1/chat-messages");
+
+        CapabilityImportSuggestionVO suggestion = detector.detect(request);
+
+        assertEquals("agent", suggestion.getDetectedType());
+        assertEquals("openai_compatible", suggestion.getCapabilities().get("registrationProtocol"));
+        assertEquals("dify", suggestion.getCapabilities().get("providerPreset"));
+        assertEquals("dify_agent_app", suggestion.getDefaults().get("transformProfile"));
+    }
+
+    @Test
+    void shouldDetectTencentYuanqiEndpointAsPlatformAdapter() {
+        CapabilityImportRequest request = new CapabilityImportRequest();
+        request.setSource("https://wss.lke.cloud.tencent.com/v1/qbot/chat/sse");
+
+        CapabilityImportSuggestionVO suggestion = detector.detect(request);
+
+        assertEquals("agent", suggestion.getDetectedType());
+        assertEquals("openai_compatible", suggestion.getCapabilities().get("registrationProtocol"));
+        assertEquals("tencent_yuanqi", suggestion.getCapabilities().get("providerPreset"));
+        assertEquals("tencent_yuanqi_agent", suggestion.getDefaults().get("transformProfile"));
+    }
+
+    @Test
     void shouldDetectPromptSkillFromPlainText() {
         CapabilityImportRequest request = new CapabilityImportRequest();
         request.setSource("""

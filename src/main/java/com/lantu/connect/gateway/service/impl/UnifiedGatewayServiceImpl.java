@@ -21,6 +21,7 @@ import com.lantu.connect.gateway.dto.ResourceStatsVO;
 import com.lantu.connect.gateway.dto.ResourceSummaryVO;
 import com.lantu.connect.gateway.dto.SearchSuggestion;
 import com.lantu.connect.gateway.model.ResourceAccessPolicy;
+import com.lantu.connect.gateway.protocol.AgentPlatformAdapterSupport;
 import com.lantu.connect.gateway.protocol.McpJsonRpcProtocolInvoker;
 import com.lantu.connect.gateway.protocol.McpOutboundHeaderBuilder;
 import com.lantu.connect.gateway.protocol.ProtocolInvokeContext;
@@ -34,6 +35,7 @@ import com.lantu.connect.gateway.security.ResourceInvokeGrantService;
 import com.lantu.connect.gateway.service.GatewayBindingExpansionService;
 import com.lantu.connect.gateway.service.ResourceBindingClosureService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
+import com.lantu.connect.gateway.support.UnifiedAgentSupport;
 import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import com.lantu.connect.monitoring.entity.CallLog;
 import com.lantu.connect.monitoring.mapper.CallLogMapper;
@@ -123,13 +125,16 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
         List<Object> args = new ArrayList<>();
         StringBuilder sql = new StringBuilder("""
-                SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.source_type, r.update_time, r.created_by, r.access_policy, COALESCE(r.view_count, 0) AS view_count
+                SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.source_type, r.update_time, r.created_by, r.access_policy,
+                       COALESCE(r.view_count, 0) AS view_count,
+                       app_ext.agent_exposure AS app_agent_exposure,
+                       app_ext.agent_delivery_mode AS app_agent_delivery_mode
                 FROM t_resource r
+                LEFT JOIN t_resource_app_ext app_ext ON app_ext.resource_id = r.id
                 WHERE r.deleted = 0
                 """);
         if (StringUtils.hasText(type)) {
-            sql.append(" AND r.resource_type = ? ");
-            args.add(type);
+            appendCatalogRequestedTypeClause(sql, type);
         }
         if (StringUtils.hasText(status)) {
             sql.append(" AND r.status = ? ");
@@ -197,7 +202,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 break;
             }
             for (Map<String, Object> row : rows) {
-                String rType = valueOf(row.get("resource_type"));
+                String actualType = valueOf(row.get("resource_type"));
+                String agentExposure = normalizeAgentExposure(valueOf(row.get("app_agent_exposure")));
+                String agentDeliveryMode = resolveAppAgentDeliveryMode(agentExposure, valueOf(row.get("app_agent_delivery_mode")));
+                String rType = UnifiedAgentSupport.resolveViewType(type, actualType, agentExposure);
                 String rId = valueOf(row.get("id"));
                 if (!catalogTypeOk.allow(rType)) {
                     continue;
@@ -237,6 +245,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                             .updateTime(toDateTime(row.get("update_time")))
                             .createdBy(longOrNull(row.get("created_by")))
                             .viewCount(longValue(row.get("view_count")))
+                            .agentExposure(agentExposure)
+                            .agentDeliveryMode(agentDeliveryMode)
                             .tags(new ArrayList<>())
                             .hasGrantForKey(grantFlag)
                             .build());
@@ -502,19 +512,22 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
             resourceInvokeGrantService.ensureApiKeyGranted(apiKey, action, type, id, userId);
         }
 
-        Map<String, Object> base = findResourceBase(type, id);
+        Map<String, Object> base = findResourceBaseForRequestedType(type, id);
+        String actualType = normalizeType(valueOf(base.get("resource_type")));
+        String agentExposure = normalizeAgentExposure(valueOf(base.get("agent_exposure")));
+        String viewType = UnifiedAgentSupport.resolveViewType(type, actualType, agentExposure);
         String resolvedVersion = resolveResourceVersion(id, requestedVersion);
-        ResourceResolveVO resolved = switch (type) {
+        ResourceResolveVO resolved = switch (actualType) {
             case TYPE_AGENT -> resolveAgent(base, resolvedVersion);
             case TYPE_SKILL -> resolveSkill(base, resolvedVersion);
             case TYPE_MCP -> resolveMcp(base, resolvedVersion);
-            case TYPE_APP -> resolveApp(base, resolvedVersion, apiKey, userId, action);
+            case TYPE_APP -> resolveApp(base, resolvedVersion, apiKey, userId, action, viewType);
             case TYPE_DATASET -> resolveDataset(base, resolvedVersion);
             default -> throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的资源类型");
         };
         Map<String, Object> snapshot = loadVersionSnapshot(id, resolvedVersion);
         ResourceResolveVO merged = applyVersionSnapshot(resolved, snapshot);
-        if (TYPE_APP.equals(type)) {
+        if (TYPE_APP.equals(actualType)) {
             merged = issueAppLaunchTicket(merged, apiKey, userId, action);
         }
         merged = attachIncludesToResolve(merged, parseIncludes(include));
@@ -917,10 +930,29 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         return cleaned.substring(0, maxLen) + "...";
     }
 
-    private Map<String, Object> findResourceBase(String type, Long id) {
-        List<Map<String, Object>> list = jdbcTemplate.queryForList(
-                "SELECT id, resource_type, resource_code, display_name, description, status, created_by FROM t_resource WHERE deleted = 0 AND resource_type = ? AND id = ? LIMIT 1",
-                type, id);
+    private Map<String, Object> findResourceBaseForRequestedType(String requestedType, Long id) {
+        List<Map<String, Object>> list;
+        if (TYPE_AGENT.equals(requestedType)) {
+            list = jdbcTemplate.queryForList("""
+                            SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.created_by,
+                                   app_ext.agent_exposure, app_ext.agent_delivery_mode
+                            FROM t_resource r
+                            LEFT JOIN t_resource_app_ext app_ext ON app_ext.resource_id = r.id
+                            WHERE r.deleted = 0
+                              AND r.id = ?
+                              AND (
+                                r.resource_type = 'agent'
+                                OR (r.resource_type = 'app' AND LOWER(COALESCE(app_ext.agent_exposure, '')) = ?)
+                              )
+                            LIMIT 1
+                            """,
+                    id,
+                    UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE);
+        } else {
+            list = jdbcTemplate.queryForList(
+                    "SELECT id, resource_type, resource_code, display_name, description, status, created_by, NULL AS agent_exposure, NULL AS agent_delivery_mode FROM t_resource WHERE deleted = 0 AND resource_type = ? AND id = ? LIMIT 1",
+                    requestedType, id);
+        }
         if (list.isEmpty()) {
             throw new BusinessException(ResultCode.NOT_FOUND, "资源不存在");
         }
@@ -954,6 +986,17 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 spec.put("modelAlias", valueOf(ext.get("model_alias")));
             }
             spec.put("enabled", boolValue(ext.get("enabled"), true));
+            String adapterId = AgentPlatformAdapterSupport.resolveAdapterId(
+                    spec,
+                    valueOf(ext.get("upstream_endpoint")),
+                    valueOf(ext.get("registration_protocol")),
+                    valueOf(ext.get("upstream_agent_id")),
+                    valueOf(ext.get("transform_profile")));
+            spec = AgentPlatformAdapterSupport.mergeSpecMeta(
+                    spec,
+                    adapterId,
+                    valueOf(ext.get("model_alias")),
+                    valueOf(ext.get("registration_protocol")));
         }
         String serviceMd = ext == null ? "" : valueOf(ext.get("service_detail_md"));
         return ResourceResolveVO.builder()
@@ -1053,10 +1096,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .build();
     }
 
-    private ResourceResolveVO resolveApp(Map<String, Object> base, String version, ApiKey apiKey, Long userId, String action) {
+    private ResourceResolveVO resolveApp(Map<String, Object> base, String version, ApiKey apiKey, Long userId, String action, String exposedType) {
         Long id = longValue(base.get("id"));
         Map<String, Object> ext = queryOne(
-                "SELECT app_url, embed_type, icon, screenshots, service_detail_md FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1",
+                "SELECT app_url, embed_type, icon, screenshots, service_detail_md, agent_exposure, agent_delivery_mode FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1",
                 id);
         Map<String, Object> spec = new HashMap<>();
         spec.put("embedType", valueOf(ext == null ? null : ext.get("embed_type")));
@@ -1066,9 +1109,17 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         if (ext != null && ext.get("screenshots") != null) {
             spec.put("screenshots", parseJsonList(ext.get("screenshots")));
         }
+        String agentExposure = normalizeAgentExposure(valueOf(ext == null ? null : ext.get("agent_exposure")));
+        String agentDeliveryMode = resolveAppAgentDeliveryMode(agentExposure, valueOf(ext == null ? null : ext.get("agent_delivery_mode")));
+        if (agentExposure != null) {
+            spec.put("agentExposure", agentExposure);
+        }
+        if (agentDeliveryMode != null) {
+            spec.put("agentDeliveryMode", agentDeliveryMode);
+        }
         String appDetailMd = ext == null ? "" : valueOf(ext.get("service_detail_md"));
         return ResourceResolveVO.builder()
-                .resourceType(TYPE_APP)
+                .resourceType(StringUtils.hasText(exposedType) ? exposedType : TYPE_APP)
                 .resourceId(String.valueOf(id))
                 .version(version)
                 .resourceCode(valueOf(base.get("resource_code")))
@@ -1079,11 +1130,13 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                 .endpoint(valueOf(ext == null ? null : ext.get("app_url")))
                 .spec(spec)
                 .serviceDetailMd(StringUtils.hasText(appDetailMd) ? appDetailMd : null)
+                .agentExposure(agentExposure)
+                .agentDeliveryMode(agentDeliveryMode)
                 .build();
     }
 
     private ResourceResolveVO issueAppLaunchTicket(ResourceResolveVO resolved, ApiKey apiKey, Long userId, String action) {
-        if (resolved == null || !TYPE_APP.equalsIgnoreCase(resolved.getResourceType())) {
+        if (resolved == null || !"redirect".equalsIgnoreCase(resolved.getInvokeType())) {
             return resolved;
         }
         if (apiKey == null || !StringUtils.hasText(apiKey.getId())) {
@@ -1434,6 +1487,36 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private static String normalizeType(String raw) {
         if (!StringUtils.hasText(raw)) return null;
         return raw.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizeAgentExposure(String raw) {
+        return UnifiedAgentSupport.isUnifiedAgentExposure(raw)
+                ? UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE
+                : null;
+    }
+
+    private static String resolveAppAgentDeliveryMode(String agentExposure, String rawDeliveryMode) {
+        if (!UnifiedAgentSupport.isUnifiedAgentExposure(agentExposure)) {
+            return null;
+        }
+        String normalized = UnifiedAgentSupport.normalize(rawDeliveryMode);
+        if (UnifiedAgentSupport.DELIVERY_MODE_PAGE.equals(normalized)) {
+            return UnifiedAgentSupport.DELIVERY_MODE_PAGE;
+        }
+        return UnifiedAgentSupport.DELIVERY_MODE_PAGE;
+    }
+
+    private void appendCatalogRequestedTypeClause(StringBuilder sql, String requestedType) {
+        String type = requireType(requestedType);
+        switch (type) {
+            case TYPE_AGENT -> sql.append(" AND (r.resource_type = 'agent' OR (r.resource_type = 'app' AND LOWER(COALESCE(app_ext.agent_exposure, '')) = '")
+                    .append(UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE)
+                    .append("')) ");
+            case TYPE_APP -> sql.append(" AND r.resource_type = 'app' AND LOWER(COALESCE(app_ext.agent_exposure, '')) <> '")
+                    .append(UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE)
+                    .append("' ");
+            default -> sql.append(" AND r.resource_type = '").append(type).append("' ");
+        }
     }
 
     private static String requireType(String raw) {

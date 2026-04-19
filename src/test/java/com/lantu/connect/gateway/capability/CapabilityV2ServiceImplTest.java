@@ -1,6 +1,7 @@
 package com.lantu.connect.gateway.capability;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lantu.connect.gateway.capability.dto.CapabilityCreateRequest;
 import com.lantu.connect.gateway.capability.dto.CapabilityInvokeRequest;
 import com.lantu.connect.gateway.capability.dto.CapabilityInvokeResultVO;
 import com.lantu.connect.gateway.capability.dto.CapabilityToolSessionRequest;
@@ -8,7 +9,9 @@ import com.lantu.connect.gateway.capability.dto.CapabilityToolSessionVO;
 import com.lantu.connect.gateway.dto.AggregatedCapabilityToolsVO;
 import com.lantu.connect.gateway.dto.InvokeRequest;
 import com.lantu.connect.gateway.dto.InvokeResponse;
+import com.lantu.connect.gateway.dto.ResourceManageVO;
 import com.lantu.connect.gateway.dto.ResourceResolveVO;
+import com.lantu.connect.gateway.dto.ResourceUpsertRequest;
 import com.lantu.connect.gateway.dto.ToolDispatchRouteVO;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
@@ -26,6 +29,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.any;
@@ -178,6 +182,67 @@ class CapabilityV2ServiceImplTest {
         assertEquals("mcp", captor.getValue().getResourceType());
         assertEquals("55", captor.getValue().getResourceId());
         assertEquals("tools/call", captor.getValue().getPayload().get("method"));
+    }
+
+    @Test
+    void shouldPersistPlatformAdapterMetaWhenCreatingCapabilityAgent() {
+        when(resourceRegistryService.create(eq(11L), any(ResourceUpsertRequest.class)))
+                .thenReturn(ResourceManageVO.builder()
+                        .id(301L)
+                        .resourceType("agent")
+                        .displayName("Dify Sales Agent")
+                        .resourceCode("dify-sales-agent")
+                        .status("draft")
+                        .registrationProtocol("openai_compatible")
+                        .upstreamEndpoint("https://api.dify.ai/v1/chat-messages")
+                        .transformProfile("dify_agent_app")
+                        .modelAlias("dify-sales-agent")
+                        .spec(Map.of(
+                                "x_adapter_id", "dify",
+                                "x_protocol_family", "openai_compatible"))
+                        .build());
+
+        CapabilityCreateRequest request = new CapabilityCreateRequest();
+        request.setSource("https://api.dify.ai/v1/chat-messages");
+        request.setDetectedType("agent");
+        request.setDisplayName("Dify Sales Agent");
+        request.setResourceCode("dify-sales-agent");
+
+        service.create(11L, request);
+
+        ArgumentCaptor<ResourceUpsertRequest> captor = ArgumentCaptor.forClass(ResourceUpsertRequest.class);
+        verify(resourceRegistryService).create(eq(11L), captor.capture());
+        ResourceUpsertRequest upsert = captor.getValue();
+        assertEquals("openai_compatible", upsert.getRegistrationProtocol());
+        assertEquals("dify_agent_app", upsert.getTransformProfile());
+        assertEquals("dify", upsert.getSpec().get("x_adapter_id"));
+        assertEquals("openai_compatible", upsert.getSpec().get("x_protocol_family"));
+        assertFalse(upsert.getSpec().isEmpty());
+    }
+
+    @Test
+    void shouldUsePlatformSuggestedPayloadWhenResolvingCapabilityAgent() {
+        mockCapabilityType(301L, "agent");
+        when(unifiedGatewayService.resolve(any(), eq(apiKey), eq(11L)))
+                .thenReturn(ResourceResolveVO.builder()
+                        .resourceType("agent")
+                        .resourceId("301")
+                        .displayName("Dify Sales Agent")
+                        .resourceCode("dify-sales-agent")
+                        .status("published")
+                        .endpoint("https://api.dify.ai/v1/chat-messages")
+                        .spec(Map.of(
+                                "registrationProtocol", "openai_compatible",
+                                "transformProfile", "dify_agent_app",
+                                "x_adapter_id", "dify",
+                                "x_protocol_family", "openai_compatible"))
+                        .build());
+
+        var result = service.resolve(301L, null, apiKey, 11L);
+
+        assertEquals("hello", result.getSuggestedPayload().get("input"));
+        assertEquals("test-session", result.getSuggestedPayload().get("session_id"));
+        assertEquals("dify", result.getCapability().getCapabilities().get("providerPreset"));
     }
 
     private void mockCapabilityType(Long capabilityId, String type) {

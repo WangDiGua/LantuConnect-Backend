@@ -112,4 +112,75 @@ class ProviderProtocolAdapterModelResolutionTest {
 
         assertEquals("done", text);
     }
+
+    @Test
+    void openAiCompatibleBuildsDifyChatPayloadWhenAdapterIsDify() throws Exception {
+        OpenAiCompatibleAdapter adapter = new OpenAiCompatibleAdapter();
+
+        ProviderProtocolRequest request = adapter.buildRequest(
+                "https://api.dify.ai/v1/chat-messages",
+                Map.of("input", "hello", "session_id", "session-1"),
+                Map.of("x_adapter_id", "dify", "transformProfile", "dify_agent_app"),
+                "secret",
+                "trace-6");
+
+        assertEquals("hello", OBJECT_MAPPER.readTree(request.body()).path("query").asText());
+        assertEquals("blocking", OBJECT_MAPPER.readTree(request.body()).path("response_mode").asText());
+        assertEquals("session-1", OBJECT_MAPPER.readTree(request.body()).path("user").asText());
+        assertEquals("Bearer secret", request.headers().get("Authorization"));
+    }
+
+    @Test
+    void openAiCompatibleBuildsAppBuilderPayloadWhenAdapterIsAppBuilder() throws Exception {
+        OpenAiCompatibleAdapter adapter = new OpenAiCompatibleAdapter();
+
+        ProviderProtocolRequest request = adapter.buildRequest(
+                "https://qianfan.baidubce.com/v2/agent/ai_assistant/run",
+                Map.of("input", "hello", "session_id", "session-2"),
+                Map.of("x_adapter_id", "appbuilder", "transformProfile", "appbuilder_agent_app"),
+                "secret",
+                "trace-7");
+
+        assertEquals("hello", OBJECT_MAPPER.readTree(request.body()).path("query").asText());
+        assertEquals(false, OBJECT_MAPPER.readTree(request.body()).path("stream").asBoolean());
+        assertEquals("session-2", OBJECT_MAPPER.readTree(request.body()).path("end_user_id").asText());
+        assertEquals("Bearer secret", request.headers().get("Authorization"));
+    }
+
+    @Test
+    void openAiCompatibleBuildsTencentYuanqiPayloadWhenAdapterIsYuanqi() throws Exception {
+        OpenAiCompatibleAdapter adapter = new OpenAiCompatibleAdapter();
+
+        ProviderProtocolRequest request = adapter.buildRequest(
+                "https://lke.cloud.tencent.com/v1/qbot/chat/sse",
+                Map.of("input", "hello", "session_id", "session-3"),
+                Map.of(
+                        "x_adapter_id", "tencent_yuanqi",
+                        "transformProfile", "tencent_yuanqi_agent",
+                        "upstreamAgentId", "bot-app-key-123"),
+                "ignored-secret",
+                "trace-8");
+
+        assertEquals("hello", OBJECT_MAPPER.readTree(request.body()).path("content").asText());
+        assertEquals("session-3", OBJECT_MAPPER.readTree(request.body()).path("session_id").asText());
+        assertEquals("session-3", OBJECT_MAPPER.readTree(request.body()).path("visitor_biz_id").asText());
+        assertEquals("bot-app-key-123", OBJECT_MAPPER.readTree(request.body()).path("bot_app_key").asText());
+    }
+
+    @Test
+    void platformSupportExtractsTencentYuanqiReplyTextFromSseStream() {
+        String text = AgentPlatformAdapterSupport.extractResponseText(
+                Map.of("x_adapter_id", "tencent_yuanqi"),
+                """
+                        event: reply
+                        data: {"payload":{"content":"第一段"}}
+
+                        event: reply
+                        data: {"payload":{"content":"第二段"}}
+
+                        data: [DONE]
+                        """);
+
+        assertEquals("第一段\n第二段", text);
+    }
 }

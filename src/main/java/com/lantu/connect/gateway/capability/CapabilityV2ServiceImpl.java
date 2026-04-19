@@ -27,6 +27,7 @@ import com.lantu.connect.gateway.dto.ResourceResolveRequest;
 import com.lantu.connect.gateway.dto.ResourceResolveVO;
 import com.lantu.connect.gateway.dto.ResourceUpsertRequest;
 import com.lantu.connect.gateway.dto.ToolDispatchRouteVO;
+import com.lantu.connect.gateway.protocol.AgentPlatformAdapterSupport;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.UnifiedGatewayService;
@@ -43,6 +44,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -339,16 +341,33 @@ public class CapabilityV2ServiceImpl implements CapabilityV2Service {
                 : copyMap(detected.getInputSchema());
 
         if (TYPE_AGENT.equals(type)) {
+            String upstreamEndpoint = firstText(mapText(defaults.get("endpoint")), request.getSource());
+            String upstreamAgentId = mapText(defaults.get("upstreamAgentId"));
+            String requestedTransformProfile = firstText(
+                    mapText(defaults.get("transformProfile")),
+                    mapText(capabilities.get("transformProfile")));
+            String adapterId = AgentPlatformAdapterSupport.resolveAdapterId(
+                    copyMap(inputSchema),
+                    upstreamEndpoint,
+                    mapText(capabilities.get("registrationProtocol")),
+                    upstreamAgentId,
+                    requestedTransformProfile);
+            String registrationProtocol = AgentPlatformAdapterSupport.protocolFamily(
+                    adapterId,
+                    firstText(mapText(capabilities.get("registrationProtocol")), "openai_compatible"));
+            String modelAlias = firstText(
+                    mapText(defaults.get("modelAlias")),
+                    firstText(upstreamAgentId, "default-model"));
             upsert.setAgentType(firstText(mapText(capabilities.get("agentType")), "http_api"));
             upsert.setMode(firstText(mapText(capabilities.get("mode")), "TOOL"));
-            upsert.setRegistrationProtocol(firstText(mapText(capabilities.get("registrationProtocol")), "openai_compatible"));
-            upsert.setUpstreamEndpoint(firstText(mapText(defaults.get("endpoint")), request.getSource()));
-            upsert.setModelAlias(firstText(mapText(defaults.get("modelAlias")), "default-model"));
-            upsert.setCredentialRef(mapText(authRefs.get("credentialRef")));
-            upsert.setUpstreamAgentId(mapText(defaults.get("upstreamAgentId")));
-            upsert.setTransformProfile(mapText(defaults.get("transformProfile")));
+            upsert.setRegistrationProtocol(registrationProtocol);
+            upsert.setUpstreamEndpoint(upstreamEndpoint);
+            upsert.setModelAlias(modelAlias);
+            upsert.setCredentialRef(firstText(mapText(authRefs.get("credentialRef")), mapText(defaults.get("credentialRef"))));
+            upsert.setUpstreamAgentId(upstreamAgentId);
+            upsert.setTransformProfile(AgentPlatformAdapterSupport.defaultTransformProfile(adapterId, requestedTransformProfile));
             upsert.setSystemPrompt(mapText(defaults.get("systemPrompt")));
-            upsert.setSpec(copyMap(inputSchema));
+            upsert.setSpec(AgentPlatformAdapterSupport.mergeSpecMeta(copyMap(inputSchema), adapterId, modelAlias, registrationProtocol));
             return upsert;
         }
 
@@ -411,12 +430,23 @@ public class CapabilityV2ServiceImpl implements CapabilityV2Service {
         Map<String, Object> defaults = new LinkedHashMap<>();
         Map<String, Object> inputSchema = new LinkedHashMap<>();
         if (TYPE_AGENT.equals(item.getResourceType())) {
+            String adapterId = AgentPlatformAdapterSupport.resolveAdapterId(
+                    copyMap(item.getSpec()),
+                    item.getUpstreamEndpoint(),
+                    item.getRegistrationProtocol(),
+                    item.getUpstreamAgentId(),
+                    item.getTransformProfile());
             capabilities.put("registrationProtocol", item.getRegistrationProtocol());
             capabilities.put("agentType", item.getAgentType());
             capabilities.put("mode", item.getMode());
+            if (StringUtils.hasText(adapterId)) {
+                capabilities.put("providerPreset", adapterId);
+            }
             defaults.put("endpoint", item.getUpstreamEndpoint());
             defaults.put("modelAlias", item.getModelAlias());
             defaults.put("credentialRef", item.getCredentialRef());
+            defaults.put("upstreamAgentId", item.getUpstreamAgentId());
+            defaults.put("transformProfile", item.getTransformProfile());
             inputSchema.putAll(copyMap(item.getSpec()));
         } else if (TYPE_MCP.equals(item.getResourceType())) {
             defaults.put("endpoint", item.getEndpoint());
@@ -454,9 +484,18 @@ public class CapabilityV2ServiceImpl implements CapabilityV2Service {
         Map<String, Object> manifest = nestedMap(spec, "manifest");
         Map<String, Object> capabilities = new LinkedHashMap<>();
         if (TYPE_AGENT.equals(resolved.getResourceType())) {
+            String adapterId = AgentPlatformAdapterSupport.resolveAdapterId(
+                    spec,
+                    resolved.getEndpoint(),
+                    mapText(spec.get("registrationProtocol")),
+                    mapText(spec.get("upstreamAgentId")),
+                    mapText(spec.get("transformProfile")));
             capabilities.put("registrationProtocol", mapText(spec.get("registrationProtocol")));
             capabilities.put("agentType", mapText(spec.get("agentType")));
             capabilities.put("mode", mapText(spec.get("mode")));
+            if (StringUtils.hasText(adapterId)) {
+                capabilities.put("providerPreset", adapterId);
+            }
         } else if (TYPE_SKILL.equals(resolved.getResourceType())) {
             capabilities.putAll(manifest);
         }
@@ -464,6 +503,11 @@ public class CapabilityV2ServiceImpl implements CapabilityV2Service {
         Map<String, Object> defaults = new LinkedHashMap<>();
         if (TYPE_SKILL.equals(resolved.getResourceType())) {
             defaults.put("contextPrompt", mapText(spec.get("contextPrompt")));
+        } else if (TYPE_AGENT.equals(resolved.getResourceType())) {
+            defaults.put("endpoint", resolved.getEndpoint());
+            defaults.put("modelAlias", mapText(spec.get("modelAlias")));
+            defaults.put("upstreamAgentId", mapText(spec.get("upstreamAgentId")));
+            defaults.put("transformProfile", mapText(spec.get("transformProfile")));
         } else if (StringUtils.hasText(resolved.getEndpoint())) {
             defaults.put("endpoint", resolved.getEndpoint());
         }
@@ -525,6 +569,17 @@ public class CapabilityV2ServiceImpl implements CapabilityV2Service {
     }
 
     private Map<String, Object> suggestedPayloadForResolved(ResourceResolveVO resolved) {
+        if (TYPE_AGENT.equals(resolved.getResourceType())) {
+            Optional<Map<String, Object>> platformPayload = AgentPlatformAdapterSupport.suggestedPayload(
+                    copyMap(resolved.getSpec()),
+                    resolved.getEndpoint(),
+                    mapText(copyMap(resolved.getSpec()).get("registrationProtocol")),
+                    mapText(copyMap(resolved.getSpec()).get("upstreamAgentId")),
+                    mapText(copyMap(resolved.getSpec()).get("transformProfile")));
+            if (platformPayload.isPresent()) {
+                return platformPayload.get();
+            }
+        }
         Map<String, Object> schema = resolveInputSchema(resolved.getResourceType(), copyMap(resolved.getSpec()));
         Map<String, Object> properties = nestedMap(schema, "properties");
         Map<String, Object> payload = new LinkedHashMap<>();

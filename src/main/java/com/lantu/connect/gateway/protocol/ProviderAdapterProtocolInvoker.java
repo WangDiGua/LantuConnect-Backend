@@ -64,15 +64,24 @@ public class ProviderAdapterProtocolInvoker implements GatewayProtocolInvoker {
         long t0 = System.nanoTime();
         HttpResponse<String> resp = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
         long ms = Math.max(0L, (System.nanoTime() - t0) / 1_000_000L);
-        String normalizedBody = normalizeBody(adapter, resp.statusCode(), resp.body());
+        String normalizedBody = normalizeBody(adapter, resp.statusCode(), resp.body(), spec);
         return new ProtocolInvokeResult(resp.statusCode(), normalizedBody, ms);
     }
 
-    private String normalizeBody(ProviderProtocolAdapter adapter, int statusCode, String upstreamBody) {
+    private String normalizeBody(ProviderProtocolAdapter adapter, int statusCode, String upstreamBody, Map<String, Object> spec) {
+        String platformText = AgentPlatformAdapterSupport.extractResponseText(spec, upstreamBody);
+        if (StringUtils.hasText(platformText)) {
+            Map<String, Object> normalized = new LinkedHashMap<>();
+            normalized.put("text", platformText);
+            normalized.put("upstreamStatus", statusCode);
+            normalized.put("upstreamBody", parseUpstreamBody(upstreamBody));
+            return JsonProtocolUtils.toJson(normalized);
+        }
         try {
             JsonNode node = objectMapper.readTree(upstreamBody);
+            String adapterText = AgentPlatformAdapterSupport.extractResponseText(spec, node);
             Map<String, Object> normalized = new LinkedHashMap<>();
-            normalized.put("text", adapter.extractText(node));
+            normalized.put("text", StringUtils.hasText(adapterText) ? adapterText : adapter.extractText(node));
             normalized.put("upstreamStatus", statusCode);
             normalized.put("upstreamBody", node);
             return objectMapper.writeValueAsString(normalized);
@@ -86,6 +95,17 @@ public class ProviderAdapterProtocolInvoker implements GatewayProtocolInvoker {
             } catch (Exception ignore) {
                 return upstreamBody;
             }
+        }
+    }
+
+    private Object parseUpstreamBody(String upstreamBody) {
+        if (!StringUtils.hasText(upstreamBody)) {
+            return upstreamBody;
+        }
+        try {
+            return objectMapper.readTree(upstreamBody);
+        } catch (Exception ignored) {
+            return upstreamBody;
         }
     }
 

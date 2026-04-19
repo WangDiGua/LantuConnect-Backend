@@ -3,6 +3,7 @@ package com.lantu.connect.monitoring.probe;
 import com.lantu.connect.gateway.protocol.ProtocolInvokeContext;
 import com.lantu.connect.gateway.protocol.ProtocolInvokeResult;
 import com.lantu.connect.gateway.protocol.ProtocolInvokerRegistry;
+import com.lantu.connect.gateway.protocol.AgentPlatformAdapterSupport;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -37,13 +38,20 @@ public class AgentProbeHandler implements ResourceProbeHandler {
         String protocol = StringUtils.hasText(target.registrationProtocol())
                 ? target.registrationProtocol().trim().toLowerCase()
                 : "openai_compatible";
-        Map<String, Object> spec = new LinkedHashMap<>();
+        Map<String, Object> spec = new LinkedHashMap<>(target.specExtra() == null ? Map.of() : target.specExtra());
         spec.put("registrationProtocol", protocol);
         spec.put("upstreamAgentId", target.upstreamAgentId());
         spec.put("credentialRef", target.credentialRef());
         spec.put("transformProfile", target.transformProfile());
         spec.put("modelAlias", target.modelAlias());
-        Map<String, Object> payload = new LinkedHashMap<>(target.canaryPayload() == null ? Map.of("query", "health check") : target.canaryPayload());
+        Map<String, Object> payload = new LinkedHashMap<>(target.canaryPayload() == null
+                ? AgentPlatformAdapterSupport.suggestedPayload(
+                spec,
+                target.upstreamEndpoint(),
+                protocol,
+                target.upstreamAgentId(),
+                target.transformProfile()).orElse(Map.of("query", "health check"))
+                : target.canaryPayload());
         payload.putIfAbsent("_probe", true);
         try {
             ProtocolInvokeResult result = protocolInvokerRegistry.invoke(

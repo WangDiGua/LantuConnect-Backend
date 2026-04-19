@@ -90,6 +90,10 @@ public class ResourceCatalogItemVO {
     @Schema(description = "仅当请求包含 include=quality 时存在")
     private Map<String, Object> quality;
 
+    private String agentExposure;
+
+    private String agentDeliveryMode;
+
     /**
      * 携带有效 X-Api-Key 时为 true（仅表示「请求带了 Key」，**不是** per-resource Grant 判定结果；Grant 表已下线）。
      */

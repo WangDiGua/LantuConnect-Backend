@@ -46,7 +46,10 @@ public final class ResourceResolveSpecSanitizer {
                 .launchUrl(source.getLaunchUrl())
                 .tags(source.getTags())
                 .observability(source.getObservability())
-                .quality(source.getQuality());
+                .quality(source.getQuality())
+                .agentExposure(source.getAgentExposure())
+                .agentDeliveryMode(source.getAgentDeliveryMode())
+                .bindingClosure(source.getBindingClosure());
         return b.build();
     }
 

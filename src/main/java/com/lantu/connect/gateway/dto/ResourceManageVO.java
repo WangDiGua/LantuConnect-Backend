@@ -83,6 +83,8 @@ public class ResourceManageVO {
     private String embedType;
     private String icon;
     private List<String> screenshots;
+    private String agentExposure;
+    private String agentDeliveryMode;
 
     // --- dataset (t_resource_dataset_ext) ---
     private String dataType;

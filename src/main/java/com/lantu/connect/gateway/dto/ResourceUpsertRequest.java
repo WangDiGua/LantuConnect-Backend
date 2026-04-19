@@ -92,6 +92,8 @@ public class ResourceUpsertRequest {
     private String embedType;
     private String icon;
     private List<String> screenshots;
+    private String agentExposure;
+    private String agentDeliveryMode;
 
     /**
      * 仅 dataset 使用。
