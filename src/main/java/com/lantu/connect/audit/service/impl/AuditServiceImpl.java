@@ -15,6 +15,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.util.ListQueryKeyword;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
+import com.lantu.connect.compat.robotfactory.service.RobotFactoryLifecycleHookService;
 import com.lantu.connect.gateway.service.ResourceRegistryService;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
 import com.lantu.connect.gateway.security.AgentApiKeyService;
@@ -71,6 +72,7 @@ public class AuditServiceImpl implements AuditService {
     private final ResourceHealthService resourceHealthService;
     private final ObjectMapper objectMapper;
     private final AuditPendingPushDebouncer auditPendingPushDebouncer;
+    private final RobotFactoryLifecycleHookService robotFactoryLifecycleHookService;
 
     @Override
     public PageResult<AuditItem> pagePendingAgents(Long operatorUserId, int page, int pageSize) {
@@ -295,6 +297,9 @@ public class AuditServiceImpl implements AuditService {
         if ("agent".equalsIgnoreCase(item.getTargetType())) {
             agentApiKeyService.ensureActiveKeyForAgent(item.getTargetId(), operatorUserId);
         }
+        if ("mcp".equalsIgnoreCase(item.getTargetType())) {
+            robotFactoryLifecycleHookService.onResourcePublished(item.getTargetId());
+        }
     }
 
     /**
@@ -348,6 +353,7 @@ public class AuditServiceImpl implements AuditService {
         jdbcTemplate.update(
                 "UPDATE t_resource SET status = ?, update_time = NOW() WHERE id = ? AND deleted = 0",
                 ResourceLifecycleStateMachine.STATUS_DEPRECATED, resourceId);
+        robotFactoryLifecycleHookService.onResourceDeprecated(resourceId);
 
         List<Map<String, Object>> auditRows = jdbcTemplate.queryForList(
                 "SELECT id FROM t_audit_item WHERE target_id = ? AND status = ? ORDER BY submit_time DESC LIMIT 1",

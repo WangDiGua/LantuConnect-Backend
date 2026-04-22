@@ -59,6 +59,7 @@ public class SecurityProperties {
             "/auth/logout",
             "/auth/legal-notices",
             "/catalog/apps/launch",
+            "/compat/robot-factory/**",
             "/captcha/**",
             "/error",
             "/swagger-ui/**",

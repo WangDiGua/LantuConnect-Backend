@@ -25,6 +25,7 @@ import com.lantu.connect.monitoring.dto.ResourceHealthSnapshotVO;
 import com.lantu.connect.gateway.service.support.ResourceLifecycleStateMachine;
 import com.lantu.connect.common.util.UserDisplayNameResolver;
 import com.lantu.connect.common.util.SensitiveDataEncryptor;
+import com.lantu.connect.compat.robotfactory.service.RobotFactoryLifecycleHookService;
 import com.lantu.connect.notification.service.NotificationEventCodes;
 import com.lantu.connect.notification.service.SystemNotificationFacade;
 import com.lantu.connect.realtime.AuditPendingPushDebouncer;
@@ -93,6 +94,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     private final SystemNotificationFacade systemNotificationFacade;
     private final AuditPendingPushDebouncer auditPendingPushDebouncer;
     private final ResourceHealthService resourceHealthService;
+    private final RobotFactoryLifecycleHookService robotFactoryLifecycleHookService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -380,6 +382,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         ResourceLifecycleStateMachine.ensureTransitionAllowed(row.status(), ResourceLifecycleStateMachine.STATUS_DEPRECATED);
         jdbcTemplate.update("UPDATE t_resource SET status = ?, update_time = NOW() WHERE id = ? AND deleted = 0",
                 ResourceLifecycleStateMachine.STATUS_DEPRECATED, resourceId);
+        robotFactoryLifecycleHookService.onResourceDeprecated(resourceId);
         systemNotificationFacade.notifyResourceStateChange(
                 operatorUserId,
                 NotificationEventCodes.RESOURCE_DEPRECATED,
@@ -700,6 +703,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         ensureUniqueCode(type, req.getResourceCode(), resourceId);
         persistUpsertToMainAndExtensions(resourceId, row.resourceType(), type, req);
         deleteWorkingDraft(resourceId);
+        robotFactoryLifecycleHookService.onResourceUpdated(resourceId);
     }
 
     private ResourceRow requireRow(Long resourceId) {
