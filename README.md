@@ -93,8 +93,7 @@ mysql -u root -p < sql/lantu_connect.sql
 ```powershell
 Copy-Item src\main\resources\application-local.example.yml src\main\resources\application-local.yml
 # 按需编辑 application-local.yml（库、Redis、jwt.secret 等）
-$env:SPRING_PROFILES_ACTIVE = 'dev'
-.\mvnw.cmd spring-boot:run -DskipTests
+.\start-backend.ps1
 ```
 
 ### 3. 启动
@@ -109,9 +108,10 @@ $env:SPRING_PROFILES_ACTIVE = 'dev'
 Windows：
 
 ```bat
-mvnw.cmd spring-boot:run -DskipTests
+start-backend.cmd
 ```
 
+PowerShell 里也可直接执行：`.\start-backend.ps1`；需要先停旧进程并重新拉起时可用：`.\restart-backend.ps1` 或 `restart-backend.cmd`。  
 已安装全局 Maven 时也可用：`mvn spring-boot:run -DskipTests`。
 
 服务启动后访问：

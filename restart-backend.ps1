@@ -1,5 +1,6 @@
 param(
-    [int]$Port = 8080
+    [int]$Port = 8080,
+    [string]$Profile = 'dev'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -10,6 +11,16 @@ Set-Location $root
 
 function Get-ListenerPid {
     param([int]$TargetPort)
+
+    try {
+        $listener = Get-NetTCPConnection -LocalPort $TargetPort -State Listen -ErrorAction Stop |
+            Select-Object -First 1 -ExpandProperty OwningProcess
+        if ($null -ne $listener) {
+            return [int]$listener
+        }
+    } catch {
+        # Fallback to netstat on environments where Get-NetTCPConnection is unavailable.
+    }
 
     $lines = netstat -ano | Select-String ("[:.]$TargetPort\s")
     foreach ($line in $lines) {
@@ -36,36 +47,17 @@ $listenerPid = Get-ListenerPid -TargetPort $Port
 if ($null -ne $listenerPid) {
     Write-Host "Stopping existing process on port ${Port}: PID=$listenerPid"
     Stop-Process -Id $listenerPid -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 3
+    $deadline = (Get-Date).AddSeconds(20)
+    do {
+        Start-Sleep -Milliseconds 500
+        $listenerPid = Get-ListenerPid -TargetPort $Port
+    } while ($null -ne $listenerPid -and (Get-Date) -lt $deadline)
 }
 
-$outLog = Join-Path $root 'backend-restart.out.log'
-$errLog = Join-Path $root 'backend-restart.err.log'
-
-$startInfo = Start-Process -FilePath (Join-Path $root 'mvnw.cmd') `
-    -ArgumentList @('spring-boot:run', '-DskipTests') `
-    -WorkingDirectory $root `
-    -RedirectStandardOutput $outLog `
-    -RedirectStandardError $errLog `
-    -PassThru
-
-Write-Host "Started mvnw wrapper PID=$($startInfo.Id)"
-Write-Host "Waiting for port $Port..."
-
-$deadline = (Get-Date).AddMinutes(3)
-while ((Get-Date) -lt $deadline) {
-    Start-Sleep -Seconds 2
-    $listenerPid = Get-ListenerPid -TargetPort $Port
-    if ($null -ne $listenerPid) {
-        Write-Host "Port $Port is listening: PID=$listenerPid"
-        break
-    }
+if ($null -ne (Get-ListenerPid -TargetPort $Port)) {
+    throw "Failed to release port $Port before restart."
 }
 
-if ($null -eq (Get-ListenerPid -TargetPort $Port)) {
-    Write-Host "Backend did not start listening on port $Port within the timeout."
-}
-
-Write-Host "Logs:"
-Write-Host "  $outLog"
-Write-Host "  $errLog"
+Write-Host "Port $Port is free. Restarting backend..."
+& (Join-Path $root 'start-backend.ps1') -Profile $Profile
+exit $LASTEXITCODE
