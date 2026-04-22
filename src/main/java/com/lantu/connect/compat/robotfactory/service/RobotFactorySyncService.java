@@ -5,7 +5,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.result.ResultCode;
-import com.lantu.connect.compat.robotfactory.dto.RobotFactoryResourceContext;
 import com.lantu.connect.compat.robotfactory.entity.RobotFactoryProjection;
 import com.lantu.connect.compat.robotfactory.entity.RobotFactorySyncLog;
 import com.lantu.connect.compat.robotfactory.mapper.RobotFactoryProjectionMapper;
@@ -26,6 +25,7 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -89,7 +89,7 @@ public class RobotFactorySyncService {
             projectionService.updateProjectionSyncState(
                     projection.getId(),
                     "pending",
-                    "资源已下线，自动同步未开启；如已注册到软件工厂，请手动删除外部记录",
+                    "资源已下线，自动同步未开启；如已注册到精灵平台，请手动删除外部记录",
                     projection.getExternalAgentId(),
                     projection.getLastSyncedAt());
             return;
@@ -185,13 +185,13 @@ public class RobotFactorySyncService {
                         ? findExternalIdByAgentName(projection.getAgentName())
                         : keyHolder.getKey().longValue();
             }
-            String message = "已同步到软件工厂注册表，需对方手动刷新缓存";
+            String message = "已同步到精灵平台注册表，需对方手动刷新缓存";
             projectionService.updateProjectionSyncState(projection.getId(), "synced", message, externalId, now);
             recordSyncLog(projection.getId(), projection.getResourceId(), actualAction, true, message, requestJson,
                     toJson(Map.of("externalAgentId", externalId, "action", actualAction)));
             return projectionMapper.selectById(projection.getId());
         } catch (Exception e) {
-            String message = firstNonBlank(e.getMessage(), "软件工厂同步失败");
+            String message = firstNonBlank(e.getMessage(), "精灵平台同步失败");
             projectionService.updateProjectionSyncState(projection.getId(), "failed", message, projection.getExternalAgentId(), now);
             recordSyncLog(projection.getId(), projection.getResourceId(), action, false, message, requestJson,
                     toJson(Map.of("error", message)));
@@ -214,14 +214,14 @@ public class RobotFactorySyncService {
             } else {
                 externalJdbc.update("DELETE FROM genie_external_agent WHERE agent_name = ?", projection.getAgentName());
             }
-            String message = "已从软件工厂注册表删除，需对方手动刷新缓存";
+            String message = "已从精灵平台注册表删除，需对方手动刷新缓存";
             projectionService.updateProjectionSyncState(projection.getId(), "deleted", message, null, now);
             recordSyncLog(projection.getId(), projection.getResourceId(), action, true, message,
                     toJson(Map.of("agentName", projection.getAgentName(), "externalAgentId", externalId)),
                     toJson(Map.of("deleted", true)));
             return projectionMapper.selectById(projection.getId());
         } catch (Exception e) {
-            String message = firstNonBlank(e.getMessage(), "软件工厂删除失败");
+            String message = firstNonBlank(e.getMessage(), "精灵平台删除失败");
             projectionService.updateProjectionSyncState(projection.getId(), "failed", message, projection.getExternalAgentId(), now);
             recordSyncLog(projection.getId(), projection.getResourceId(), action, false, message,
                     toJson(Map.of("agentName", projection.getAgentName(), "externalAgentId", projection.getExternalAgentId())),
@@ -235,11 +235,18 @@ public class RobotFactorySyncService {
 
     private Map<String, Object> buildExternalPayload(RobotFactoryProjection projection) {
         if (!"global".equalsIgnoreCase(projection.getScopeMode()) && projection.getCorpId() == null) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "当前投影未找到可用的 corp_id 映射，无法同步到软件工厂");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "当前投影未找到可用的 corp_id 映射，无法同步到精灵平台");
         }
-        if (!StringUtils.hasText(projection.getSpecJson())) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "投影 spec_json 为空，无法同步到软件工厂");
+        String effectiveSpecJson = projectionService.resolveEffectiveSpecJson(projection);
+        if (!StringUtils.hasText(effectiveSpecJson)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "投影 spec_json 为空，无法同步到精灵平台");
         }
+        validateExternalSpecJson(effectiveSpecJson);
+        if (!Objects.equals(effectiveSpecJson, projection.getSpecJson())) {
+            projection.setSpecJson(effectiveSpecJson);
+            projectionMapper.updateById(projection);
+        }
+
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("corp_id", "global".equalsIgnoreCase(projection.getScopeMode()) ? null : projection.getCorpId());
         payload.put("yn", 1);
@@ -253,12 +260,26 @@ public class RobotFactorySyncService {
         payload.put("agent_type", "mcp");
         payload.put("mode", "TOOL");
         payload.put("max_concurrency", 1);
-        payload.put("spec_json", projection.getSpecJson());
+        payload.put("spec_json", effectiveSpecJson);
         payload.put("parameters_schema", projection.getParametersSchema());
         payload.put("runtime_role", "tool");
         payload.put("interaction_mode", "sync");
         payload.put("dispatch_mode", "tool_sync");
         return payload;
+    }
+
+    private void validateExternalSpecJson(String specJson) {
+        Map<String, Object> spec = projectionService.parseJsonMap(specJson);
+        String url = firstNonBlank(spec.get("url") == null ? null : String.valueOf(spec.get("url")));
+        if (!StringUtils.hasText(url)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "投影 spec_json.url 为空，无法同步到精灵平台");
+        }
+        String normalized = url.trim().toLowerCase(Locale.ROOT);
+        if (!(normalized.startsWith("http://") || normalized.startsWith("https://"))) {
+            throw new BusinessException(
+                    ResultCode.PARAM_ERROR,
+                    "投影 spec_json.url 不是可直连的绝对地址，请先在适配设置中填写对外访问地址，再重新同步");
+        }
     }
 
     private Long findExternalIdByAgentName(String agentName) {

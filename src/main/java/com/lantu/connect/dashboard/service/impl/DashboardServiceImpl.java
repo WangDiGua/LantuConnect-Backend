@@ -476,12 +476,19 @@ public class DashboardServiceImpl implements DashboardService {
         long totalMcps = countPublishedResourceByType("mcp");
         long totalApps = countPublishedResourceByType("app");
         long totalDatasets = countPublishedResourceByType("dataset");
+        Long totalDevelopers = jdbcTemplate.queryForObject(
+                "SELECT COUNT(DISTINCT ur.user_id) "
+                        + "FROM t_user_role_rel ur "
+                        + "INNER JOIN t_platform_role pr ON pr.id = ur.role_id "
+                        + "WHERE LOWER(pr.role_code) <> 'user'",
+                Long.class);
         platformStats.put("totalAgents", totalAgents);
         platformStats.put("totalSkills", totalSkills);
         platformStats.put("totalMcps", totalMcps);
         platformStats.put("totalApps", totalApps);
         platformStats.put("totalDatasets", totalDatasets);
         platformStats.put("totalResources", totalAgents + totalSkills + totalMcps + totalApps + totalDatasets);
+        platformStats.put("totalDevelopers", totalDevelopers != null ? totalDevelopers : 0L);
         platformStats.put("totalUsers", userMapper.selectCount(null));
         Long todayCalls = callLogMapper.selectTodayCount();
         platformStats.put("totalCallsToday", todayCalls != null ? todayCalls : 0L);

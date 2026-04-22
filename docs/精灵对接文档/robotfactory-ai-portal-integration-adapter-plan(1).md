@@ -1,5 +1,250 @@
 # RobotFactory / AI 门户无缝对接改造说明
 
+## 0. 截至 2026-04-22 的已落地实现更新
+
+本节用于覆盖本文中已经过时的计划性描述。若本文后续章节与本节冲突，**以本节和当前代码实现为准**。
+
+### 0.1 当前已落地范围
+
+当前项目已经完成第一阶段的核心适配能力，包含：
+
+- 后端独立适配模块：`com.lantu.connect.compat.robotfactory.*`
+- 前端超管页面：`平台配置 -> 软件工厂适配`
+- 软件工厂连接配置的前端维护、测试连接、自动健康检查
+- MCP 资源投影管理
+- 学校与 `corp_id` 映射管理
+- 同步日志查询
+- 外部库 `genie_external_agent` 的写入、更新、删除
+- 软件工厂兼容 MCP SSE 接口
+- 来源 IP 白名单校验
+
+第一阶段**仍未接管**的软件工厂能力：
+
+- `genie_agent_client_scope`
+- `genie_agent_permission`
+- 软件工厂侧“绑定机器人”
+- 软件工厂侧“修改权限”
+- 软件工厂侧缓存自动刷新
+
+### 0.2 当前本地表与配置实际落地情况
+
+当前代码与数据库已落地以下本地表：
+
+- `t_robotfactory_projection`
+- `t_robotfactory_corp_mapping`
+- `t_robotfactory_sync_log`
+
+当前软件工厂连接与运行配置**不写在 YAML 中**，统一存储在本平台数据库：
+
+- 表：`t_system_param`
+- 键：`robot_factory_adapter_config`
+
+当前该 JSON 配置实际承载的字段包括：
+
+- `dbUrl`
+- `dbUsername`
+- `dbPassword`
+- `dbDriverClassName`
+- `publicBaseUrl`
+- `allowedIps`
+- `sessionIdleMinutes`
+- `sessionMaxLifetimeMinutes`
+- `invokeTimeoutSeconds`
+
+这意味着：
+
+- 软件工厂数据库连接已支持在前端页面中修改
+- 可以在前端直接测试连接
+- 后端会定时自动检查连接健康状态
+- 后续任何环境切换都应优先改系统配置，不应再回退到写死配置文件
+
+### 0.3 当前健康检查真实口径
+
+当前健康检查不再只判断“数据库通不通”，而是同时判断以下三件事：
+
+1. 软件工厂数据库是否可达
+2. 当前连接的数据库中是否存在 `genie_external_agent`
+3. 是否已配置 `publicBaseUrl`，即“对外访问地址”
+
+当前健康状态对象已包含：
+
+- `configured`
+- `databaseReachable`
+- `externalTableReady`
+- `publicBaseUrlReady`
+- `status`
+- `message`
+- `checkedAt`
+
+当前页面“可同步”的判断口径为：
+
+- 数据库可达
+- `genie_external_agent` 已检测到
+- `publicBaseUrl` 已配置
+
+也就是说，**即使数据库已连通、表也存在，只要没有配置对外访问地址，当前实现也不会视为“可同步”**。
+
+### 0.4 `spec_json` 的当前真实生成与限制
+
+当前投影 `spec_json` 的生成方式如下：
+
+- 优先使用投影级 `specJsonOverride`
+- 否则按系统配置中的 `publicBaseUrl` + `server.servlet.context-path` + 固定兼容路径自动生成
+
+当前兼容地址固定为：
+
+- `GET /regis/compat/robot-factory/mcp/{projectionCode}/sse`
+- `POST /regis/compat/robot-factory/mcp/{projectionCode}/message?session_id=...`
+
+当前代码已经补上一个关键限制：
+
+- 同步到软件工厂前，`spec_json.url` **必须是可直连的绝对地址**
+- 仅允许 `http://` 或 `https://` 开头
+- 若仍是 `/regis/...` 这类相对路径，则直接拒绝同步
+
+因此当前落地口径是：
+
+- `publicBaseUrl` 未配置时，不允许继续把相对路径同步到软件工厂
+- 之前已经同步过相对路径的投影，需要在补全 `publicBaseUrl` 后重新执行一次同步
+
+### 0.5 当前 `genie_external_agent` 同步口径
+
+当前只同步软件工厂外部表：
+
+- `genie_external_agent`
+
+当前不会写入：
+
+- `genie_agent_client_scope`
+- `genie_agent_permission`
+
+当前 `genie_external_agent` 的同步行为为：
+
+- 按 `agent_name` 查询是否已存在
+- 存在则 `UPDATE`
+- 不存在则 `INSERT`
+- 成功后回写 `external_agent_id`
+
+当前删除口径已经按已确认方案落地为：
+
+- **物理删除**软件工厂侧 `genie_external_agent` 记录
+
+不是旧文档中某些章节提到的：
+
+- `yn = 0`
+- `hidden = 1`
+
+因此若本文后续还出现“下线时优先改 `yn=0`”之类描述，应视为旧计划，**以物理删除为准**。
+
+### 0.6 当前资源范围与同步触发口径
+
+当前投影与自动同步的实际范围为：
+
+- 仅支持 `published` 的 `MCP` 资源
+
+当前实现具备以下同步入口：
+
+- 手动创建投影后手动同步
+- 投影开启 `autoSyncEnabled` 后，资源发布 / 更新 / 下线时自动触发对应同步逻辑
+
+当前自动同步默认值为：
+
+- `autoSyncEnabled = false`
+
+即第一阶段仍是：
+
+- 手动 + 自动并存
+- 但自动同步需要投影级显式开启
+
+### 0.7 当前前端页面真实交互
+
+当前前端页面已经不是“表单和列表整页平铺”的旧形态，现已调整为：
+
+- `投影列表` 页：仅保留筛选和列表，新建/编辑统一进入弹窗
+- `学校 Corp 映射` 页：仅保留说明和列表，新建/编辑统一进入弹窗
+- `同步日志` 页：独立查询与查看
+- `适配设置` 页：数据库连接、对外地址、白名单、连接导入、健康状态统一维护
+
+当前页面还已支持：
+
+- 导入 Navicat `.ncx` 连接文件
+- 尝试解析并回填数据库连接信息
+- 密码明文显示/隐藏切换
+
+### 0.8 当前同步失败的关键阻断条件
+
+在当前代码里，以下情况会直接阻止同步：
+
+- `scopeMode = school` 但未找到有效的 `corp_id` 映射
+- `spec_json` 为空
+- `spec_json.url` 为空
+- `spec_json.url` 不是绝对地址
+- 软件工厂数据库不可达
+- 当前数据库中不存在 `genie_external_agent`
+- 未配置 `publicBaseUrl`
+
+因此当前实际实施顺序应为：
+
+1. 在“适配设置”中配置正确的 `dbUrl`
+2. 确认该 `dbUrl` 指向的软件工厂数据库中存在 `genie_external_agent`
+3. 配置可被软件工厂直连访问的 `publicBaseUrl`
+4. 配置来源 IP 白名单
+5. 维护学校与 `corp_id` 映射
+6. 创建投影并同步
+
+### 0.9 当前接口与模块落地情况
+
+当前后端已落地的管理端接口包括：
+
+- `GET /regis/system-config/robot-factory/settings`
+- `PUT /regis/system-config/robot-factory/settings`
+- `POST /regis/system-config/robot-factory/settings/test-connection`
+- `GET /regis/system-config/robot-factory/settings/health`
+- `GET /regis/system-config/robot-factory/corp-mappings`
+- `POST /regis/system-config/robot-factory/corp-mappings`
+- `PUT /regis/system-config/robot-factory/corp-mappings/{id}`
+- `GET /regis/system-config/robot-factory/available-resources`
+- `GET /regis/system-config/robot-factory/projections`
+- `GET /regis/system-config/robot-factory/projections/{id}`
+- `POST /regis/system-config/robot-factory/projections`
+- `PUT /regis/system-config/robot-factory/projections/{id}`
+- `POST /regis/system-config/robot-factory/projections/{id}/sync`
+- `DELETE /regis/system-config/robot-factory/projections/{id}/external`
+- `POST /regis/system-config/robot-factory/projections/{id}/auto-sync`
+- `GET /regis/system-config/robot-factory/sync-logs`
+
+当前兼容运行时接口为：
+
+- `GET /regis/compat/robot-factory/mcp/{projectionCode}/sse`
+- `POST /regis/compat/robot-factory/mcp/{projectionCode}/message?session_id=...`
+
+当前后端核心模块包括：
+
+- `RobotFactoryAdminController`
+- `RobotFactoryMcpCompatController`
+- `RobotFactorySettingsService`
+- `RobotFactoryProjectionService`
+- `RobotFactorySyncService`
+- `RobotFactoryCompatService`
+- `RobotFactorySessionService`
+- `RobotFactoryWhitelistService`
+
+### 0.10 当前仍需注意的现实约束
+
+虽然第一阶段已落地，但以下约束依然成立：
+
+- 软件工厂侧仍需人工绑定机器人
+- 软件工厂侧仍需人工配置权限
+- 软件工厂缓存仍需对方人工刷新
+- 当前 `genie_external_agent` 仍按既定字段写入，后续若对方表结构变化，需继续补“字段契约检查 / 映射配置化”
+
+建议后续第二阶段优先补齐：
+
+- `genie_external_agent` 关键字段结构检查
+- 字段映射配置化
+- 同步失败的更细粒度诊断与提示
+- 已存在脏 `spec_json` 数据的批量重同步工具
+
 ## 1. 背景
 
 当前 `LantuConnect-Backend` 已经具备自己的资源注册、发布、授权、统一调用、调用日志、使用统计、健康检测、熔断降级、Trace 追踪等能力，平台本身是一个面向多类调用方的资源注册与调用平台，不仅服务公司内部 AI 门户，还需要继续服务师生端和第三方平台。

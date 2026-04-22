@@ -46,8 +46,9 @@ public class RobotFactorySettingsService {
             .configured(false)
             .databaseReachable(false)
             .externalTableReady(false)
+            .publicBaseUrlReady(false)
             .status("unconfigured")
-            .message("软件工厂适配尚未配置外部数据库连接")
+            .message("精灵平台适配尚未配置外部数据库连接")
             .checkedAt(null)
             .build();
 
@@ -80,7 +81,7 @@ public class RobotFactorySettingsService {
             entity.setType("json");
             entity.setCategory("compat");
             entity.setEditable(true);
-            entity.setDescription("软件工厂适配配置(JSON)");
+            entity.setDescription("精灵平台适配配置(JSON)");
             entity.setUpdateTime(now);
             systemParamMapper.insert(entity);
         } else {
@@ -88,7 +89,7 @@ public class RobotFactorySettingsService {
             existing.setType("json");
             existing.setCategory("compat");
             existing.setEditable(true);
-            existing.setDescription("软件工厂适配配置(JSON)");
+            existing.setDescription("精灵平台适配配置(JSON)");
             existing.setUpdateTime(now);
             systemParamMapper.updateById(existing);
         }
@@ -157,29 +158,42 @@ public class RobotFactorySettingsService {
                     .configured(false)
                     .databaseReachable(false)
                     .externalTableReady(false)
+                    .publicBaseUrlReady(false)
                     .status("unconfigured")
-                    .message("请先在管理端配置软件工厂数据库连接")
+                    .message("请先在管理端配置精灵平台数据库连接")
                     .checkedAt(now)
                     .build();
         }
         try {
             JdbcTemplate jdbcTemplate = buildJdbcTemplate(settings);
             jdbcTemplate.queryForObject("SELECT 1", Integer.class);
+            String currentDatabase = jdbcTemplate.queryForObject("SELECT DATABASE()", String.class);
+            if (!StringUtils.hasText(currentDatabase)) {
+                return RobotFactorySettingsHealthDTO.builder()
+                        .configured(true)
+                        .databaseReachable(true)
+                        .externalTableReady(false)
+                        .publicBaseUrlReady(isPublicBaseUrlConfigured(settings))
+                        .status("warning")
+                        .message("数据库连接正常，但当前 JDBC URL 未指定数据库/schema，无法检测 genie_external_agent")
+                        .checkedAt(now)
+                        .build();
+            }
             Integer tableCount = jdbcTemplate.queryForObject("""
                     SELECT COUNT(1)
                     FROM information_schema.tables
-                    WHERE table_schema = DATABASE()
+                    WHERE table_schema = ?
                       AND table_name = 'genie_external_agent'
-                    """, Integer.class);
+                    """, Integer.class, currentDatabase);
             boolean tableReady = tableCount != null && tableCount > 0;
+            boolean publicBaseUrlReady = isPublicBaseUrlConfigured(settings);
             return RobotFactorySettingsHealthDTO.builder()
                     .configured(true)
                     .databaseReachable(true)
                     .externalTableReady(tableReady)
-                    .status(tableReady ? "healthy" : "warning")
-                    .message(tableReady
-                            ? "数据库连接正常，可访问 genie_external_agent"
-                            : "数据库连接正常，但未发现 genie_external_agent 表")
+                    .publicBaseUrlReady(publicBaseUrlReady)
+                    .status(tableReady && publicBaseUrlReady ? "healthy" : "warning")
+                    .message(resolveHealthMessage(currentDatabase, tableReady, publicBaseUrlReady))
                     .checkedAt(now)
                     .build();
         } catch (Exception e) {
@@ -187,8 +201,9 @@ public class RobotFactorySettingsService {
                     .configured(true)
                     .databaseReachable(false)
                     .externalTableReady(false)
+                    .publicBaseUrlReady(isPublicBaseUrlConfigured(settings))
                     .status("unhealthy")
-                    .message(firstNonBlank(e.getMessage(), "软件工厂数据库连接异常"))
+                    .message(firstNonBlank(e.getMessage(), "精灵平台数据库连接异常"))
                     .checkedAt(now)
                     .build();
         }
@@ -205,7 +220,7 @@ public class RobotFactorySettingsService {
 
     private void ensureDbConfigured(RobotFactorySettingsDTO settings) {
         if (!isDbConfigured(settings)) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "未配置软件工厂外部数据库连接");
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "未配置精灵平台外部数据库连接");
         }
     }
 
@@ -214,6 +229,20 @@ public class RobotFactorySettingsService {
                 && StringUtils.hasText(settings.getDbUrl())
                 && StringUtils.hasText(settings.getDbUsername())
                 && StringUtils.hasText(settings.getDbPassword());
+    }
+
+    private boolean isPublicBaseUrlConfigured(RobotFactorySettingsDTO settings) {
+        return settings != null && StringUtils.hasText(settings.getPublicBaseUrl());
+    }
+
+    private String resolveHealthMessage(String currentDatabase, boolean tableReady, boolean publicBaseUrlReady) {
+        if (!tableReady) {
+            return "数据库连接正常，但在当前数据库 " + currentDatabase + " 中未发现 genie_external_agent 表";
+        }
+        if (!publicBaseUrlReady) {
+            return "数据库连接正常，已检测到 genie_external_agent，但未配置对外访问地址，无法生成可直连的 SSE 地址";
+        }
+        return "数据库连接正常，可访问 genie_external_agent，且已配置对外访问地址";
     }
 
     private RobotFactorySettingsDTO toSettings(RobotFactorySettingsUpsertRequest request) {
@@ -280,7 +309,7 @@ public class RobotFactorySettingsService {
         try {
             return objectMapper.writeValueAsString(settings);
         } catch (JsonProcessingException e) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "软件工厂配置序列化失败");
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "精灵平台配置序列化失败");
         }
     }
 

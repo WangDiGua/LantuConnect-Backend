@@ -44,6 +44,25 @@ INSERT INTO `t_alert_record` VALUES ('arec-001', 'ar-001', 'API延迟过高', 'w
 INSERT INTO `t_alert_record` VALUES ('arec-002', 'ar-002', '错误率过高', 'critical', 'firing', '最近5分钟错误率6.2%，超过阈值5%', 'monitor-service', '{\"agent\": \"campus-qa\"}', '2026-03-21 14:00:00', NULL);
 
 -- ----------------------------
+-- Table structure for t_alert_record_action
+-- ----------------------------
+DROP TABLE IF EXISTS `t_alert_record_action`;
+CREATE TABLE `t_alert_record_action`  (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `record_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT 'alert record id',
+  `action_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT 'action type',
+  `operator_user_id` bigint NULL DEFAULT NULL COMMENT 'operator user id',
+  `note` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT 'action note',
+  `previous_status` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT 'status before change',
+  `next_status` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT 'status after change',
+  `extra_json` json NULL COMMENT 'extra action payload',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'create time',
+  PRIMARY KEY (`id`) USING BTREE,
+  INDEX `idx_alert_record_action_record_time`(`record_id` ASC, `create_time` ASC) USING BTREE,
+  CONSTRAINT `fk_alert_record_action_record` FOREIGN KEY (`record_id`) REFERENCES `t_alert_record` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = 'alert record action history' ROW_FORMAT = DYNAMIC;
+
+-- ----------------------------
 -- Table structure for t_alert_rule
 -- ----------------------------
 DROP TABLE IF EXISTS `t_alert_rule`;

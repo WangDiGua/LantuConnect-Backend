@@ -66,7 +66,7 @@ public class RobotFactoryProjectionService {
     public RobotFactoryCorpMapping createCorpMapping(RobotFactoryCorpMappingUpsertRequest request) {
         RobotFactoryCorpMapping existing = findCorpMappingBySchoolId(request.getSchoolId());
         if (existing != null) {
-            throw new BusinessException(ResultCode.CONFLICT, "该 school_id 已存在软件工厂 Corp 映射");
+            throw new BusinessException(ResultCode.CONFLICT, "该 school_id 已存在精灵平台 Corp 映射");
         }
         RobotFactoryCorpMapping entity = new RobotFactoryCorpMapping();
         copyCorpMapping(request, entity);
@@ -82,7 +82,7 @@ public class RobotFactoryProjectionService {
         }
         RobotFactoryCorpMapping sameSchool = findCorpMappingBySchoolId(request.getSchoolId());
         if (sameSchool != null && !Objects.equals(sameSchool.getId(), id)) {
-            throw new BusinessException(ResultCode.CONFLICT, "该 school_id 已存在软件工厂 Corp 映射");
+            throw new BusinessException(ResultCode.CONFLICT, "该 school_id 已存在精灵平台 Corp 映射");
         }
         copyCorpMapping(request, entity);
         corpMappingMapper.updateById(entity);
@@ -123,7 +123,7 @@ public class RobotFactoryProjectionService {
     public RobotFactoryProjectionListItem createProjection(RobotFactoryProjectionCreateRequest request) {
         if (projectionMapper.selectOne(new LambdaQueryWrapper<RobotFactoryProjection>()
                 .eq(RobotFactoryProjection::getResourceId, request.getResourceId())) != null) {
-            throw new BusinessException(ResultCode.CONFLICT, "该 MCP 资源已存在软件工厂投影");
+            throw new BusinessException(ResultCode.CONFLICT, "该 MCP 资源已存在精灵平台投影");
         }
         RobotFactoryResourceContext resource = requirePublishedMcpResource(request.getResourceId());
         RobotFactoryProjection entity = buildProjection(resource, request, null);
@@ -246,7 +246,7 @@ public class RobotFactoryProjectionService {
     public RobotFactoryProjection requireSyncedProjectionByCode(String projectionCode) {
         RobotFactoryProjection entity = requireProjectionByCode(projectionCode);
         if (!ACTIVE_SYNC_STATUSES.contains(normalize(entity.getSyncStatus()))) {
-            throw new BusinessException(ResultCode.ILLEGAL_STATE_TRANSITION, "投影尚未同步到软件工厂");
+            throw new BusinessException(ResultCode.ILLEGAL_STATE_TRANSITION, "投影尚未同步到精灵平台");
         }
         return entity;
     }
@@ -265,7 +265,7 @@ public class RobotFactoryProjectionService {
             throw new BusinessException(ResultCode.NOT_FOUND, "资源不存在");
         }
         if (!TYPE_MCP.equalsIgnoreCase(resource.getResourceType())) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "仅支持 MCP 资源接入软件工厂");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "仅支持 MCP 资源接入精灵平台");
         }
         return resource;
     }
@@ -310,7 +310,7 @@ public class RobotFactoryProjectionService {
         try {
             return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException e) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR, "软件工厂适配 JSON 序列化失败");
+            throw new BusinessException(ResultCode.INTERNAL_ERROR, "精灵平台适配 JSON 序列化失败");
         }
     }
 
@@ -367,7 +367,7 @@ public class RobotFactoryProjectionService {
         entity.setAutoSyncEnabled(createRequest == null || createRequest.getAutoSyncEnabled() == null
                 ? Boolean.FALSE : createRequest.getAutoSyncEnabled());
         entity.setSyncStatus("pending");
-        entity.setSyncMessage("待同步到软件工厂");
+        entity.setSyncMessage("待同步到精灵平台");
         applyProjectionOverrides(entity, resource, updateRequest != null ? updateRequest : toUpdateRequest(createRequest));
         return entity;
     }
@@ -477,6 +477,13 @@ public class RobotFactoryProjectionService {
         Map<String, Object> spec = new LinkedHashMap<>();
         spec.put("url", base + ctx + "/compat/robot-factory/mcp/" + projectionCode + "/sse");
         return toJson(spec);
+    }
+
+    public String resolveEffectiveSpecJson(RobotFactoryProjection projection) {
+        if (projection == null) {
+            return null;
+        }
+        return buildSpecJson(projection.getProjectionCode(), projection.getSpecJsonOverride());
     }
 
     private String inferDisplayTemplate(RobotFactoryResourceContext resource) {

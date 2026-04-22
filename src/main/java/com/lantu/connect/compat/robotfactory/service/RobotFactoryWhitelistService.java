@@ -21,14 +21,14 @@ public class RobotFactoryWhitelistService {
         String clientIp = clientIpResolver.resolve(request);
         List<String> allowedIps = settingsService.getAllowedIps();
         if (allowedIps == null || allowedIps.isEmpty()) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "软件工厂来源 IP 白名单未配置");
+            throw new BusinessException(ResultCode.FORBIDDEN, "精灵平台来源 IP 白名单未配置");
         }
         boolean matched = allowedIps.stream()
                 .filter(StringUtils::hasText)
                 .map(String::trim)
                 .anyMatch(ip -> ip.equals(clientIp));
         if (!matched) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "当前来源 IP 不在软件工厂白名单内");
+            throw new BusinessException(ResultCode.FORBIDDEN, "当前来源 IP 不在精灵平台白名单内");
         }
         return clientIp;
     }

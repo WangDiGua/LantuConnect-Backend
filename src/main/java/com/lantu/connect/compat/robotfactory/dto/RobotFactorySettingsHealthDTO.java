@@ -12,6 +12,7 @@ public class RobotFactorySettingsHealthDTO {
     private boolean configured;
     private boolean databaseReachable;
     private boolean externalTableReady;
+    private boolean publicBaseUrlReady;
     private String status;
     private String message;
     private LocalDateTime checkedAt;
