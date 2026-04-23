@@ -15,6 +15,9 @@ spring:
       - optional:classpath:application-local.yml
   application:
     name: nexusai-connect
+  output:
+    ansi:
+      enabled: ${SPRING_OUTPUT_ANSI_ENABLED:always}
   devtools:
     restart:
       enabled: false
@@ -128,6 +131,10 @@ lantu:
     access-log-error-body-max-chars: 2048
     access-log-error-body-max-bytes: 262144
     access-log-skip-error-body-path-fragments: /auth/login,/auth/refresh,/auth/register
+    startup-self-check-enabled: ${LANTU_STARTUP_SELF_CHECK_ENABLED:true}
+    startup-resource-probe-enabled: ${LANTU_STARTUP_RESOURCE_PROBE_ENABLED:true}
+    startup-resource-probe-limit: ${LANTU_STARTUP_RESOURCE_PROBE_LIMIT:20}
+    startup-slow-threshold-ms: ${LANTU_STARTUP_SLOW_THRESHOLD_MS:3000}
   api-deprecation:
     enabled: true
     deprecated-patterns:

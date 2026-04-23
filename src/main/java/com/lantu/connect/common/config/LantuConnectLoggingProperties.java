@@ -17,4 +17,8 @@ public class LantuConnectLoggingProperties {
     private int accessLogErrorBodyMaxChars = 2048;
     private int accessLogErrorBodyMaxBytes = 262144;
     private String accessLogSkipErrorBodyPathFragments = "/auth/login,/auth/refresh,/auth/register";
+    private boolean startupSelfCheckEnabled = true;
+    private boolean startupResourceProbeEnabled = true;
+    private int startupResourceProbeLimit = 20;
+    private long startupSlowThresholdMs = 3000;
 }
