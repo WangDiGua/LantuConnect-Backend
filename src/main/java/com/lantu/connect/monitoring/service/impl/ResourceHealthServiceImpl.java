@@ -138,12 +138,16 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
         }
         ResourceProbeResult result = resourceProbeEngine.probe(toProbeTarget(row));
         persistProbeOutcome(row, result);
-        ResourceHealthSnapshotVO snapshot = getSnapshot(resourceId);
-        if (snapshot != null && Boolean.TRUE.equals(snapshot.getCallable())) {
+        ResourceHealthSnapshotVO snapshot;
+        if ("healthy".equalsIgnoreCase(result.healthStatus())) {
             resourceCircuitHealthBridge.resetOpenOrHalfOpenAfterHealthyProbe(row.resourceType, row.resourceId);
-        } else if (snapshot != null && "down".equalsIgnoreCase(snapshot.getHealthStatus())) {
-            openCircuitForProbeFailure(row.resourceType, row.resourceId);
+            snapshot = refreshCallability(resourceId);
+        } else {
             snapshot = getSnapshot(resourceId);
+            if (snapshot != null && "down".equalsIgnoreCase(snapshot.getHealthStatus())) {
+                openCircuitForProbeFailure(row.resourceType, row.resourceId);
+                snapshot = getSnapshot(resourceId);
+            }
         }
         pushSnapshotChanged(snapshot);
         return snapshot;
@@ -870,7 +874,7 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
         if (Boolean.FALSE.equals(row.resourceEnabled) || "disabled".equalsIgnoreCase(healthStatus)) {
             return "disabled";
         }
-        if ("OPEN".equalsIgnoreCase(circuitState)) {
+        if ("OPEN".equalsIgnoreCase(circuitState) || "FORCED_OPEN".equalsIgnoreCase(circuitState)) {
             return "circuit_open";
         }
         if ("HALF_OPEN".equalsIgnoreCase(circuitState)) {
