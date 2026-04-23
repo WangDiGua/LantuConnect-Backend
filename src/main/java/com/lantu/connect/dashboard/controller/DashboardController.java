@@ -47,6 +47,14 @@ public class DashboardController {
         return R.ok(dashboardService.userWorkspace(userId));
     }
 
+    /**
+     * 兼容前端「我的控制台」聚合入口；当前与 user-workspace 共享同一份只读聚合结果。
+     */
+    @GetMapping("/my-console")
+    public R<UserWorkspaceVO> myConsole(@RequestHeader("X-User-Id") Long userId) {
+        return R.ok(dashboardService.userWorkspace(userId));
+    }
+
     /** Owner 维度统计（网关 invoke / usage_record invoke 对照）。权限：本人、reviewer、platform_admin/admin。 */
     @GetMapping("/owner-resource-stats")
     public R<OwnerDeveloperStatsVO> ownerResourceStats(

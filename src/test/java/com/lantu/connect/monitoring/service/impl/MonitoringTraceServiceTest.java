@@ -24,6 +24,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -93,6 +94,76 @@ class MonitoringTraceServiceTest {
         org.mockito.Mockito.verify(jdbcTemplate).queryForList(
                 org.mockito.ArgumentMatchers.argThat((String sql) -> sql.contains("SELECT * FROM (")
                         && sql.contains(") trace_page ORDER BY CASE WHEN trace_page.status = 'error' THEN 0 ELSE 1 END ASC, trace_page.startedAt DESC")),
+                any(Object[].class));
+    }
+
+    @Test
+    void tracesSqlShouldGroupAtTraceLevelInsteadOfRequestLevel() {
+        PageQuery query = new PageQuery();
+        query.setPage(1);
+        query.setPageSize(20);
+
+        doReturn(0L)
+                .when(jdbcTemplate)
+                .queryForObject(anyString(), eq(Long.class), any(Object[].class));
+        doReturn(List.of())
+                .when(jdbcTemplate)
+                .queryForList(anyString(), any(Object[].class));
+
+        monitoringService.traces(query);
+
+        org.mockito.Mockito.verify(jdbcTemplate).queryForObject(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.contains("GROUP BY")
+                                && sql.contains("cl.trace_id")
+                                && !sql.matches("(?s).*GROUP BY\\s+cl\\.trace_id,\\s*cl\\.id.*")),
+                eq(Long.class),
+                any(Object[].class));
+    }
+
+    @Test
+    void tracesSqlShouldAggregateCallLogStatusForOnlyFullGroupBy() {
+        PageQuery query = new PageQuery();
+        query.setPage(1);
+        query.setPageSize(20);
+
+        doReturn(0L)
+                .when(jdbcTemplate)
+                .queryForObject(anyString(), eq(Long.class), any(Object[].class));
+        doReturn(List.of())
+                .when(jdbcTemplate)
+                .queryForList(anyString(), any(Object[].class));
+
+        monitoringService.traces(query);
+
+        org.mockito.Mockito.verify(jdbcTemplate).queryForObject(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.contains("WHEN MAX(CASE WHEN LOWER(COALESCE(cl.status, 'success')) <> 'success' THEN 1 ELSE 0 END) > 0")
+                                && sql.contains("SUM(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success' THEN 1 ELSE 0 END) > 0")),
+                eq(Long.class),
+                any(Object[].class));
+    }
+
+    @Test
+    void tracesTimeoutFilterShouldUseGroupedTimeoutHavingClause() {
+        PageQuery query = new PageQuery();
+        query.setPage(1);
+        query.setPageSize(20);
+        query.setStatus("timeout");
+
+        doReturn(0L)
+                .when(jdbcTemplate)
+                .queryForObject(anyString(), eq(Long.class), any(Object[].class));
+        doReturn(List.of())
+                .when(jdbcTemplate)
+                .queryForList(anyString(), any(Object[].class));
+
+        monitoringService.traces(query);
+
+        org.mockito.Mockito.verify(jdbcTemplate).queryForObject(
+                org.mockito.ArgumentMatchers.argThat((String sql) ->
+                        sql.contains("HAVING MAX(CASE WHEN LOWER(COALESCE(cl.status, 'success')) = 'timeout' THEN 1 ELSE 0 END) > 0")),
+                eq(Long.class),
                 any(Object[].class));
     }
 

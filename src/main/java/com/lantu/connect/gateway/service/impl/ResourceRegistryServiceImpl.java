@@ -523,7 +523,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         listArgs.add(listOwnerUserId);
         if (StringUtils.hasText(normalizedType)) {
             appendRequestedTypeClause(where, countArgs, normalizedType, null);
-            appendRequestedTypeClause(where, listArgs, normalizedType, null);
         }
         if (StringUtils.hasText(status)) {
             where.append(" AND status = ? ");
@@ -2223,7 +2222,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     .append(idColumn)
                     .append(" AND app_detail.resource_type = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_exposure')), '')) = '")
                     .append(UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE)
-                    .append("') ) ");
+                    .append("') ");
             default -> where.append(" AND ").append(typeColumn).append(" = '").append(requested).append("' ");
         }
     }

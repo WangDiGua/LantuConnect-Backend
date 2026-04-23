@@ -53,6 +53,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class DashboardServiceImpl implements DashboardService {
 
+    private static final List<String> EXPLORE_RESOURCE_TYPES = List.of("agent", "skill", "mcp", "app", "dataset");
+
     private final UserMapper userMapper;
     private final JdbcTemplate jdbcTemplate;
     private final CallLogMapper callLogMapper;
@@ -491,7 +493,21 @@ public class DashboardServiceImpl implements DashboardService {
         platformStats.put("totalDevelopers", totalDevelopers != null ? totalDevelopers : 0L);
         platformStats.put("totalUsers", userMapper.selectCount(null));
         Long todayCalls = callLogMapper.selectTodayCount();
-        platformStats.put("totalCallsToday", todayCalls != null ? todayCalls : 0L);
+        long totalCallsToday = todayCalls != null ? todayCalls : 0L;
+        long totalCallsYesterday = queryLong(
+                "SELECT COUNT(*) FROM t_call_log "
+                        + "WHERE create_time >= DATE_SUB(CURDATE(), INTERVAL 1 DAY) AND create_time < CURDATE()");
+        long activeUsersToday = queryLong(
+                "SELECT COUNT(DISTINCT NULLIF(TRIM(user_id), '')) FROM t_call_log "
+                        + "WHERE create_time >= CURDATE() AND create_time < DATE_ADD(CURDATE(), INTERVAL 1 DAY)");
+        long activeUsersYesterday = queryLong(
+                "SELECT COUNT(DISTINCT NULLIF(TRIM(user_id), '')) FROM t_call_log "
+                        + "WHERE create_time >= DATE_SUB(CURDATE(), INTERVAL 1 DAY) AND create_time < CURDATE()");
+        platformStats.put("activeUsersToday", activeUsersToday);
+        platformStats.put("activeUsersYesterday", activeUsersYesterday);
+        platformStats.put("totalCallsToday", totalCallsToday);
+        platformStats.put("totalCallsYesterday", totalCallsYesterday);
+        platformStats.put("trends", buildExploreHubStatTrends(totalCallsToday, totalCallsYesterday, activeUsersToday, activeUsersYesterday));
         platformStats.put("callsTrend7d", buildDailyTrend(
                 "SELECT DATE(create_time) AS day, COUNT(*) AS cnt "
                         + "FROM t_call_log WHERE create_time >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) "
@@ -649,6 +665,59 @@ public class DashboardServiceImpl implements DashboardService {
                 .announcements(announcements)
                 .topContributors(topContributors)
                 .build();
+    }
+
+    private Map<String, Object> buildExploreHubStatTrends(
+            long totalCallsToday,
+            long totalCallsYesterday,
+            long activeUsersToday,
+            long activeUsersYesterday) {
+        Map<String, Map<String, Long>> resourceNewCounts = buildExploreResourceNewCountsTodayAndYesterday();
+        Map<String, Object> trends = new LinkedHashMap<>();
+        long todayNewResources = 0L;
+        long yesterdayNewResources = 0L;
+
+        for (String type : EXPLORE_RESOURCE_TYPES) {
+            Map<String, Long> counts = resourceNewCounts.getOrDefault(type, Map.of());
+            long today = counts.getOrDefault("today", 0L);
+            long yesterday = counts.getOrDefault("yesterday", 0L);
+            todayNewResources += today;
+            yesterdayNewResources += yesterday;
+            trends.put(type, DashboardTrendSupport.dailyTrend(today, yesterday, "daily_new"));
+        }
+
+        trends.put("total", DashboardTrendSupport.dailyTrend(todayNewResources, yesterdayNewResources, "daily_new"));
+        trends.put("users", DashboardTrendSupport.dailyTrend(activeUsersToday, activeUsersYesterday, "daily_active_users"));
+        trends.put("calls", DashboardTrendSupport.dailyTrend(totalCallsToday, totalCallsYesterday, "daily_calls"));
+        return trends;
+    }
+
+    private Map<String, Map<String, Long>> buildExploreResourceNewCountsTodayAndYesterday() {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT resource_type AS type, "
+                        + "SUM(CASE WHEN create_time >= CURDATE() AND create_time < DATE_ADD(CURDATE(), INTERVAL 1 DAY) THEN 1 ELSE 0 END) AS today, "
+                        + "SUM(CASE WHEN create_time >= DATE_SUB(CURDATE(), INTERVAL 1 DAY) AND create_time < CURDATE() THEN 1 ELSE 0 END) AS yesterday "
+                        + "FROM t_resource "
+                        + "WHERE deleted = 0 AND status = 'published' "
+                        + "AND create_time >= DATE_SUB(CURDATE(), INTERVAL 1 DAY) "
+                        + "GROUP BY resource_type");
+        Map<String, Map<String, Long>> out = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            Object rawType = row.get("type");
+            if (rawType == null) {
+                continue;
+            }
+            Map<String, Long> counts = new LinkedHashMap<>();
+            counts.put("today", numberToLong(row.get("today")));
+            counts.put("yesterday", numberToLong(row.get("yesterday")));
+            out.put(String.valueOf(rawType).toLowerCase(), counts);
+        }
+        return out;
+    }
+
+    private long queryLong(String sql) {
+        Long value = jdbcTemplate.queryForObject(sql, Long.class);
+        return value != null ? value : 0L;
     }
 
     private List<Map<String, Object>> buildDailyTrend(String sql, String valueFieldName) {

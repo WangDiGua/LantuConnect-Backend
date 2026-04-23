@@ -10,6 +10,7 @@ import com.lantu.connect.common.session.SessionTrackerService;
 import com.lantu.connect.common.util.JwtUtil;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.dashboard.controller.DashboardController;
+import com.lantu.connect.dashboard.dto.UserWorkspaceVO;
 import com.lantu.connect.dashboard.dto.UsageStatsVO;
 import com.lantu.connect.dashboard.service.DashboardService;
 import com.lantu.connect.dashboard.service.OwnerDeveloperStatsService;
@@ -101,6 +102,12 @@ class AuthChainWebMvcTest {
                         .series(Collections.emptyList())
                         .breakdown(Collections.emptyMap())
                         .build());
+        when(dashboardService.userWorkspace(anyLong()))
+                .thenReturn(UserWorkspaceVO.builder()
+                        .profile(Collections.emptyMap())
+                        .recent(Collections.emptyList())
+                        .widgets(Collections.emptyMap())
+                        .build());
     }
 
     @Test
@@ -132,6 +139,14 @@ class AuthChainWebMvcTest {
         mockMvc.perform(get("/dashboard/usage-stats")
                         .param("range", "7d")
                         .header("Authorization", "Bearer token-monitor"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+    }
+
+    @Test
+    void dashboardMyConsoleShouldAliasUserWorkspaceWhenBearerValid() throws Exception {
+        mockMvc.perform(get("/dashboard/my-console")
+                        .header("Authorization", "Bearer token-user"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0));
     }

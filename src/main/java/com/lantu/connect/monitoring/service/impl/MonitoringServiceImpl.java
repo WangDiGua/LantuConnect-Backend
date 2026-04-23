@@ -955,21 +955,21 @@ public class MonitoringServiceImpl implements MonitoringService {
         StringBuilder sql = new StringBuilder("""
                 SELECT
                     cl.trace_id AS traceId,
-                    cl.id AS requestId,
-                    COALESCE(root.operation_name, cl.method) AS rootOperation,
-                    COALESCE(root.service_name, 'unified-gateway') AS entryService,
-                    COALESCE(NULLIF(TRIM(cl.resource_type), ''), 'unknown') AS rootResourceType,
-                    CASE WHEN TRIM(IFNULL(cl.agent_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.agent_id AS UNSIGNED) ELSE NULL END AS rootResourceId,
-                    COALESCE(r.resource_code, cl.agent_name, '') AS rootResourceCode,
-                    COALESCE(r.display_name, r.resource_code, cl.agent_name, '') AS rootDisplayName,
+                    MAX(cl.id) AS requestId,
+                    MAX(COALESCE(root.operation_name, cl.method)) AS rootOperation,
+                    MAX(COALESCE(root.service_name, 'unified-gateway')) AS entryService,
+                    MAX(COALESCE(NULLIF(TRIM(cl.resource_type), ''), 'unknown')) AS rootResourceType,
+                    MAX(CASE WHEN TRIM(IFNULL(cl.agent_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.agent_id AS UNSIGNED) ELSE NULL END) AS rootResourceId,
+                    MAX(COALESCE(r.resource_code, cl.agent_name, '')) AS rootResourceCode,
+                    MAX(COALESCE(r.display_name, r.resource_code, cl.agent_name, '')) AS rootDisplayName,
                     CASE
-                        WHEN LOWER(COALESCE(cl.status, 'success')) <> 'success'
+                        WHEN MAX(CASE WHEN LOWER(COALESCE(cl.status, 'success')) <> 'success' THEN 1 ELSE 0 END) > 0
                             OR SUM(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success' THEN 1 ELSE 0 END) > 0
                         THEN 'error'
                         ELSE 'success'
                     END AS status,
-                    COALESCE(root.start_time, cl.create_time) AS startedAt,
-                    GREATEST(COALESCE(root.duration, 0), COALESCE(MAX(ts.duration), 0), COALESCE(cl.latency_ms, 0)) AS durationMs,
+                    MIN(COALESCE(root.start_time, cl.create_time)) AS startedAt,
+                    GREATEST(COALESCE(MAX(root.duration), 0), COALESCE(MAX(ts.duration), 0), COALESCE(MAX(cl.latency_ms), 0)) AS durationMs,
                     COUNT(DISTINCT ts.id) AS spanCount,
                     SUM(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success' THEN 1 ELSE 0 END) AS errorSpanCount,
                     COALESCE(
@@ -982,8 +982,8 @@ public class MonitoringServiceImpl implements MonitoringService {
                         MAX(CASE WHEN LOWER(COALESCE(cl.status, 'success')) <> 'success' THEN cl.error_message END),
                         ''
                     ) AS firstErrorMessage,
-                    CASE WHEN TRIM(IFNULL(cl.user_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.user_id AS UNSIGNED) ELSE NULL END AS userId,
-                    cl.ip AS ip
+                    MAX(CASE WHEN TRIM(IFNULL(cl.user_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.user_id AS UNSIGNED) ELSE NULL END) AS userId,
+                    MAX(cl.ip) AS ip
                 FROM t_call_log cl
                 LEFT JOIN t_trace_span root ON root.trace_id = cl.trace_id AND (root.parent_id IS NULL OR TRIM(root.parent_id) = '')
                 LEFT JOIN t_trace_span ts ON ts.trace_id = cl.trace_id
@@ -1027,23 +1027,7 @@ public class MonitoringServiceImpl implements MonitoringService {
 
         sql.append("""
                 GROUP BY
-                    cl.trace_id,
-                    cl.id,
-                    root.operation_name,
-                    root.service_name,
-                    root.start_time,
-                    root.duration,
-                    cl.method,
-                    cl.resource_type,
-                    cl.agent_id,
-                    r.resource_code,
-                    r.display_name,
-                    cl.agent_name,
-                    cl.status,
-                    cl.create_time,
-                    cl.latency_ms,
-                    cl.user_id,
-                    cl.ip
+                    cl.trace_id
                 """);
         String havingClause = buildTraceHavingClause(query.getStatus());
         if (StringUtils.hasText(havingClause)) {
@@ -1056,21 +1040,21 @@ public class MonitoringServiceImpl implements MonitoringService {
         return """
                 SELECT
                     cl.trace_id AS traceId,
-                    cl.id AS requestId,
-                    COALESCE(root.operation_name, cl.method) AS rootOperation,
-                    COALESCE(root.service_name, 'unified-gateway') AS entryService,
-                    COALESCE(NULLIF(TRIM(cl.resource_type), ''), 'unknown') AS rootResourceType,
-                    CASE WHEN TRIM(IFNULL(cl.agent_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.agent_id AS UNSIGNED) ELSE NULL END AS rootResourceId,
-                    COALESCE(r.resource_code, cl.agent_name, '') AS rootResourceCode,
-                    COALESCE(r.display_name, r.resource_code, cl.agent_name, '') AS rootDisplayName,
+                    MAX(cl.id) AS requestId,
+                    MAX(COALESCE(root.operation_name, cl.method)) AS rootOperation,
+                    MAX(COALESCE(root.service_name, 'unified-gateway')) AS entryService,
+                    MAX(COALESCE(NULLIF(TRIM(cl.resource_type), ''), 'unknown')) AS rootResourceType,
+                    MAX(CASE WHEN TRIM(IFNULL(cl.agent_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.agent_id AS UNSIGNED) ELSE NULL END) AS rootResourceId,
+                    MAX(COALESCE(r.resource_code, cl.agent_name, '')) AS rootResourceCode,
+                    MAX(COALESCE(r.display_name, r.resource_code, cl.agent_name, '')) AS rootDisplayName,
                     CASE
-                        WHEN LOWER(COALESCE(cl.status, 'success')) <> 'success'
+                        WHEN MAX(CASE WHEN LOWER(COALESCE(cl.status, 'success')) <> 'success' THEN 1 ELSE 0 END) > 0
                             OR SUM(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success' THEN 1 ELSE 0 END) > 0
                         THEN 'error'
                         ELSE 'success'
                     END AS status,
-                    COALESCE(root.start_time, cl.create_time) AS startedAt,
-                    GREATEST(COALESCE(root.duration, 0), COALESCE(MAX(ts.duration), 0), COALESCE(cl.latency_ms, 0)) AS durationMs,
+                    MIN(COALESCE(root.start_time, cl.create_time)) AS startedAt,
+                    GREATEST(COALESCE(MAX(root.duration), 0), COALESCE(MAX(ts.duration), 0), COALESCE(MAX(cl.latency_ms), 0)) AS durationMs,
                     COUNT(DISTINCT ts.id) AS spanCount,
                     SUM(CASE WHEN LOWER(COALESCE(ts.status, 'success')) <> 'success' THEN 1 ELSE 0 END) AS errorSpanCount,
                     COALESCE(
@@ -1083,8 +1067,8 @@ public class MonitoringServiceImpl implements MonitoringService {
                         MAX(CASE WHEN LOWER(COALESCE(cl.status, 'success')) <> 'success' THEN cl.error_message END),
                         ''
                     ) AS firstErrorMessage,
-                    CASE WHEN TRIM(IFNULL(cl.user_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.user_id AS UNSIGNED) ELSE NULL END AS userId,
-                    cl.ip AS ip
+                    MAX(CASE WHEN TRIM(IFNULL(cl.user_id, '')) REGEXP '^[0-9]+$' THEN CAST(cl.user_id AS UNSIGNED) ELSE NULL END) AS userId,
+                    MAX(cl.ip) AS ip
                 FROM t_call_log cl
                 LEFT JOIN t_trace_span root ON root.trace_id = cl.trace_id AND (root.parent_id IS NULL OR TRIM(root.parent_id) = '')
                 LEFT JOIN t_trace_span ts ON ts.trace_id = cl.trace_id
@@ -1093,23 +1077,7 @@ public class MonitoringServiceImpl implements MonitoringService {
                  AND r.deleted = 0
                 WHERE cl.trace_id = ?
                 GROUP BY
-                    cl.trace_id,
-                    cl.id,
-                    root.operation_name,
-                    root.service_name,
-                    root.start_time,
-                    root.duration,
-                    cl.method,
-                    cl.resource_type,
-                    cl.agent_id,
-                    r.resource_code,
-                    r.display_name,
-                    cl.agent_name,
-                    cl.status,
-                    cl.create_time,
-                    cl.latency_ms,
-                    cl.user_id,
-                    cl.ip
+                    cl.trace_id
                 ORDER BY startedAt DESC
                 LIMIT 1
                 """;
@@ -1136,7 +1104,7 @@ public class MonitoringServiceImpl implements MonitoringService {
         return switch (normalized) {
             case "error" -> "status = 'error'";
             case "success" -> "status = 'success'";
-            case "timeout" -> "LOWER(COALESCE(cl.status, 'success')) = 'timeout'";
+            case "timeout" -> "MAX(CASE WHEN LOWER(COALESCE(cl.status, 'success')) = 'timeout' THEN 1 ELSE 0 END) > 0";
             default -> "";
         };
     }
