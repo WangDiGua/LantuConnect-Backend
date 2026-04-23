@@ -71,10 +71,16 @@ public class SkillProbeHandler implements ResourceProbeHandler {
                 LIMIT 1
                 """, delegateId);
         Map<String, Object> ext = queryOne("""
-                SELECT enabled, registration_protocol, upstream_endpoint, upstream_agent_id,
-                       credential_ref, transform_profile, model_alias
-                FROM t_resource_agent_ext
-                WHERE resource_id = ?
+                SELECT
+                       CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.enabled')) AS UNSIGNED) AS enabled,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.registration_protocol')) AS registration_protocol,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.upstream_endpoint')) AS upstream_endpoint,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.upstream_agent_id')) AS upstream_agent_id,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.credential_ref')) AS credential_ref,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.transform_profile')) AS transform_profile,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.model_alias')) AS model_alias
+                FROM t_resource_detail
+                WHERE resource_id = ? AND resource_type = 'agent'
                 LIMIT 1
                 """, delegateId);
         String endpoint = mapText(ext.get("upstream_endpoint"));

@@ -61,25 +61,27 @@ public class OpenAiCompatService {
         List<Map<String, Object>> rows;
         if (OWNER_TYPE_AGENT.equalsIgnoreCase(apiKey.getOwnerType())) {
             rows = jdbcTemplate.queryForList("""
-                    SELECT ae.model_alias AS model_alias
-                    FROM t_resource_agent_ext ae
-                    JOIN t_resource r ON r.id = ae.resource_id
+                    SELECT JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.model_alias')) AS model_alias
+                    FROM t_resource_detail rd
+                    JOIN t_resource r ON r.id = rd.resource_id
                     WHERE r.deleted = 0
+                      AND rd.resource_type = 'agent'
                       AND r.resource_type = 'agent'
                       AND r.id = ?
                       AND r.status = 'published'
-                      AND IFNULL(ae.enabled, 1) = 1
+                      AND IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.enabled')) AS UNSIGNED), 1) = 1
                     """, apiKey.getOwnerId());
         } else {
             rows = jdbcTemplate.queryForList("""
-                    SELECT ae.model_alias AS model_alias
-                    FROM t_resource_agent_ext ae
-                    JOIN t_resource r ON r.id = ae.resource_id
+                    SELECT JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.model_alias')) AS model_alias
+                    FROM t_resource_detail rd
+                    JOIN t_resource r ON r.id = rd.resource_id
                     WHERE r.deleted = 0
+                      AND rd.resource_type = 'agent'
                       AND r.resource_type = 'agent'
                       AND r.status = 'published'
-                      AND IFNULL(ae.enabled, 1) = 1
-                    ORDER BY ae.model_alias
+                      AND IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.enabled')) AS UNSIGNED), 1) = 1
+                    ORDER BY JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.model_alias'))
                     """);
         }
         List<Map<String, Object>> data = new ArrayList<>();
@@ -448,12 +450,12 @@ public class OpenAiCompatService {
             rows = jdbcTemplate.queryForList("""
                     SELECT r.id
                     FROM t_resource r
-                    JOIN t_resource_agent_ext ae ON ae.resource_id = r.id
+                    JOIN t_resource_detail rd ON rd.resource_id = r.id AND rd.resource_type = 'agent'
                     WHERE r.deleted = 0
                       AND r.resource_type = 'agent'
                       AND r.status = 'published'
-                      AND IFNULL(ae.enabled, 1) = 1
-                      AND ae.model_alias = ?
+                      AND IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.enabled')) AS UNSIGNED), 1) = 1
+                      AND JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.model_alias')) = ?
                       AND r.id = ?
                     LIMIT 1
                     """, modelAlias, apiKey.getOwnerId());
@@ -461,12 +463,12 @@ public class OpenAiCompatService {
             rows = jdbcTemplate.queryForList("""
                     SELECT r.id
                     FROM t_resource r
-                    JOIN t_resource_agent_ext ae ON ae.resource_id = r.id
+                    JOIN t_resource_detail rd ON rd.resource_id = r.id AND rd.resource_type = 'agent'
                     WHERE r.deleted = 0
                       AND r.resource_type = 'agent'
                       AND r.status = 'published'
-                      AND IFNULL(ae.enabled, 1) = 1
-                      AND ae.model_alias = ?
+                      AND IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.enabled')) AS UNSIGNED), 1) = 1
+                      AND JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.model_alias')) = ?
                     LIMIT 1
                     """, modelAlias);
         }

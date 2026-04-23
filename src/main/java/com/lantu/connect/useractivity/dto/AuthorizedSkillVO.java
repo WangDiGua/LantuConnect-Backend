@@ -21,7 +21,7 @@ public class AuthorizedSkillVO {
     private String displayName;
     private String description;
     private String agentType;
-    /** 技能包格式（对应 t_resource_skill_ext.skill_type）。 */
+    /** 技能包格式（对应 t_resource_detail.detail_json.skill_type）。 */
     private String status;
     private String source;
     private LocalDateTime updateTime;

@@ -119,7 +119,7 @@ public class ResourceUpsertRequest {
      */
     private String executionMode;
 
-    /** skill：Context 规范正文（底层落库 {@code t_resource_skill_ext.hosted_system_prompt}） */
+    /** skill：Context 规范正文（底层落库 {@code t_resource_detail.detail_json.hosted_system_prompt}） */
     private String contextPrompt;
 }
 

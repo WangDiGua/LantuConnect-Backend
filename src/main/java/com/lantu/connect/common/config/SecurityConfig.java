@@ -4,6 +4,7 @@ import com.lantu.connect.auth.support.AccessTokenBlacklist;
 import com.lantu.connect.auth.support.SessionRevocationRegistry;
 import com.lantu.connect.common.filter.JwtAuthenticationFilter;
 import com.lantu.connect.common.filter.PathRateLimitWebFilter;
+import com.lantu.connect.common.session.SessionTrackerService;
 import com.lantu.connect.common.web.ClientIpResolver;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.common.idempotency.IdempotencyFilter;
@@ -115,9 +116,11 @@ public class SecurityConfig {
                                                            AccessTokenBlacklist accessTokenBlacklist,
                                                            SessionRevocationRegistry sessionRevocationRegistry,
                                                            SecurityProperties securityProperties,
-                                                           ApiKeyScopeService apiKeyScopeService) {
+                                                           ApiKeyScopeService apiKeyScopeService,
+                                                           SessionTrackerService sessionTrackerService) {
         return new JwtAuthenticationFilter(
-                jwtUtil, accessTokenBlacklist, sessionRevocationRegistry, securityProperties, apiKeyScopeService);
+                jwtUtil, accessTokenBlacklist, sessionRevocationRegistry, securityProperties, apiKeyScopeService,
+                sessionTrackerService);
     }
 
     private static void writeJsonError(HttpServletResponse response, int httpStatus, int code, String message)

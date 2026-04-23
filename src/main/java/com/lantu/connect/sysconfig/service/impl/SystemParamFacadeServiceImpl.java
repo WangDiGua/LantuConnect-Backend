@@ -18,8 +18,7 @@ import com.lantu.connect.sysconfig.entity.AuditLog;
 import com.lantu.connect.sysconfig.entity.SecuritySetting;
 import com.lantu.connect.sysconfig.entity.SystemParam;
 import com.lantu.connect.sysconfig.mapper.AuditLogMapper;
-import com.lantu.connect.sysconfig.mapper.SecuritySettingMapper;
-import com.lantu.connect.sysconfig.mapper.SystemParamMapper;
+import com.lantu.connect.sysconfig.service.SystemConfigStore;
 import com.lantu.connect.sysconfig.service.SystemParamFacadeService;
 import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import com.lantu.connect.notification.service.NotificationEventCodes;
@@ -52,8 +51,7 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
     /** API 路径级 ACL：JSON 数组，元素含 id / path / roles */
     public static final String PARAM_API_PATH_ACL_RULES = "api_path_acl_rules";
 
-    private final SystemParamMapper systemParamMapper;
-    private final SecuritySettingMapper securitySettingMapper;
+    private final SystemConfigStore systemConfigStore;
     private final AuditLogMapper auditLogMapper;
     private final PlatformRoleMapper platformRoleMapper;
     private final SystemNotificationFacade systemNotificationFacade;
@@ -62,13 +60,13 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
 
     @Override
     public List<SystemParam> listParams() {
-        return systemParamMapper.selectList(null);
+        return systemConfigStore.listSystemParams();
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void putParam(Long operatorUserId, SystemParamUpsertRequest request) {
-        SystemParam existing = systemParamMapper.selectById(request.getParamKey());
+        SystemParam existing = systemConfigStore.findSystemParam(request.getParamKey());
         LocalDateTime now = LocalDateTime.now();
         if (existing == null) {
             SystemParam entity = new SystemParam();
@@ -79,7 +77,7 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
             entity.setCategory("general");
             entity.setEditable(true);
             entity.setUpdateTime(now);
-            systemParamMapper.insert(entity);
+            systemConfigStore.upsertSystemParam(entity);
         } else {
             if (request.getParamValue() != null) {
                 existing.setValue(request.getParamValue());
@@ -88,7 +86,7 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
                 existing.setDescription(request.getDescription());
             }
             existing.setUpdateTime(now);
-            systemParamMapper.updateById(existing);
+            systemConfigStore.upsertSystemParam(existing);
         }
         systemNotificationFacade.notifySystemSecurityOperation(
                 operatorUserId,
@@ -102,13 +100,13 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
 
     @Override
     public List<SecuritySetting> listSecurity() {
-        return securitySettingMapper.selectList(null);
+        return systemConfigStore.listSecuritySettings();
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void putSecurity(Long operatorUserId, SecuritySettingUpsertRequest request) {
-        SecuritySetting existing = securitySettingMapper.selectById(request.getSettingKey());
+        SecuritySetting existing = systemConfigStore.findSecuritySetting(request.getSettingKey());
         if (existing == null) {
             SecuritySetting entity = new SecuritySetting();
             entity.setKey(request.getSettingKey());
@@ -116,12 +114,12 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
             entity.setLabel(request.getSettingKey());
             entity.setType("string");
             entity.setCategory("security");
-            securitySettingMapper.insert(entity);
+            systemConfigStore.upsertSecuritySetting(entity);
         } else {
             if (request.getSettingValue() != null) {
                 existing.setValue(request.getSettingValue());
             }
-            securitySettingMapper.updateById(existing);
+            systemConfigStore.upsertSecuritySetting(existing);
         }
         systemNotificationFacade.notifySystemSecurityOperation(
                 operatorUserId,
@@ -218,7 +216,7 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
 
     @Override
     public List<String> getNetworkAllowlist() {
-        SystemParam p = systemParamMapper.selectById(PARAM_ADMIN_NETWORK_ALLOWLIST);
+        SystemParam p = systemConfigStore.findSystemParam(PARAM_ADMIN_NETWORK_ALLOWLIST);
         if (p == null || !StringUtils.hasText(p.getValue())) {
             return List.of();
         }
@@ -290,7 +288,7 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
 
     private void upsertInternalParam(String key, String value, String description, String category) {
         LocalDateTime now = LocalDateTime.now();
-        SystemParam existing = systemParamMapper.selectById(key);
+        SystemParam existing = systemConfigStore.findSystemParam(key);
         if (existing == null) {
             SystemParam entity = new SystemParam();
             entity.setKey(key);
@@ -300,19 +298,19 @@ public class SystemParamFacadeServiceImpl implements SystemParamFacadeService {
             entity.setCategory(category);
             entity.setEditable(true);
             entity.setUpdateTime(now);
-            systemParamMapper.insert(entity);
+            systemConfigStore.upsertSystemParam(entity);
         } else {
             existing.setValue(value);
             existing.setUpdateTime(now);
             if (description != null) {
                 existing.setDescription(description);
             }
-            systemParamMapper.updateById(existing);
+            systemConfigStore.upsertSystemParam(existing);
         }
     }
 
     private List<AclPathRulePayload> readPathAclRulesFromParam() {
-        SystemParam p = systemParamMapper.selectById(PARAM_API_PATH_ACL_RULES);
+        SystemParam p = systemConfigStore.findSystemParam(PARAM_API_PATH_ACL_RULES);
         if (p == null || !StringUtils.hasText(p.getValue())) {
             return List.of();
         }

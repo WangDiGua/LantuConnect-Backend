@@ -578,14 +578,14 @@ public class RobotFactoryProjectionService {
                        r.status,
                        r.created_by,
                        u.school_id,
-                       ext.endpoint,
-                       ext.protocol,
-                       ext.auth_type,
-                       ext.auth_config,
+                       JSON_UNQUOTE(JSON_EXTRACT(ext.detail_json, '$.endpoint')) AS endpoint,
+                       JSON_UNQUOTE(JSON_EXTRACT(ext.detail_json, '$.protocol')) AS protocol,
+                       JSON_UNQUOTE(JSON_EXTRACT(ext.detail_json, '$.auth_type')) AS auth_type,
+                       JSON_EXTRACT(ext.detail_json, '$.auth_config') AS auth_config,
                        ext.service_detail_md
                 FROM t_resource r
                 LEFT JOIN t_user u ON u.user_id = r.created_by
-                LEFT JOIN t_resource_mcp_ext ext ON ext.resource_id = r.id
+                LEFT JOIN t_resource_detail ext ON ext.resource_id = r.id AND ext.resource_type = 'mcp'
                 WHERE r.id = ? AND r.deleted = 0
                 LIMIT 1
                 """, resourceId);

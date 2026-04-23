@@ -191,8 +191,7 @@ public class GlobalExceptionHandler {
                 || code == ResultCode.CANNOT_DELETE_SYSTEM_ROLE.getCode()) {
             return HttpStatus.FORBIDDEN;
         }
-        if (code == ResultCode.NOT_FOUND.getCode()
-                || code == ResultCode.GRANT_APPLICATION_NOT_FOUND.getCode()) {
+        if (code == ResultCode.NOT_FOUND.getCode()) {
             return HttpStatus.NOT_FOUND;
         }
         if (code == ResultCode.CONFLICT.getCode()
@@ -201,10 +200,6 @@ public class GlobalExceptionHandler {
                 || code == ResultCode.DUPLICATE_VERSION.getCode()
                 || code == ResultCode.CANNOT_DELETE_PUBLISHED.getCode()
                 || code == ResultCode.FAVORITE_EXISTS.getCode()
-                || code == ResultCode.GRANT_APPLICATION_DUPLICATE.getCode()
-                || code == ResultCode.GRANT_APPLICATION_NOT_PENDING.getCode()
-                || code == ResultCode.GRANT_APPLICATION_NOT_APPROVED.getCode()
-                || code == ResultCode.GRANT_APPLICATION_NO_ACTIVE_GRANT.getCode()
                 || code == ResultCode.ILLEGAL_STATE_TRANSITION.getCode()) {
             return HttpStatus.CONFLICT;
         }

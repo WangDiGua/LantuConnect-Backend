@@ -14,7 +14,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Unified notification facade for workflow/system notifications.
+ * Unified notification facade for workflow and system notifications.
  */
 @Service
 @RequiredArgsConstructor
@@ -58,8 +58,7 @@ public class SystemNotificationFacade {
     }
 
     public void notifyPlatformAdmins(String type, String title, String body, String sourceType, Long sourceId, Long excludeUserId) {
-        List<Long> ids = filterExcluded(findPlatformAdminUserIds(), excludeUserId);
-        notifyToUsers(ids, type, title, body, sourceType, sourceId);
+        notifyToUsers(filterExcluded(findPlatformAdminUserIds(), excludeUserId), type, title, body, sourceType, sourceId);
     }
 
     public void notifyAuditAudience(
@@ -94,44 +93,36 @@ public class SystemNotificationFacade {
             boolean publishedUpdate) {
         String normalizedType = normalizeResourceType(resourceType);
         String title = publishedUpdate ? "已发布资源变更已提交审核" : "资源已提交审核";
-        String submitterBody = buildBody(
-                publishedUpdate ? "已发布资源变更提审" : "资源提审",
-                "待审核",
-                String.format(
-                        Locale.ROOT,
-                        "资源: %s/%s%n名称: %s",
-                        fallbackText(normalizedType, "-"),
-                        safeId(resourceId),
-                        fallbackText(displayName, "-")),
-                publishedUpdate
-                        ? "审核通过后将合并到线上默认版本。"
-                        : "可在资源中心查看审核进度。");
+        String event = publishedUpdate ? "已发布资源变更提交" : "资源提审";
+        String details = String.format(
+                Locale.ROOT,
+                "资源: %s/%s%n名称: %s",
+                fallbackText(normalizedType, "-"),
+                safeId(resourceId),
+                fallbackText(displayName, "-"));
+
         Notification submitterNotification = new Notification();
         submitterNotification.setUserId(submitterId);
         submitterNotification.setType(NotificationEventCodes.RESOURCE_SUBMITTED);
         submitterNotification.setTitle(title);
-        submitterNotification.setBody(submitterBody);
+        submitterNotification.setBody(buildBody(event, "待审核", details, "可在资源中心查看审核进度。"));
         submitterNotification.setSourceType(normalizedType);
         submitterNotification.setSourceId(resourceId == null ? null : String.valueOf(resourceId));
         submitterNotification.setActionUrl(buildResourceActionUrl(normalizedType, resourceId));
         submitterNotification.setActionLabel("查看资源");
         dispatch(submitterNotification);
 
-        String auditBody = buildBody(
-                publishedUpdate ? "已发布资源变更提审" : "资源提审",
-                "待处理",
-                String.format(
-                        Locale.ROOT,
-                        "提交人: %s%n资源: %s/%s%n名称: %s",
-                        safeId(submitterId),
-                        fallbackText(normalizedType, "-"),
-                        safeId(resourceId),
-                        fallbackText(displayName, "-")),
-                "请前往审核列表处理。");
+        String auditDetails = String.format(
+                Locale.ROOT,
+                "提交人: %s%n资源: %s/%s%n名称: %s",
+                safeId(submitterId),
+                fallbackText(normalizedType, "-"),
+                safeId(resourceId),
+                fallbackText(displayName, "-"));
         notifyAuditAudience(
                 NotificationEventCodes.RESOURCE_SUBMITTED,
                 publishedUpdate ? "已发布资源变更待审核" : "新资源待审核",
-                auditBody,
+                buildBody(event, "待处理", auditDetails, "请前往审核列表处理。"),
                 normalizedType,
                 resourceId,
                 null,
@@ -140,7 +131,7 @@ public class SystemNotificationFacade {
     }
 
     public void notifyOnboardingSubmitted(Long applicantId, Long applicationId, String companyName, String reason) {
-        String applicantDetails = String.format(
+        String details = String.format(
                 Locale.ROOT,
                 "申请人: %s%n公司: %s%n申请理由: %s",
                 safeId(applicantId),
@@ -150,23 +141,17 @@ public class SystemNotificationFacade {
         applicantNotification.setUserId(applicantId);
         applicantNotification.setType(NotificationEventCodes.ONBOARDING_SUBMITTED);
         applicantNotification.setTitle("入驻申请已提交");
-        applicantNotification.setBody(buildBody("开发者入驻", "待审核", applicantDetails, "可在入驻申请页查看处理进度。"));
+        applicantNotification.setBody(buildBody("开发者入驻", "待审核", details, "可在入驻申请页查看处理进度。"));
         applicantNotification.setSourceType("developer_application");
         applicantNotification.setSourceId(applicationId == null ? null : String.valueOf(applicationId));
         applicantNotification.setActionUrl("/c/developer-onboarding");
         applicantNotification.setActionLabel("查看我的申请");
         dispatch(applicantNotification);
 
-        String reviewerDetails = String.format(
-                Locale.ROOT,
-                "申请人: %s%n公司: %s%n申请理由: %s",
-                safeId(applicantId),
-                fallbackText(companyName, "-"),
-                fallbackText(reason, "-"));
         notifyAuditAudience(
                 NotificationEventCodes.ONBOARDING_SUBMITTED,
                 "入驻申请待审核",
-                buildBody("开发者入驻", "待处理", reviewerDetails, "请前往入驻审批列表处理。"),
+                buildBody("开发者入驻", "待处理", details, "请前往入驻审批列表处理。"),
                 "developer_application",
                 applicationId,
                 null,
@@ -266,24 +251,6 @@ public class SystemNotificationFacade {
                 "role",
                 roleId,
                 operatorUserId);
-    }
-
-    public void notifyResourceGrantChanged(Long operatorUserId, String eventType, String resourceType, Long resourceId, String apiKeyId) {
-        String details = String.format(
-                Locale.ROOT,
-                "操作人: %s%n资源: %s/%s%nAPI Key: %s",
-                safeId(operatorUserId),
-                fallbackText(resourceType, "-"),
-                fallbackText(resourceId == null ? null : String.valueOf(resourceId), "-"),
-                fallbackText(apiKeyId, "-"));
-        String title = NotificationEventCodes.RESOURCE_GRANT_REVOKED.equals(eventType) ? "资源授权已撤销" : "资源授权已更新";
-        notifyPlatformAdmins(
-                eventType,
-                title,
-                buildBody("资源授权", "已生效", details, "可在资源授权列表查看最新状态。"),
-                "resource",
-                resourceId,
-                null);
     }
 
     public void notifyResourceStateChange(Long operatorUserId, String type, String title, String resourceType, Long resourceId, String extra) {

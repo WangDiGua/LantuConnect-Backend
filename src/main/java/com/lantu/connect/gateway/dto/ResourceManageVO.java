@@ -38,7 +38,7 @@ public class ResourceManageVO {
     /** agent / skill：绑定的 MCP id */
     private List<Long> relatedMcpResourceIds;
 
-    // --- agent (t_resource_agent_ext) ---
+    // --- agent detail_json ---
     private String agentType;
     private String mode;
     private Map<String, Object> spec;
@@ -56,7 +56,7 @@ public class ResourceManageVO {
     private String modelAlias;
     private Boolean enabled;
 
-    // --- skill (t_resource_skill_ext)：Context Skill ---
+    // --- skill detail_json：Context Skill ---
     private String skillType;
     private Map<String, Object> manifest;
     private String entryDoc;
@@ -71,14 +71,14 @@ public class ResourceManageVO {
     /** 规范/提示词正文 */
     private String contextPrompt;
 
-    // --- mcp (t_resource_mcp_ext) ---
+    // --- mcp detail_json ---
     private String endpoint;
     private String protocol;
     private String authType;
     private Map<String, Object> authConfig;
     private String serviceDetailMd;
 
-    // --- app (t_resource_app_ext) ---
+    // --- app detail_json ---
     private String appUrl;
     private String embedType;
     private String icon;
@@ -86,7 +86,7 @@ public class ResourceManageVO {
     private String agentExposure;
     private String agentDeliveryMode;
 
-    // --- dataset (t_resource_dataset_ext) ---
+    // --- dataset detail_json ---
     private String dataType;
     private String format;
     private Long recordCount;

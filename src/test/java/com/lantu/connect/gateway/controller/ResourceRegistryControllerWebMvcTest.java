@@ -7,6 +7,7 @@ import com.lantu.connect.common.exception.BusinessException;
 import com.lantu.connect.common.exception.GlobalExceptionHandler;
 import com.lantu.connect.common.filter.JwtAuthenticationFilter;
 import com.lantu.connect.common.result.ResultCode;
+import com.lantu.connect.common.session.SessionTrackerService;
 import com.lantu.connect.common.util.JwtUtil;
 import com.lantu.connect.gateway.dto.ResourceManageVO;
 import com.lantu.connect.gateway.dto.ResourceVersionVO;
@@ -53,8 +54,9 @@ class ResourceRegistryControllerWebMvcTest {
         properties.setJwtEnabled(true);
         properties.setAllowHeaderUserIdFallback(false);
         when(sessionRevocationRegistry.isRevoked(any())).thenReturn(false);
+        SessionTrackerService sessionTrackerService = mock(SessionTrackerService.class);
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(
-                jwtUtil, blacklist, sessionRevocationRegistry, properties, apiKeyScopeService);
+                jwtUtil, blacklist, sessionRevocationRegistry, properties, apiKeyScopeService, sessionTrackerService);
         Claims claims = mock(Claims.class);
         when(claims.getSubject()).thenReturn("1");
         when(claims.get("type", String.class)).thenReturn("access");

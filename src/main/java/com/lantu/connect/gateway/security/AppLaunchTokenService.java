@@ -58,11 +58,10 @@ public class AppLaunchTokenService {
             throw new BusinessException(ResultCode.PARAM_ERROR, "缺少 launch token");
         }
         String key = KEY_PREFIX + token.trim();
-        String payload = stringRedisTemplate.opsForValue().get(key);
+        String payload = stringRedisTemplate.opsForValue().getAndDelete(key);
         if (!StringUtils.hasText(payload)) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "launch token 无效或已过期");
         }
-        stringRedisTemplate.delete(key);
         try {
             return objectMapper.readValue(payload, AppLaunchClaims.class);
         } catch (JsonProcessingException e) {

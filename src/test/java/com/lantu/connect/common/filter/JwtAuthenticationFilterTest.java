@@ -4,6 +4,7 @@ import com.lantu.connect.auth.support.AccessTokenBlacklist;
 import com.lantu.connect.auth.support.SessionRevocationRegistry;
 import com.lantu.connect.common.config.SecurityProperties;
 import com.lantu.connect.common.util.JwtUtil;
+import com.lantu.connect.common.session.SessionTrackerService;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import org.junit.jupiter.api.Test;
@@ -43,7 +44,8 @@ class JwtAuthenticationFilterTest {
                 mock(AccessTokenBlacklist.class),
                 mock(SessionRevocationRegistry.class),
                 properties,
-                apiKeyScopeService
+                apiKeyScopeService,
+                mock(SessionTrackerService.class)
         );
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/catalog/resources");
@@ -73,7 +75,8 @@ class JwtAuthenticationFilterTest {
                 mock(AccessTokenBlacklist.class),
                 mock(SessionRevocationRegistry.class),
                 properties,
-                apiKeyScopeService
+                apiKeyScopeService,
+                mock(SessionTrackerService.class)
         );
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/catalog/resources");
@@ -102,7 +105,8 @@ class JwtAuthenticationFilterTest {
                 mock(AccessTokenBlacklist.class),
                 mock(SessionRevocationRegistry.class),
                 properties,
-                apiKeyScopeService
+                apiKeyScopeService,
+                mock(SessionTrackerService.class)
         );
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/catalog/resources");
@@ -123,8 +127,9 @@ class JwtAuthenticationFilterTest {
         JwtUtil jwtUtil = mock(JwtUtil.class);
         AccessTokenBlacklist blacklist = mock(AccessTokenBlacklist.class);
         SessionRevocationRegistry revocation = mock(SessionRevocationRegistry.class);
+        SessionTrackerService sessionTrackerService = mock(SessionTrackerService.class);
         JwtAuthenticationFilter filter = new JwtAuthenticationFilter(
-                jwtUtil, blacklist, revocation, properties, apiKeyScopeService
+                jwtUtil, blacklist, revocation, properties, apiKeyScopeService, sessionTrackerService
         );
 
         Claims claims = mock(Claims.class);
@@ -146,6 +151,38 @@ class JwtAuthenticationFilterTest {
         assertEquals(200, response.getStatus());
         assertEquals("3", downstreamUserId.get());
         verify(apiKeyScopeService, never()).authenticateOrNull(any());
+        verify(sessionTrackerService, never()).touchSession(any());
+    }
+
+    @Test
+    void jwtValidShouldTouchSessionWhenSidPresent() throws Exception {
+        SecurityProperties properties = new SecurityProperties();
+        properties.setJwtEnabled(true);
+        JwtUtil jwtUtil = mock(JwtUtil.class);
+        AccessTokenBlacklist blacklist = mock(AccessTokenBlacklist.class);
+        SessionRevocationRegistry revocation = mock(SessionRevocationRegistry.class);
+        SessionTrackerService sessionTrackerService = mock(SessionTrackerService.class);
+        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(
+                jwtUtil, blacklist, revocation, properties, mock(ApiKeyScopeService.class), sessionTrackerService
+        );
+
+        Claims claims = mock(Claims.class);
+        when(claims.getSubject()).thenReturn("3");
+        when(claims.get("type", String.class)).thenReturn("access");
+        when(claims.get("sid", String.class)).thenReturn("sess-1");
+        when(blacklist.contains("access-tok")).thenReturn(false);
+        when(jwtUtil.parseToken("access-tok")).thenReturn(claims);
+        when(revocation.isRevoked("sess-1")).thenReturn(false);
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/catalog/resources");
+        request.setServletPath("/catalog/resources");
+        request.addHeader("Authorization", "Bearer access-tok");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertEquals(200, response.getStatus());
+        verify(sessionTrackerService).touchSession("sess-1");
     }
 
     @SuppressWarnings("deprecation")
@@ -159,7 +196,8 @@ class JwtAuthenticationFilterTest {
                 mock(AccessTokenBlacklist.class),
                 mock(SessionRevocationRegistry.class),
                 properties,
-                mock(ApiKeyScopeService.class)
+                mock(ApiKeyScopeService.class),
+                mock(SessionTrackerService.class)
         );
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/user-mgmt/users");
@@ -179,8 +217,9 @@ class JwtAuthenticationFilterTest {
         JwtUtil jwtUtil = mock(JwtUtil.class);
         AccessTokenBlacklist blacklist = mock(AccessTokenBlacklist.class);
         SessionRevocationRegistry revocation = mock(SessionRevocationRegistry.class);
+        SessionTrackerService sessionTrackerService = mock(SessionTrackerService.class);
         JwtAuthenticationFilter filter = new JwtAuthenticationFilter(
-                jwtUtil, blacklist, revocation, properties, mock(ApiKeyScopeService.class));
+                jwtUtil, blacklist, revocation, properties, mock(ApiKeyScopeService.class), sessionTrackerService);
 
         Claims claims = mock(Claims.class);
         when(claims.getSubject()).thenReturn("1");
@@ -197,5 +236,6 @@ class JwtAuthenticationFilterTest {
 
         filter.doFilter(request, response, new MockFilterChain());
         assertEquals(401, response.getStatus());
+        verify(sessionTrackerService, never()).touchSession(any());
     }
 }

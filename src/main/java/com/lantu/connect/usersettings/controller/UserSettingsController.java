@@ -3,7 +3,6 @@ package com.lantu.connect.usersettings.controller;
 import com.lantu.connect.common.result.R;
 import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.web.ClientIpResolver;
-import com.lantu.connect.gateway.dto.ResourceGrantVO;
 import com.lantu.connect.integrationpackage.dto.IntegrationPackageOptionVO;
 import com.lantu.connect.integrationpackage.dto.IntegrationPackageUpsertRequest;
 import com.lantu.connect.integrationpackage.dto.IntegrationPackageVO;
@@ -26,7 +25,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.util.StringUtils;
 
 import java.util.List;
 
@@ -105,14 +103,6 @@ public class UserSettingsController {
     @DeleteMapping("/api-keys/{id}")
     public ResponseEntity<R<Void>> deleteApiKey(@PathVariable String id) {
         return ResponseEntity.status(HttpStatus.GONE).body(R.fail(ResultCode.API_KEY_DELETE_USE_REVOKE));
-    }
-
-    @GetMapping("/api-keys/{apiKeyId}/resource-grants")
-    public R<List<ResourceGrantVO>> listApiKeyResourceGrants(@RequestHeader("X-User-Id") Long userId,
-                                                               @PathVariable String apiKeyId,
-                                                               @RequestParam(required = false) String resourceType) {
-        String rt = StringUtils.hasText(resourceType) ? resourceType.trim() : "mcp";
-        return R.ok(userSettingsService.listResourceGrantsForApiKey(userId, apiKeyId, rt));
     }
 
     @PostMapping("/api-keys/{apiKeyId}/invoke-eligibility")

@@ -11,12 +11,6 @@ public final class NotificationEventCodes {
     public static final String RESOURCE_WITHDRAWN = "resource_withdrawn";
     public static final String RESOURCE_VERSION_SWITCHED = "resource_version_switched";
 
-    public static final String GRANT_APPLICATION_NEW = "grant_application_new";
-    public static final String GRANT_APPROVED = "grant_approved";
-    public static final String GRANT_REJECTED = "grant_rejected";
-    public static final String RESOURCE_GRANT_UPDATED = "resource_grant_updated";
-    public static final String RESOURCE_GRANT_REVOKED = "resource_grant_revoked";
-
     public static final String AUDIT_APPROVED = "audit_approved";
     public static final String AUDIT_REJECTED = "audit_rejected";
 

@@ -12,7 +12,6 @@ import com.lantu.connect.common.result.ResultCode;
 import com.lantu.connect.common.security.RedisAuthRateLimiter;
 import com.lantu.connect.common.session.SessionTrackerService;
 import com.lantu.connect.common.util.SensitiveDataEncryptor;
-import com.lantu.connect.gateway.dto.ResourceGrantVO;
 import com.lantu.connect.integrationpackage.dto.IntegrationPackageOptionVO;
 import com.lantu.connect.integrationpackage.dto.IntegrationPackageUpsertRequest;
 import com.lantu.connect.integrationpackage.dto.IntegrationPackageVO;
@@ -236,22 +235,6 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     }
 
     @Override
-    public List<ResourceGrantVO> listResourceGrantsForApiKey(Long userId, String apiKeyId, String resourceType) {
-        if (userId == null) {
-            throw new BusinessException(ResultCode.UNAUTHORIZED, "Authentication required");
-        }
-        if (!StringUtils.hasText(apiKeyId)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "API key id is required");
-        }
-        ApiKey key = apiKeyMapper.selectById(apiKeyId.trim());
-        if (key == null || !OWNER_USER.equalsIgnoreCase(key.getOwnerType())
-                || !String.valueOf(userId).equals(String.valueOf(key.getOwnerId()).trim())) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "API key not found");
-        }
-        return List.of();
-    }
-
-    @Override
     public InvokeEligibilityResponse invokeEligibilityForApiKey(Long userId, String apiKeyId, InvokeEligibilityRequest request) {
         if (userId == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "Authentication required");
@@ -307,7 +290,7 @@ public class UserSettingsServiceImpl implements UserSettingsService {
         long usage = usageRecordMapper.selectCount(
                 new LambdaQueryWrapper<UsageRecord>().eq(UsageRecord::getUserId, userId));
         Long bytes = jdbcTemplate.queryForObject(
-                "SELECT COALESCE(SUM(ext.file_size),0) FROM t_resource r JOIN t_resource_dataset_ext ext ON r.id = ext.resource_id "
+                "SELECT COALESCE(SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(ext.detail_json, '$.file_size')) AS SIGNED)),0) FROM t_resource r JOIN t_resource_detail ext ON r.id = ext.resource_id AND ext.resource_type = 'dataset' "
                         + "WHERE r.deleted = 0 AND r.resource_type = 'dataset' AND r.created_by = ?",
                 Long.class,
                 userId);

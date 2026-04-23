@@ -8,7 +8,7 @@ import com.lantu.connect.compat.robotfactory.dto.RobotFactorySettingsDTO;
 import com.lantu.connect.compat.robotfactory.dto.RobotFactorySettingsHealthDTO;
 import com.lantu.connect.compat.robotfactory.dto.RobotFactorySettingsUpsertRequest;
 import com.lantu.connect.sysconfig.entity.SystemParam;
-import com.lantu.connect.sysconfig.mapper.SystemParamMapper;
+import com.lantu.connect.sysconfig.service.SystemConfigStore;
 import com.lantu.connect.task.support.TaskDistributedLock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,7 +38,7 @@ public class RobotFactorySettingsService {
     private static final int DEFAULT_MAX_LIFETIME_MINUTES = 30;
     private static final int DEFAULT_INVOKE_TIMEOUT_SECONDS = 120;
 
-    private final SystemParamMapper systemParamMapper;
+    private final SystemConfigStore systemConfigStore;
     private final ObjectMapper objectMapper;
     private final TaskDistributedLock taskDistributedLock;
 
@@ -53,7 +53,7 @@ public class RobotFactorySettingsService {
             .build();
 
     public RobotFactorySettingsDTO getSettings() {
-        SystemParam param = systemParamMapper.selectById(PARAM_KEY);
+        SystemParam param = systemConfigStore.findSystemParam(PARAM_KEY);
         if (param == null || !StringUtils.hasText(param.getValue())) {
             return defaultSettings(null);
         }
@@ -72,7 +72,7 @@ public class RobotFactorySettingsService {
     public RobotFactorySettingsDTO saveSettings(RobotFactorySettingsUpsertRequest request) {
         RobotFactorySettingsDTO settings = normalize(toSettings(request));
         LocalDateTime now = LocalDateTime.now();
-        SystemParam existing = systemParamMapper.selectById(PARAM_KEY);
+        SystemParam existing = systemConfigStore.findSystemParam(PARAM_KEY);
         String json = toJson(settings);
         if (existing == null) {
             SystemParam entity = new SystemParam();
@@ -83,7 +83,7 @@ public class RobotFactorySettingsService {
             entity.setEditable(true);
             entity.setDescription("精灵平台适配配置(JSON)");
             entity.setUpdateTime(now);
-            systemParamMapper.insert(entity);
+            systemConfigStore.upsertSystemParam(entity);
         } else {
             existing.setValue(json);
             existing.setType("json");
@@ -91,7 +91,7 @@ public class RobotFactorySettingsService {
             existing.setEditable(true);
             existing.setDescription("精灵平台适配配置(JSON)");
             existing.setUpdateTime(now);
-            systemParamMapper.updateById(existing);
+            systemConfigStore.upsertSystemParam(existing);
         }
         settings.setUpdateTime(now);
         latestHealth = probe(settings);

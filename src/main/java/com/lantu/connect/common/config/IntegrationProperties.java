@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * {@code lantu.integration.*} 默认值来自 YAML；可被 {@code t_system_param.runtime_app_config} 覆盖。
+ * {@code lantu.integration.*} 默认值来自 YAML；可被 {@code t_system_config/system:runtime_app_config} 覆盖。
  */
 @Data
 @Component

@@ -1,6 +1,5 @@
 package com.lantu.connect.usersettings.service;
 
-import com.lantu.connect.gateway.dto.ResourceGrantVO;
 import com.lantu.connect.integrationpackage.dto.IntegrationPackageOptionVO;
 import com.lantu.connect.integrationpackage.dto.IntegrationPackageUpsertRequest;
 import com.lantu.connect.integrationpackage.dto.IntegrationPackageVO;
@@ -43,8 +42,6 @@ public interface UserSettingsService {
     void patchApiKeyIntegrationPackage(Long userId, String apiKeyId, ApiKeyIntegrationPackagePatchRequest request);
 
     void deleteApiKey(Long userId, String apiKeyId);
-
-    List<ResourceGrantVO> listResourceGrantsForApiKey(Long userId, String apiKeyId, String resourceType);
 
     InvokeEligibilityResponse invokeEligibilityForApiKey(Long userId, String apiKeyId, InvokeEligibilityRequest request);
 

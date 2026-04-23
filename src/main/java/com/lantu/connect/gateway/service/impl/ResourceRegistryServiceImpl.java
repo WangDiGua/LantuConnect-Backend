@@ -70,14 +70,6 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private static final String SKILL_EXEC_CONTEXT = "context";
 
-    /** 含 service_detail_md 列的扩展表（用于统一 upsert / 读取逻辑） */
-    private static final Set<String> SERVICE_DETAIL_EXT_TABLES = Set.of(
-            "t_resource_mcp_ext",
-            "t_resource_skill_ext",
-            "t_resource_agent_ext",
-            "t_resource_app_ext",
-            "t_resource_dataset_ext");
-
     private static final String AUDIT_KIND_INITIAL = "initial";
     private static final String AUDIT_KIND_PUBLISHED_UPDATE = "published_update";
 
@@ -302,9 +294,13 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         ResourceLifecycleStateMachine.ensureTransitionAllowed(row.status(), ResourceLifecycleStateMachine.STATUS_PENDING_REVIEW);
 
         if ("skill".equals(row.resourceType())) {
-            List<Map<String, Object>> se = jdbcTemplate.queryForList(
-                    "SELECT execution_mode, hosted_system_prompt FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1",
-                    resourceId);
+            List<Map<String, Object>> se = jdbcTemplate.queryForList("""
+                    SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.execution_mode')) AS execution_mode,
+                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.hosted_system_prompt')) AS hosted_system_prompt
+                    FROM t_resource_detail
+                    WHERE resource_id = ? AND resource_type = 'skill'
+                    LIMIT 1
+                    """, resourceId);
             if (se.isEmpty()) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "技能扩展信息不存在");
             }
@@ -731,7 +727,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             return row == null ? null : row.resourceType();
         }
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT agent_exposure FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1",
+                """
+                        SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.agent_exposure')) AS agent_exposure
+                        FROM t_resource_detail
+                        WHERE resource_id = ? AND resource_type = 'app'
+                        LIMIT 1
+                        """,
                 resourceId);
         String exposure = rows.isEmpty() ? null : stringValue(rows.get(0).get("agent_exposure"));
         return UnifiedAgentSupport.isUnifiedAgentExposure(exposure) ? "agent" : "app";
@@ -1721,97 +1722,51 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     }
 
     private void upsertAgentExt(Long resourceId, ResourceUpsertRequest request) {
-        String serviceMd = resolveExtServiceDetailMd("t_resource_agent_ext", resourceId, request.getServiceDetailMd());
+        String serviceMd = resolveExtServiceDetailMd(resourceId, request.getServiceDetailMd());
         String encryptedCredentialRef = resolveCredentialRefForUpsert(resourceId, request.getCredentialRef());
-        int updated = jdbcTemplate.update("""
-                        UPDATE t_resource_agent_ext
-                        SET agent_type = ?, mode = ?, spec_json = CAST(? AS JSON), is_public = ?, hidden = ?, max_concurrency = ?, max_steps = ?, temperature = ?, system_prompt = ?, service_detail_md = ?,
-                            registration_protocol = ?, upstream_endpoint = ?, upstream_agent_id = ?, credential_ref = ?, transform_profile = ?, model_alias = ?, enabled = ?
-                        WHERE resource_id = ?
-                        """,
-                request.getAgentType(),
-                defaultString(request.getMode(), "SUBAGENT"),
-                writeJson(defaultMap(request.getSpec())),
-                toBoolNumber(request.getIsPublic()),
-                toBoolNumber(request.getHidden()),
-                request.getMaxConcurrency() == null ? 10 : request.getMaxConcurrency(),
-                request.getMaxSteps(),
-                request.getTemperature(),
-                request.getSystemPrompt(),
-                serviceMd,
-                request.getRegistrationProtocol(),
-                request.getUpstreamEndpoint(),
-                request.getUpstreamAgentId(),
-                encryptedCredentialRef,
-                request.getTransformProfile(),
-                request.getModelAlias(),
-                toBoolNumber(request.getEnabled()),
-                resourceId);
-        if (updated == 0) {
-            jdbcTemplate.update("""
-                            INSERT INTO t_resource_agent_ext(resource_id, agent_type, mode, spec_json, is_public, hidden, max_concurrency, max_steps, temperature, system_prompt, service_detail_md, registration_protocol, upstream_endpoint, upstream_agent_id, credential_ref, transform_profile, model_alias, enabled, featured, rating_avg, rating_count)
-                            VALUES(?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0.00, 0)
-                            """,
-                    resourceId,
-                    request.getAgentType(),
-                    defaultString(request.getMode(), "SUBAGENT"),
-                    writeJson(defaultMap(request.getSpec())),
-                    toBoolNumber(request.getIsPublic()),
-                    toBoolNumber(request.getHidden()),
-                    request.getMaxConcurrency() == null ? 10 : request.getMaxConcurrency(),
-                    request.getMaxSteps(),
-                    request.getTemperature(),
-                    request.getSystemPrompt(),
-                    serviceMd,
-                    request.getRegistrationProtocol(),
-                    request.getUpstreamEndpoint(),
-                    request.getUpstreamAgentId(),
-                    encryptedCredentialRef,
-                    request.getTransformProfile(),
-                    request.getModelAlias(),
-                    toBoolNumber(request.getEnabled()));
-        }
+        Map<String, Object> detail = loadResourceDetailJson(resourceId);
+        detail.put("agent_type", request.getAgentType());
+        detail.put("mode", defaultString(request.getMode(), "SUBAGENT"));
+        detail.put("spec_json", defaultMap(request.getSpec()));
+        detail.put("hidden", toBoolNumber(request.getHidden()));
+        detail.put("max_concurrency", request.getMaxConcurrency() == null ? 10 : request.getMaxConcurrency());
+        detail.put("max_steps", request.getMaxSteps());
+        detail.put("temperature", request.getTemperature());
+        detail.put("system_prompt", request.getSystemPrompt());
+        detail.put("registration_protocol", request.getRegistrationProtocol());
+        detail.put("upstream_endpoint", request.getUpstreamEndpoint());
+        detail.put("upstream_agent_id", request.getUpstreamAgentId());
+        detail.put("credential_ref", encryptedCredentialRef);
+        detail.put("transform_profile", request.getTransformProfile());
+        detail.put("model_alias", request.getModelAlias());
+        detail.put("enabled", toBoolNumber(request.getEnabled()));
+        detail.putIfAbsent("featured", 0);
+        detail.putIfAbsent("rating_avg", 0.00);
+        detail.putIfAbsent("rating_count", 0);
+        upsertResourceDetail(resourceId, "agent", toBoolNumber(request.getIsPublic()), serviceMd, detail);
     }
 
     private void upsertSkillExt(Long resourceId, ResourceUpsertRequest request) {
         String manifestJson = writeJson(defaultMap(request.getManifest()));
-        String serviceMd = resolveExtServiceDetailMd("t_resource_skill_ext", resourceId, request.getServiceDetailMd());
+        String serviceMd = resolveExtServiceDetailMd(resourceId, request.getServiceDetailMd());
         String ctx = request.getContextPrompt() == null ? "" : request.getContextPrompt();
-        int updated = jdbcTemplate.update("""
-                        UPDATE t_resource_skill_ext
-                        SET skill_type = ?, execution_mode = 'context',
-                            manifest_json = CAST(? AS JSON), entry_doc = ?,
-                            mode = NULL, parent_resource_id = NULL, display_template = NULL,
-                            spec_json = CAST(? AS JSON), parameters_schema = CAST(? AS JSON), is_public = ?, max_concurrency = NULL,
-                            service_detail_md = ?,
-                            hosted_system_prompt = ?, hosted_user_template = NULL, hosted_default_model = NULL,
-                            hosted_output_schema = CAST('{}' AS JSON), hosted_temperature = NULL
-                        WHERE resource_id = ?
-                        """,
-                request.getSkillType().trim().toLowerCase(Locale.ROOT),
-                manifestJson,
-                request.getEntryDoc(),
-                writeJson(defaultMap(request.getSpec())),
-                writeJson(defaultMap(request.getParametersSchema())),
-                toBoolNumber(request.getIsPublic()),
-                serviceMd,
-                ctx,
-                resourceId);
-        if (updated == 0) {
-            jdbcTemplate.update("""
-                            INSERT INTO t_resource_skill_ext(resource_id, skill_type, execution_mode, manifest_json, entry_doc, mode, parent_resource_id, display_template, spec_json, parameters_schema, is_public, max_concurrency, service_detail_md, hosted_system_prompt, hosted_user_template, hosted_default_model, hosted_output_schema, hosted_temperature)
-                            VALUES(?, ?, 'context', CAST(? AS JSON), ?, NULL, NULL, NULL, CAST(? AS JSON), CAST(? AS JSON), ?, NULL, ?, ?, NULL, NULL, CAST('{}' AS JSON), NULL)
-                            """,
-                    resourceId,
-                    request.getSkillType().trim().toLowerCase(Locale.ROOT),
-                    manifestJson,
-                    request.getEntryDoc(),
-                    writeJson(defaultMap(request.getSpec())),
-                    writeJson(defaultMap(request.getParametersSchema())),
-                    toBoolNumber(request.getIsPublic()),
-                    serviceMd,
-                    ctx);
-        }
+        Map<String, Object> detail = loadResourceDetailJson(resourceId);
+        detail.put("skill_type", request.getSkillType().trim().toLowerCase(Locale.ROOT));
+        detail.put("execution_mode", SKILL_EXEC_CONTEXT);
+        detail.put("manifest_json", readJsonMap(manifestJson));
+        detail.put("entry_doc", request.getEntryDoc());
+        detail.put("mode", null);
+        detail.put("parent_resource_id", null);
+        detail.put("display_template", null);
+        detail.put("spec_json", defaultMap(request.getSpec()));
+        detail.put("parameters_schema", defaultMap(request.getParametersSchema()));
+        detail.put("max_concurrency", null);
+        detail.put("hosted_system_prompt", ctx);
+        detail.put("hosted_user_template", null);
+        detail.put("hosted_default_model", null);
+        detail.put("hosted_output_schema", Map.of());
+        detail.put("hosted_temperature", null);
+        upsertResourceDetail(resourceId, "skill", toBoolNumber(request.getIsPublic()), serviceMd, detail);
     }
 
     private void upsertMcpExt(Long resourceId, ResourceUpsertRequest request) {
@@ -1819,41 +1774,19 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         if (!protocolInvokerRegistry.isSupported(protocol)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "MCP 协议不可调用: " + protocol);
         }
-        String serviceMd = resolveExtServiceDetailMd("t_resource_mcp_ext", resourceId, request.getServiceDetailMd());
-        int updated = jdbcTemplate.update("""
-                        UPDATE t_resource_mcp_ext
-                        SET endpoint = ?, protocol = ?, auth_type = ?, auth_config = CAST(? AS JSON), service_detail_md = ?
-                        WHERE resource_id = ?
-                        """,
-                request.getEndpoint(),
-                protocol,
-                defaultString(request.getAuthType(), "none"),
-                writeJson(defaultMap(request.getAuthConfig())),
-                serviceMd,
-                resourceId);
-        if (updated == 0) {
-            jdbcTemplate.update("""
-                            INSERT INTO t_resource_mcp_ext(resource_id, endpoint, protocol, auth_type, auth_config, service_detail_md)
-                            VALUES(?, ?, ?, ?, CAST(? AS JSON), ?)
-                            """,
-                    resourceId,
-                    request.getEndpoint(),
-                    protocol,
-                    defaultString(request.getAuthType(), "none"),
-                    writeJson(defaultMap(request.getAuthConfig())),
-                    serviceMd);
-        }
+        String serviceMd = resolveExtServiceDetailMd(resourceId, request.getServiceDetailMd());
+        Map<String, Object> detail = loadResourceDetailJson(resourceId);
+        detail.put("endpoint", request.getEndpoint());
+        detail.put("protocol", protocol);
+        detail.put("auth_type", defaultString(request.getAuthType(), "none"));
+        detail.put("auth_config", defaultMap(request.getAuthConfig()));
+        upsertResourceDetail(resourceId, "mcp", null, serviceMd, detail);
     }
 
     /**
      * incoming 非 null：按提交值更新（空串视为清空）；incoming 为 null：保留原行（兼容未传字段的客户端）。
-     *
-     * @param extTable 须为 {@link #SERVICE_DETAIL_EXT_TABLES} 之一
      */
-    private String resolveExtServiceDetailMd(String extTable, Long resourceId, String incoming) {
-        if (!SERVICE_DETAIL_EXT_TABLES.contains(extTable)) {
-            throw new IllegalArgumentException("invalid ext table: " + extTable);
-        }
+    private String resolveExtServiceDetailMd(Long resourceId, String incoming) {
         if (incoming != null) {
             String t = incoming.trim();
             if (t.isEmpty()) {
@@ -1865,7 +1798,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             return t;
         }
         var prev = jdbcTemplate.queryForList(
-                "SELECT service_detail_md FROM " + extTable + " WHERE resource_id = ? LIMIT 1", resourceId);
+                "SELECT service_detail_md FROM t_resource_detail WHERE resource_id = ? LIMIT 1", resourceId);
         if (prev.isEmpty()) {
             return null;
         }
@@ -1891,69 +1824,76 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     }
 
     private void upsertAppExt(Long resourceId, ResourceUpsertRequest request) {
-        String serviceMd = resolveExtServiceDetailMd("t_resource_app_ext", resourceId, request.getServiceDetailMd());
+        String serviceMd = resolveExtServiceDetailMd(resourceId, request.getServiceDetailMd());
         String agentExposure = normalizeAgentExposure(request.getAgentExposure());
         String agentDeliveryMode = resolveAppAgentDeliveryMode(agentExposure, request.getAgentDeliveryMode());
-        int updated = jdbcTemplate.update("""
-                        UPDATE t_resource_app_ext
-                        SET app_url = ?, embed_type = ?, icon = ?, screenshots = CAST(? AS JSON), is_public = ?, service_detail_md = ?,
-                            agent_exposure = ?, agent_delivery_mode = ?
-                        WHERE resource_id = ?
-                        """,
-                request.getAppUrl(),
-                request.getEmbedType(),
-                request.getIcon(),
-                writeJson(defaultList(request.getScreenshots())),
-                toBoolNumber(request.getIsPublic()),
-                serviceMd,
-                agentExposure,
-                agentDeliveryMode,
-                resourceId);
-        if (updated == 0) {
-            jdbcTemplate.update("""
-                            INSERT INTO t_resource_app_ext(resource_id, app_url, embed_type, icon, screenshots, is_public, service_detail_md, agent_exposure, agent_delivery_mode)
-                            VALUES(?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?, ?)
-                            """,
-                    resourceId,
-                    request.getAppUrl(),
-                    request.getEmbedType(),
-                    request.getIcon(),
-                    writeJson(defaultList(request.getScreenshots())),
-                    toBoolNumber(request.getIsPublic()),
-                    serviceMd,
-                    agentExposure,
-                    agentDeliveryMode);
-        }
+        Map<String, Object> detail = loadResourceDetailJson(resourceId);
+        detail.put("app_url", request.getAppUrl());
+        detail.put("embed_type", request.getEmbedType());
+        detail.put("icon", request.getIcon());
+        detail.put("screenshots", defaultList(request.getScreenshots()));
+        detail.put("agent_exposure", agentExposure);
+        detail.put("agent_delivery_mode", agentDeliveryMode);
+        upsertResourceDetail(resourceId, "app", toBoolNumber(request.getIsPublic()), serviceMd, detail);
     }
 
     private void upsertDatasetExt(Long resourceId, ResourceUpsertRequest request) {
-        String serviceMd = resolveExtServiceDetailMd("t_resource_dataset_ext", resourceId, request.getServiceDetailMd());
-        int updated = jdbcTemplate.update("""
-                        UPDATE t_resource_dataset_ext
-                        SET data_type = ?, format = ?, record_count = ?, file_size = ?, tags = CAST(? AS JSON), is_public = ?, service_detail_md = ?
-                        WHERE resource_id = ?
+        String serviceMd = resolveExtServiceDetailMd(resourceId, request.getServiceDetailMd());
+        Map<String, Object> detail = loadResourceDetailJson(resourceId);
+        detail.put("data_type", request.getDataType());
+        detail.put("format", request.getFormat());
+        detail.put("record_count", request.getRecordCount() == null ? 0L : request.getRecordCount());
+        detail.put("file_size", request.getFileSize() == null ? 0L : request.getFileSize());
+        detail.put("tags", defaultList(request.getTags()));
+        upsertResourceDetail(resourceId, "dataset", toBoolNumber(request.getIsPublic()), serviceMd, detail);
+    }
+
+    private void upsertResourceDetail(Long resourceId, String resourceType, Integer isPublic,
+                                      String serviceMd, Map<String, Object> detail) {
+        jdbcTemplate.update("""
+                        INSERT INTO t_resource_detail(resource_id, resource_type, is_public, service_detail_md, detail_json, source_table, update_time)
+                        VALUES(?, ?, ?, ?, CAST(? AS JSON), 'resource_detail', NOW())
+                        ON DUPLICATE KEY UPDATE
+                            resource_type = VALUES(resource_type),
+                            is_public = VALUES(is_public),
+                            service_detail_md = VALUES(service_detail_md),
+                            detail_json = VALUES(detail_json),
+                            source_table = VALUES(source_table),
+                            update_time = NOW()
                         """,
-                request.getDataType(),
-                request.getFormat(),
-                request.getRecordCount() == null ? 0L : request.getRecordCount(),
-                request.getFileSize() == null ? 0L : request.getFileSize(),
-                writeJson(defaultList(request.getTags())),
-                toBoolNumber(request.getIsPublic()),
+                resourceId,
+                resourceType,
+                isPublic,
                 serviceMd,
-                resourceId);
-        if (updated == 0) {
-            jdbcTemplate.update("""
-                            INSERT INTO t_resource_dataset_ext(resource_id, data_type, format, record_count, file_size, tags, is_public, service_detail_md)
-                            VALUES(?, ?, ?, ?, ?, CAST(? AS JSON), ?, ?)
-                            """,
-                    resourceId,
-                    request.getDataType(),
-                    request.getFormat(),
-                    request.getRecordCount() == null ? 0L : request.getRecordCount(),
-                    request.getFileSize() == null ? 0L : request.getFileSize(),
-                    writeJson(defaultList(request.getTags())),
-                    toBoolNumber(request.getIsPublic()),
-                    serviceMd);
+                writeJson(detail == null ? Map.of() : detail));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> loadResourceDetailJson(Long resourceId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT detail_json FROM t_resource_detail WHERE resource_id = ? LIMIT 1", resourceId);
+        if (rows.isEmpty() || rows.get(0).get("detail_json") == null) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            Object raw = rows.get(0).get("detail_json");
+            Map<String, Object> parsed = objectMapper.readValue(String.valueOf(raw), Map.class);
+            return parsed == null ? new LinkedHashMap<>() : new LinkedHashMap<>(parsed);
+        } catch (JsonProcessingException e) {
+            return new LinkedHashMap<>();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> readJsonMap(String json) {
+        if (!StringUtils.hasText(json)) {
+            return Map.of();
+        }
+        try {
+            Object parsed = objectMapper.readValue(json, Map.class);
+            return parsed instanceof Map<?, ?> map ? new LinkedHashMap<>((Map<String, Object>) map) : Map.of();
+        } catch (JsonProcessingException e) {
+            return Map.of();
         }
     }
 
@@ -2170,11 +2110,11 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         Integer count = jdbcTemplate.queryForObject("""
                         SELECT COUNT(1)
                         FROM t_resource r
-                        JOIN t_resource_agent_ext ae ON ae.resource_id = r.id
+                        JOIN t_resource_detail rd ON rd.resource_id = r.id AND rd.resource_type = 'agent'
                         WHERE r.deleted = 0
                           AND r.resource_type = 'agent'
                           AND r.created_by = ?
-                          AND ae.model_alias = ?
+                          AND JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.model_alias')) = ?
                           AND (? IS NULL OR r.id <> ?)
                         """,
                 Integer.class,
@@ -2272,16 +2212,16 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                     .append(typeColumn)
                     .append(" = 'agent' OR (")
                     .append(typeColumn)
-                    .append(" = 'app' AND EXISTS (SELECT 1 FROM t_resource_app_ext app_ext WHERE app_ext.resource_id = ")
+                    .append(" = 'app' AND EXISTS (SELECT 1 FROM t_resource_detail app_detail WHERE app_detail.resource_id = ")
                     .append(idColumn)
-                    .append(" AND LOWER(COALESCE(app_ext.agent_exposure, '')) = '")
+                    .append(" AND app_detail.resource_type = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_exposure')), '')) = '")
                     .append(UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE)
                     .append("'))) ");
             case "app" -> where.append(" AND ")
                     .append(typeColumn)
-                    .append(" = 'app' AND NOT EXISTS (SELECT 1 FROM t_resource_app_ext app_ext WHERE app_ext.resource_id = ")
+                    .append(" = 'app' AND NOT EXISTS (SELECT 1 FROM t_resource_detail app_detail WHERE app_detail.resource_id = ")
                     .append(idColumn)
-                    .append(" AND LOWER(COALESCE(app_ext.agent_exposure, '')) = '")
+                    .append(" AND app_detail.resource_type = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_exposure')), '')) = '")
                     .append(UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE)
                     .append("') ) ");
             default -> where.append(" AND ").append(typeColumn).append(" = '").append(requested).append("' ");
@@ -2450,7 +2390,20 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         switch (type) {
             case "agent" -> {
                 Map<String, Object> ext = jdbcTemplate.queryForList(
-                                "SELECT spec_json, service_detail_md, registration_protocol, upstream_endpoint, upstream_agent_id, credential_ref, transform_profile, model_alias, enabled FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1", resourceId)
+                                """
+                                        SELECT JSON_EXTRACT(detail_json, '$.spec_json') AS spec_json,
+                                               service_detail_md,
+                                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.registration_protocol')) AS registration_protocol,
+                                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.upstream_endpoint')) AS upstream_endpoint,
+                                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.upstream_agent_id')) AS upstream_agent_id,
+                                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.credential_ref')) AS credential_ref,
+                                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.transform_profile')) AS transform_profile,
+                                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.model_alias')) AS model_alias,
+                                               CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.enabled')) AS UNSIGNED) AS enabled
+                                        FROM t_resource_detail
+                                        WHERE resource_id = ? AND resource_type = 'agent'
+                                        LIMIT 1
+                                        """, resourceId)
                         .stream().findFirst().orElse(Map.of());
                 Map<String, Object> spec = parseJsonMap(ext.get("spec_json"));
                 snapshot.put("invokeType", stringValue(ext.get("registration_protocol")));
@@ -2471,7 +2424,19 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                 Map<String, Object> ext = jdbcTemplate.queryForList("""
                                 SELECT skill_type, execution_mode, manifest_json, entry_doc, spec_json, service_detail_md,
                                 hosted_system_prompt, parameters_schema
-                                FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
+                                FROM (
+                                    SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.skill_type')) AS skill_type,
+                                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.execution_mode')) AS execution_mode,
+                                           JSON_EXTRACT(detail_json, '$.manifest_json') AS manifest_json,
+                                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.entry_doc')) AS entry_doc,
+                                           JSON_EXTRACT(detail_json, '$.spec_json') AS spec_json,
+                                           service_detail_md,
+                                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.hosted_system_prompt')) AS hosted_system_prompt,
+                                           JSON_EXTRACT(detail_json, '$.parameters_schema') AS parameters_schema
+                                    FROM t_resource_detail
+                                    WHERE resource_id = ? AND resource_type = 'skill'
+                                    LIMIT 1
+                                ) x
                                 """, resourceId)
                         .stream().findFirst().orElse(Map.of());
                 snapshot.put("invokeType", "portal_context");
@@ -2498,7 +2463,16 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             }
             case "mcp" -> {
                 Map<String, Object> ext = jdbcTemplate.queryForList(
-                                "SELECT endpoint, protocol, auth_type, auth_config, service_detail_md FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1", resourceId)
+                                """
+                                        SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.endpoint')) AS endpoint,
+                                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.protocol')) AS protocol,
+                                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.auth_type')) AS auth_type,
+                                               JSON_EXTRACT(detail_json, '$.auth_config') AS auth_config,
+                                               service_detail_md
+                                        FROM t_resource_detail
+                                        WHERE resource_id = ? AND resource_type = 'mcp'
+                                        LIMIT 1
+                                        """, resourceId)
                         .stream().findFirst().orElse(Map.of());
                 snapshot.put("invokeType", stringValue(ext.get("protocol")));
                 snapshot.put("endpoint", stringValue(ext.get("endpoint")));
@@ -2515,7 +2489,18 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             }
             case "app" -> {
                 Map<String, Object> ext = jdbcTemplate.queryForList(
-                                "SELECT app_url, embed_type, icon, screenshots, service_detail_md, agent_exposure, agent_delivery_mode FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1", resourceId)
+                                """
+                                        SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.app_url')) AS app_url,
+                                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.embed_type')) AS embed_type,
+                                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.icon')) AS icon,
+                                               JSON_EXTRACT(detail_json, '$.screenshots') AS screenshots,
+                                               service_detail_md,
+                                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.agent_exposure')) AS agent_exposure,
+                                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.agent_delivery_mode')) AS agent_delivery_mode
+                                        FROM t_resource_detail
+                                        WHERE resource_id = ? AND resource_type = 'app'
+                                        LIMIT 1
+                                        """, resourceId)
                         .stream().findFirst().orElse(Map.of());
                 snapshot.put("invokeType", "redirect");
                 snapshot.put("endpoint", stringValue(ext.get("app_url")));
@@ -2540,7 +2525,17 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             }
             case "dataset" -> {
                 Map<String, Object> ext = jdbcTemplate.queryForList(
-                                "SELECT data_type, format, record_count, file_size, tags, service_detail_md FROM t_resource_dataset_ext WHERE resource_id = ? LIMIT 1", resourceId)
+                                """
+                                        SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.data_type')) AS data_type,
+                                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.format')) AS format,
+                                               CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.record_count')) AS SIGNED) AS record_count,
+                                               CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.file_size')) AS SIGNED) AS file_size,
+                                               JSON_EXTRACT(detail_json, '$.tags') AS tags,
+                                               service_detail_md
+                                        FROM t_resource_detail
+                                        WHERE resource_id = ? AND resource_type = 'dataset'
+                                        LIMIT 1
+                                        """, resourceId)
                         .stream().findFirst().orElse(Map.of());
                 Map<String, Object> spec = new LinkedHashMap<>();
                 spec.put("dataType", stringValue(ext.get("data_type")));
@@ -2660,9 +2655,24 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private void enrichAgentFields(ResourceManageVO vo, Long resourceId) {
         var rows = jdbcTemplate.queryForList("""
-                        SELECT agent_type, mode, spec_json, is_public, hidden, max_concurrency, max_steps, temperature, system_prompt, service_detail_md,
-                               registration_protocol, upstream_endpoint, upstream_agent_id, credential_ref, transform_profile, model_alias, enabled
-                        FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1
+                        SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.agent_type')) AS agent_type,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.mode')) AS mode,
+                               JSON_EXTRACT(detail_json, '$.spec_json') AS spec_json,
+                               is_public,
+                               CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.hidden')) AS UNSIGNED) AS hidden,
+                               CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.max_concurrency')) AS SIGNED) AS max_concurrency,
+                               CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.max_steps')) AS SIGNED) AS max_steps,
+                               CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.temperature')) AS DECIMAL(3,2)) AS temperature,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.system_prompt')) AS system_prompt,
+                               service_detail_md,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.registration_protocol')) AS registration_protocol,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.upstream_endpoint')) AS upstream_endpoint,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.upstream_agent_id')) AS upstream_agent_id,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.credential_ref')) AS credential_ref,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.transform_profile')) AS transform_profile,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.model_alias')) AS model_alias,
+                               CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.enabled')) AS UNSIGNED) AS enabled
+                        FROM t_resource_detail WHERE resource_id = ? AND resource_type = 'agent' LIMIT 1
                         """,
                 resourceId);
         if (rows.isEmpty()) {
@@ -2690,10 +2700,20 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private void enrichSkillFields(ResourceManageVO vo, Long resourceId) {
         var rows = jdbcTemplate.queryForList("""
-                        SELECT skill_type, execution_mode, manifest_json, entry_doc, mode, parent_resource_id, display_template, spec_json, parameters_schema, is_public, max_concurrency,
+                        SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.skill_type')) AS skill_type,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.execution_mode')) AS execution_mode,
+                               JSON_EXTRACT(detail_json, '$.manifest_json') AS manifest_json,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.entry_doc')) AS entry_doc,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.mode')) AS mode,
+                               CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.parent_resource_id')) AS SIGNED) AS parent_resource_id,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.display_template')) AS display_template,
+                               JSON_EXTRACT(detail_json, '$.spec_json') AS spec_json,
+                               JSON_EXTRACT(detail_json, '$.parameters_schema') AS parameters_schema,
+                               is_public,
+                               CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.max_concurrency')) AS SIGNED) AS max_concurrency,
                                service_detail_md,
-                               hosted_system_prompt
-                        FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.hosted_system_prompt')) AS hosted_system_prompt
+                        FROM t_resource_detail WHERE resource_id = ? AND resource_type = 'skill' LIMIT 1
                         """,
                 resourceId);
         if (rows.isEmpty()) {
@@ -2718,7 +2738,14 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private void enrichMcpFields(ResourceManageVO vo, Long resourceId) {
         var rows = jdbcTemplate.queryForList(
-                "SELECT endpoint, protocol, auth_type, auth_config, service_detail_md FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1",
+                """
+                        SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.endpoint')) AS endpoint,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.protocol')) AS protocol,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.auth_type')) AS auth_type,
+                               JSON_EXTRACT(detail_json, '$.auth_config') AS auth_config,
+                               service_detail_md
+                        FROM t_resource_detail WHERE resource_id = ? AND resource_type = 'mcp' LIMIT 1
+                        """,
                 resourceId);
         if (rows.isEmpty()) {
             return;
@@ -2733,7 +2760,17 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private void enrichAppFields(ResourceManageVO vo, Long resourceId) {
         var rows = jdbcTemplate.queryForList(
-                "SELECT app_url, embed_type, icon, screenshots, is_public, service_detail_md, agent_exposure, agent_delivery_mode FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1",
+                """
+                        SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.app_url')) AS app_url,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.embed_type')) AS embed_type,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.icon')) AS icon,
+                               JSON_EXTRACT(detail_json, '$.screenshots') AS screenshots,
+                               is_public,
+                               service_detail_md,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.agent_exposure')) AS agent_exposure,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.agent_delivery_mode')) AS agent_delivery_mode
+                        FROM t_resource_detail WHERE resource_id = ? AND resource_type = 'app' LIMIT 1
+                        """,
                 resourceId);
         if (rows.isEmpty()) {
             return;
@@ -2752,7 +2789,16 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private void enrichDatasetFields(ResourceManageVO vo, Long resourceId) {
         var rows = jdbcTemplate.queryForList(
-                "SELECT data_type, format, record_count, file_size, tags, is_public, service_detail_md FROM t_resource_dataset_ext WHERE resource_id = ? LIMIT 1",
+                """
+                        SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.data_type')) AS data_type,
+                               JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.format')) AS format,
+                               CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.record_count')) AS SIGNED) AS record_count,
+                               CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.file_size')) AS SIGNED) AS file_size,
+                               JSON_EXTRACT(detail_json, '$.tags') AS tags,
+                               is_public,
+                               service_detail_md
+                        FROM t_resource_detail WHERE resource_id = ? AND resource_type = 'dataset' LIMIT 1
+                        """,
                 resourceId);
         if (rows.isEmpty()) {
             return;
@@ -2780,7 +2826,12 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
 
     private String resolveCredentialRefForUpsert(Long resourceId, String credentialRefRaw) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT credential_ref FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1",
+                """
+                        SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.credential_ref')) AS credential_ref
+                        FROM t_resource_detail
+                        WHERE resource_id = ? AND resource_type = 'agent'
+                        LIMIT 1
+                        """,
                 resourceId);
         String existing = rows.isEmpty() ? null : stringValue(rows.get(0).get("credential_ref"));
         if (!StringUtils.hasText(credentialRefRaw)) {

@@ -40,7 +40,7 @@ public class SystemParamController {
     }
 
     @PutMapping("/params")
-    @AuditLog(action = "put_system_param", resource = "system-config")
+    @AuditLog(action = "put_system_config_param", resource = "system-config")
     public R<Void> putParam(@RequestHeader("X-User-Id") Long operatorUserId,
                             @Valid @RequestBody SystemParamUpsertRequest request) {
         systemParamFacadeService.putParam(operatorUserId, request);
@@ -53,7 +53,7 @@ public class SystemParamController {
     }
 
     @PutMapping("/security")
-    @AuditLog(action = "put_security_setting", resource = "system-config")
+    @AuditLog(action = "put_system_config_security", resource = "system-config")
     public R<Void> putSecurity(@RequestHeader("X-User-Id") Long operatorUserId,
                                @Valid @RequestBody SecuritySettingUpsertRequest request) {
         systemParamFacadeService.putSecurity(operatorUserId, request);

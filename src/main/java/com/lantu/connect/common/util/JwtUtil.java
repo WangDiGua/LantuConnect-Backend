@@ -57,6 +57,15 @@ public class JwtUtil {
         return buildToken(userId, username, Map.of("type", "refresh"), refreshExpiryMs());
     }
 
+    public String generateRefreshToken(Long userId, String username, Map<String, Object> extraClaims) {
+        java.util.HashMap<String, Object> claims = new java.util.HashMap<>();
+        claims.put("type", "refresh");
+        if (extraClaims != null) {
+            claims.putAll(extraClaims);
+        }
+        return buildToken(userId, username, claims, refreshExpiryMs());
+    }
+
     private String buildToken(Long userId, String username, Map<String, Object> claims, long expiry) {
         Date now = new Date();
         return Jwts.builder()

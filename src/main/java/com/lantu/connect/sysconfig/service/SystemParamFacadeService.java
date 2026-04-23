@@ -37,7 +37,7 @@ public interface SystemParamFacadeService {
      */
     Map<String, Object> publishAcl(Long operatorUserId, List<AclPathRulePayload> rules);
 
-    /** 管理端网络白名单 CIDR 列表（来自 t_system_param） */
+    /** 管理端网络白名单 CIDR 列表（来自 t_system_config/system:admin_network_allowlist） */
     List<String> getNetworkAllowlist();
 
     /**

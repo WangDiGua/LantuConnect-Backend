@@ -6,6 +6,7 @@ import com.lantu.connect.common.config.SecurityProperties;
 import com.lantu.connect.common.exception.GlobalExceptionHandler;
 import com.lantu.connect.common.filter.JwtAuthenticationFilter;
 import com.lantu.connect.common.result.PageResult;
+import com.lantu.connect.common.session.SessionTrackerService;
 import com.lantu.connect.common.util.JwtUtil;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
 import com.lantu.connect.dashboard.controller.DashboardController;
@@ -61,8 +62,9 @@ class AuthChainWebMvcTest {
         properties.setAllowHeaderUserIdFallback(false);
         when(sessionRevocationRegistry.isRevoked(anyString())).thenReturn(false);
         ApiKeyScopeService apiKeyScopeService = mock(ApiKeyScopeService.class);
+        SessionTrackerService sessionTrackerService = mock(SessionTrackerService.class);
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(
-                jwtUtil, accessTokenBlacklist, sessionRevocationRegistry, properties, apiKeyScopeService);
+                jwtUtil, accessTokenBlacklist, sessionRevocationRegistry, properties, apiKeyScopeService, sessionTrackerService);
         OwnerDeveloperStatsService ownerDeveloperStatsService = mock(OwnerDeveloperStatsService.class);
         DashboardController dashboardController = new DashboardController(dashboardService, ownerDeveloperStatsService);
         DashboardController proxiedDashboard = proxyWithPermissionAspect(dashboardController, casbinAuthorizationService);

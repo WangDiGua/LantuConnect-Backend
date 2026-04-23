@@ -29,7 +29,7 @@ class SkillProbeHandlerTest {
         ProtocolInvokerRegistry protocolInvokerRegistry = mock(ProtocolInvokerRegistry.class);
         when(jdbcTemplate.queryForList(anyString(), eq(18L))).thenAnswer(invocation -> {
             String sql = invocation.getArgument(0, String.class);
-            if (sql.contains("FROM t_resource_agent_ext")) {
+            if (sql.contains("FROM t_resource_detail") && sql.contains("resource_type = 'agent'")) {
                 return List.of(Map.of(
                         "enabled", true,
                         "registration_protocol", "openai_compatible",

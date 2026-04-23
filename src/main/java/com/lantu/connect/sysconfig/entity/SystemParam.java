@@ -1,8 +1,5 @@
 package com.lantu.connect.sysconfig.entity;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -14,10 +11,8 @@ import java.time.LocalDateTime;
  * @date 2026-03-23
  */
 @Data
-@TableName("t_system_param")
 public class SystemParam {
 
-    @TableId(type = IdType.INPUT)
     private String key;
 
     private String value;

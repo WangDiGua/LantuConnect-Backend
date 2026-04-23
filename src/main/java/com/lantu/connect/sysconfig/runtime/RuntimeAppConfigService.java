@@ -16,7 +16,7 @@ import com.lantu.connect.common.config.LegacyApiDeprecationProperties;
 import com.lantu.connect.common.config.NotificationProperties;
 import com.lantu.connect.common.idempotency.IdempotencyProperties;
 import com.lantu.connect.sysconfig.entity.SystemParam;
-import com.lantu.connect.sysconfig.mapper.SystemParamMapper;
+import com.lantu.connect.sysconfig.service.SystemConfigStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,7 +26,7 @@ import java.io.IOException;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * 运行时配置：库表 {@code t_system_param} 中 key={@value #PARAM_KEY} 的 JSON
+ * 运行时配置：库表 {@code t_system_config} 中 system:{@value #PARAM_KEY} 的 JSON
  * 与 application.yml 默认值合并（仅覆盖 JSON 中出现的字段），短缓存后自动刷新。
  * <p>
  * 前端可通过既有 {@code PUT /system-config/params} 写入该 key；写入后请调用失效或等待数秒缓存过期。
@@ -40,7 +40,7 @@ public class RuntimeAppConfigService {
 
     private static final long CACHE_TTL_MS = 3000L;
 
-    private final SystemParamMapper systemParamMapper;
+    private final SystemConfigStore systemConfigStore;
     private final ObjectMapper objectMapper;
 
     private final LegacyApiDeprecationProperties yamlApiDeprecation;
@@ -86,7 +86,7 @@ public class RuntimeAppConfigService {
             if (cachedRoot != null && now < cacheUntilMs) {
                 return cachedRoot;
             }
-            SystemParam row = systemParamMapper.selectById(PARAM_KEY);
+            SystemParam row = systemConfigStore.findSystemParam(PARAM_KEY);
             if (row == null || !StringUtils.hasText(row.getValue())) {
                 cachedRoot = null;
             } else {

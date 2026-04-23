@@ -145,9 +145,19 @@ public class GatewayGovernanceService {
         String type = resourceType.trim().toLowerCase(Locale.ROOT);
         Integer limit = null;
         if ("agent".equals(type)) {
-            limit = queryMaxConcurrency("SELECT max_concurrency FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1", resourceId);
+            limit = queryMaxConcurrency("""
+                    SELECT CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.max_concurrency')) AS SIGNED) AS max_concurrency
+                    FROM t_resource_detail
+                    WHERE resource_id = ? AND resource_type = 'agent'
+                    LIMIT 1
+                    """, resourceId);
         } else if ("skill".equals(type)) {
-            limit = queryMaxConcurrency("SELECT max_concurrency FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1", resourceId);
+            limit = queryMaxConcurrency("""
+                    SELECT CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.max_concurrency')) AS SIGNED) AS max_concurrency
+                    FROM t_resource_detail
+                    WHERE resource_id = ? AND resource_type = 'skill'
+                    LIMIT 1
+                    """, resourceId);
         }
         if (limit != null && limit > 0) {
             return limit;

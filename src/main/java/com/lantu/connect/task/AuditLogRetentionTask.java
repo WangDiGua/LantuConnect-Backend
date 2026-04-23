@@ -9,7 +9,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * 定时清理审计日志，保留天数来自 t_security_setting.audit_log_retention。
+ * 定时清理审计日志，保留天数来自 t_system_config/security:audit_log_retention。
  * <p>
  * 约定：{@code <= 0} 表示不自动清理（永久保留）；{@code 1..3650} 为保留最近 N 天；缺省或非法回退 90。
  */
@@ -47,7 +47,12 @@ public class AuditLogRetentionTask {
 
     private Integer loadRetentionDays() {
         Integer days = jdbcTemplate.query(
-                        "SELECT CAST(`value` AS SIGNED) AS retention_days FROM t_security_setting WHERE `key` = 'audit_log_retention' LIMIT 1",
+                        """
+                                SELECT CAST(config_value AS SIGNED) AS retention_days
+                                FROM t_system_config
+                                WHERE scope = 'security' AND config_key = 'audit_log_retention'
+                                LIMIT 1
+                                """,
                         rs -> rs.next() ? rs.getInt("retention_days") : null);
         if (days == null) {
             return 90;

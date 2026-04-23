@@ -94,14 +94,12 @@ public class SliderCaptchaServiceImpl implements CaptchaService {
         }
 
         String key = CAPTCHA_PREFIX + captchaId;
-        String storedCode = redisTemplate.opsForValue().get(key);
+        String storedCode = redisTemplate.opsForValue().getAndDelete(key);
 
         if (storedCode == null) {
             log.warn("Captcha expired or not found: {}", captchaId);
             return false;
         }
-
-        redisTemplate.delete(key);
 
         boolean valid = storedCode.equalsIgnoreCase(code.trim());
         log.debug("Captcha verification: id={}, valid={}", captchaId, valid);

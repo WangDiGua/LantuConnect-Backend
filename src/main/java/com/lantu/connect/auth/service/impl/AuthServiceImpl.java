@@ -212,14 +212,6 @@ public class AuthServiceImpl implements AuthService {
         String usedKey = REFRESH_USED_PREFIX + tokenHash;
         String pairKey = REFRESH_PAIR_PREFIX + tokenHash;
 
-        String cachedPair = redisTemplate.opsForValue().get(pairKey);
-        if (StringUtils.hasText(cachedPair)) {
-            TokenResponse fromCache = parseCachedRefreshPair(cachedPair);
-            if (fromCache != null) {
-                return fromCache;
-            }
-        }
-
         Claims claims;
         try {
             claims = jwtUtil.parseToken(refreshToken);
@@ -242,15 +234,20 @@ public class AuthServiceImpl implements AuthService {
 
         String roleCode = resolvePrimaryRoleCode(userId);
         String sid = claims.get("sid", String.class);
-        boolean isNewSession = !StringUtils.hasText(sid);
-        if (isNewSession) {
-            sid = java.util.UUID.randomUUID().toString();
+        if (!StringUtils.hasText(sid)) {
+            throw new BusinessException(ResultCode.REFRESH_TOKEN_INVALID, "Refresh Token 缺少会话标识，请重新登录");
         }
+        if (sessionRevocationRegistry.isRevoked(sid)) {
+            throw new BusinessException(ResultCode.REFRESH_TOKEN_INVALID, "会话已失效，请重新登录");
+        }
+        sessionTrackerService.touchSession(sid);
 
-        if (isNewSession) {
-            String clientIp = resolveClientIp();
-            sessionTrackerService.trackSessionWithMeta(userId, sid, clientIp, resolveUserAgent());
-            sessionGeoEnrichmentService.enqueueLocationLookup(sid, clientIp);
+        String cachedPair = redisTemplate.opsForValue().get(pairKey);
+        if (StringUtils.hasText(cachedPair)) {
+            TokenResponse fromCache = parseCachedRefreshPair(cachedPair);
+            if (fromCache != null) {
+                return fromCache;
+            }
         }
 
         boolean markedUsed = false;
@@ -266,7 +263,7 @@ public class AuthServiceImpl implements AuthService {
             markedUsed = true;
 
             String newAccessToken = jwtUtil.generateAccessToken(userId, username, Map.of("role", roleCode, "sid", sid));
-            String newRefreshToken = jwtUtil.generateRefreshToken(userId, username);
+            String newRefreshToken = jwtUtil.generateRefreshToken(userId, username, Map.of("sid", sid));
             TokenResponse out = TokenResponse.builder()
                     .token(newAccessToken)
                     .refreshToken(newRefreshToken)
@@ -344,6 +341,12 @@ public class AuthServiceImpl implements AuthService {
         }
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userMapper.updateById(user);
+        Set<String> sessions = sessionTrackerService.getActiveSessions(userId);
+        if (sessions != null) {
+            for (String sessionId : sessions) {
+                sessionRevocationRegistry.revoke(sessionId);
+            }
+        }
         sessionTrackerService.removeAllUserSessions(userId);
         systemNotificationFacade.notifyPasswordChanged(userId);
     }
@@ -412,7 +415,7 @@ public class AuthServiceImpl implements AuthService {
         String sessionId = java.util.UUID.randomUUID().toString();
         String accessToken = jwtUtil.generateAccessToken(
                 user.getUserId(), user.getUsername(), Map.of("role", roleCode, "sid", sessionId));
-        String refreshToken = jwtUtil.generateRefreshToken(user.getUserId(), user.getUsername());
+        String refreshToken = jwtUtil.generateRefreshToken(user.getUserId(), user.getUsername(), Map.of("sid", sessionId));
 
         String clientIp = resolveClientIp();
         sessionTrackerService.trackSessionWithMeta(

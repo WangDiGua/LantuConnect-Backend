@@ -4,6 +4,7 @@ import com.lantu.connect.auth.support.AccessTokenBlacklist;
 import com.lantu.connect.auth.support.SessionRevocationRegistry;
 import com.lantu.connect.common.config.SecurityProperties;
 import com.lantu.connect.common.security.GatewayAuthDetails;
+import com.lantu.connect.common.session.SessionTrackerService;
 import com.lantu.connect.common.util.JsonStringEscaper;
 import com.lantu.connect.common.util.JwtUtil;
 import com.lantu.connect.gateway.security.ApiKeyScopeService;
@@ -46,6 +47,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final SessionRevocationRegistry sessionRevocationRegistry;
     private final SecurityProperties securityProperties;
     private final ApiKeyScopeService apiKeyScopeService;
+    private final SessionTrackerService sessionTrackerService;
 
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
 
@@ -87,6 +89,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 if (StringUtils.hasText(tokenSid) && sessionRevocationRegistry.isRevoked(tokenSid)) {
                     writeUnauthorized(response, "会话已失效");
                     return;
+                }
+                if (StringUtils.hasText(tokenSid)) {
+                    sessionTrackerService.touchSession(tokenSid);
                 }
                 userIdFromJwt = Long.valueOf(claims.getSubject());
             } catch (ExpiredJwtException e) {

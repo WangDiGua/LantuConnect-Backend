@@ -539,22 +539,38 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
         }
         List<Map<String, Object>> rows = switch (resourceType.trim().toLowerCase(Locale.ROOT)) {
             case TYPE_AGENT -> jdbcTemplate.queryForList("""
-                    SELECT enabled, registration_protocol, upstream_endpoint, upstream_agent_id,
-                           credential_ref, transform_profile, model_alias, spec_json
-                    FROM t_resource_agent_ext
-                    WHERE resource_id = ?
+                    SELECT
+                           CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.enabled')) AS UNSIGNED) AS enabled,
+                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.registration_protocol')) AS registration_protocol,
+                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.upstream_endpoint')) AS upstream_endpoint,
+                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.upstream_agent_id')) AS upstream_agent_id,
+                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.credential_ref')) AS credential_ref,
+                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.transform_profile')) AS transform_profile,
+                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.model_alias')) AS model_alias,
+                           JSON_EXTRACT(detail_json, '$.spec_json') AS spec_json
+                    FROM t_resource_detail
+                    WHERE resource_id = ? AND resource_type = 'agent'
                     LIMIT 1
                     """, resourceId);
             case TYPE_SKILL -> jdbcTemplate.queryForList("""
-                    SELECT execution_mode, hosted_system_prompt, manifest_json, spec_json, parameters_schema
-                    FROM t_resource_skill_ext
-                    WHERE resource_id = ?
+                    SELECT
+                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.execution_mode')) AS execution_mode,
+                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.hosted_system_prompt')) AS hosted_system_prompt,
+                           JSON_EXTRACT(detail_json, '$.manifest_json') AS manifest_json,
+                           JSON_EXTRACT(detail_json, '$.spec_json') AS spec_json,
+                           JSON_EXTRACT(detail_json, '$.parameters_schema') AS parameters_schema
+                    FROM t_resource_detail
+                    WHERE resource_id = ? AND resource_type = 'skill'
                     LIMIT 1
                     """, resourceId);
             case TYPE_MCP -> jdbcTemplate.queryForList("""
-                    SELECT endpoint, protocol, auth_type, auth_config
-                    FROM t_resource_mcp_ext
-                    WHERE resource_id = ?
+                    SELECT
+                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.endpoint')) AS endpoint,
+                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.protocol')) AS protocol,
+                           JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.auth_type')) AS auth_type,
+                           JSON_EXTRACT(detail_json, '$.auth_config') AS auth_config
+                    FROM t_resource_detail
+                    WHERE resource_id = ? AND resource_type = 'mcp'
                     LIMIT 1
                     """, resourceId);
             default -> List.of();

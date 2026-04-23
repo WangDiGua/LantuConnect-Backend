@@ -200,7 +200,7 @@ public class UserActivityServiceImpl implements UserActivityService {
                 userId);
         List<Map<String, Object>> publicRows = jdbcTemplate.queryForList(
                 "SELECT r.id, r.resource_code, r.display_name, r.description, r.status, r.update_time "
-                        + "FROM t_resource r LEFT JOIN t_resource_skill_ext ext ON r.id = ext.resource_id "
+                        + "FROM t_resource r LEFT JOIN t_resource_detail ext ON r.id = ext.resource_id AND ext.resource_type = 'skill' "
                         + "WHERE r.deleted = 0 AND r.resource_type = 'skill' AND COALESCE(ext.is_public,0)=1 AND r.status='published' ORDER BY r.update_time DESC");
 
         Map<String, LocalDateTime> lastUsedAtByAgentName = new HashMap<>();

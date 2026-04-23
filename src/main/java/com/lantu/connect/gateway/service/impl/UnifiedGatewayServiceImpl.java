@@ -127,10 +127,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         StringBuilder sql = new StringBuilder("""
                 SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.source_type, r.update_time, r.created_by, r.access_policy,
                        COALESCE(r.view_count, 0) AS view_count,
-                       app_ext.agent_exposure AS app_agent_exposure,
-                       app_ext.agent_delivery_mode AS app_agent_delivery_mode
+                       JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_exposure')) AS app_agent_exposure,
+                       JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_delivery_mode')) AS app_agent_delivery_mode
                 FROM t_resource r
-                LEFT JOIN t_resource_app_ext app_ext ON app_ext.resource_id = r.id
+                LEFT JOIN t_resource_detail app_detail ON app_detail.resource_id = r.id AND app_detail.resource_type = 'app'
                 WHERE r.deleted = 0
                 """);
         if (StringUtils.hasText(type)) {
@@ -935,14 +935,15 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         if (TYPE_AGENT.equals(requestedType)) {
             list = jdbcTemplate.queryForList("""
                             SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.created_by,
-                                   app_ext.agent_exposure, app_ext.agent_delivery_mode
+                                   JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_exposure')) AS agent_exposure,
+                                   JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_delivery_mode')) AS agent_delivery_mode
                             FROM t_resource r
-                            LEFT JOIN t_resource_app_ext app_ext ON app_ext.resource_id = r.id
+                            LEFT JOIN t_resource_detail app_detail ON app_detail.resource_id = r.id AND app_detail.resource_type = 'app'
                             WHERE r.deleted = 0
                               AND r.id = ?
                               AND (
                                 r.resource_type = 'agent'
-                                OR (r.resource_type = 'app' AND LOWER(COALESCE(app_ext.agent_exposure, '')) = ?)
+                                OR (r.resource_type = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_exposure')), '')) = ?)
                               )
                             LIMIT 1
                             """,
@@ -961,9 +962,20 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
     private ResourceResolveVO resolveAgent(Map<String, Object> base, String version) {
         Long id = longValue(base.get("id"));
-        Map<String, Object> ext = queryOne(
-                "SELECT spec_json, service_detail_md, registration_protocol, upstream_endpoint, upstream_agent_id, credential_ref, transform_profile, model_alias, enabled FROM t_resource_agent_ext WHERE resource_id = ? LIMIT 1",
-                id);
+        Map<String, Object> ext = queryOne("""
+                SELECT JSON_EXTRACT(detail_json, '$.spec_json') AS spec_json,
+                       service_detail_md,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.registration_protocol')) AS registration_protocol,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.upstream_endpoint')) AS upstream_endpoint,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.upstream_agent_id')) AS upstream_agent_id,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.credential_ref')) AS credential_ref,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.transform_profile')) AS transform_profile,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.model_alias')) AS model_alias,
+                       CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.enabled')) AS UNSIGNED) AS enabled
+                FROM t_resource_detail
+                WHERE resource_id = ? AND resource_type = 'agent'
+                LIMIT 1
+                """, id);
         Map<String, Object> spec = parseJsonMap(ext == null ? null : ext.get("spec_json"));
         String invokeType = normalizeProtocol(ext == null ? null : ext.get("registration_protocol"), "rest");
         if (spec != null && ext != null) {
@@ -1019,7 +1031,20 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         Map<String, Object> ext = queryOne("""
                         SELECT skill_type, execution_mode, manifest_json, entry_doc, spec_json, parameters_schema, is_public, service_detail_md,
                         hosted_system_prompt
-                        FROM t_resource_skill_ext WHERE resource_id = ? LIMIT 1
+                        FROM (
+                            SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.skill_type')) AS skill_type,
+                                   JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.execution_mode')) AS execution_mode,
+                                   JSON_EXTRACT(detail_json, '$.manifest_json') AS manifest_json,
+                                   JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.entry_doc')) AS entry_doc,
+                                   JSON_EXTRACT(detail_json, '$.spec_json') AS spec_json,
+                                   JSON_EXTRACT(detail_json, '$.parameters_schema') AS parameters_schema,
+                                   is_public,
+                                   service_detail_md,
+                                   JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.hosted_system_prompt')) AS hosted_system_prompt
+                            FROM t_resource_detail
+                            WHERE resource_id = ? AND resource_type = 'skill'
+                            LIMIT 1
+                        ) x
                         """,
                 id);
         if (ext == null) {
@@ -1064,8 +1089,16 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
     private ResourceResolveVO resolveMcp(Map<String, Object> base, String version) {
         Long id = longValue(base.get("id"));
-        Map<String, Object> ext = queryOne(
-                "SELECT endpoint, protocol, auth_type, auth_config, service_detail_md FROM t_resource_mcp_ext WHERE resource_id = ? LIMIT 1", id);
+        Map<String, Object> ext = queryOne("""
+                SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.endpoint')) AS endpoint,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.protocol')) AS protocol,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.auth_type')) AS auth_type,
+                       JSON_EXTRACT(detail_json, '$.auth_config') AS auth_config,
+                       service_detail_md
+                FROM t_resource_detail
+                WHERE resource_id = ? AND resource_type = 'mcp'
+                LIMIT 1
+                """, id);
         Map<String, Object> spec;
         String endpoint;
         String protocol;
@@ -1098,9 +1131,18 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
     private ResourceResolveVO resolveApp(Map<String, Object> base, String version, ApiKey apiKey, Long userId, String action, String exposedType) {
         Long id = longValue(base.get("id"));
-        Map<String, Object> ext = queryOne(
-                "SELECT app_url, embed_type, icon, screenshots, service_detail_md, agent_exposure, agent_delivery_mode FROM t_resource_app_ext WHERE resource_id = ? LIMIT 1",
-                id);
+        Map<String, Object> ext = queryOne("""
+                SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.app_url')) AS app_url,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.embed_type')) AS embed_type,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.icon')) AS icon,
+                       JSON_EXTRACT(detail_json, '$.screenshots') AS screenshots,
+                       service_detail_md,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.agent_exposure')) AS agent_exposure,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.agent_delivery_mode')) AS agent_delivery_mode
+                FROM t_resource_detail
+                WHERE resource_id = ? AND resource_type = 'app'
+                LIMIT 1
+                """, id);
         Map<String, Object> spec = new HashMap<>();
         spec.put("embedType", valueOf(ext == null ? null : ext.get("embed_type")));
         if (ext != null && StringUtils.hasText(valueOf(ext.get("icon")))) {
@@ -1177,9 +1219,17 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
     private ResourceResolveVO resolveDataset(Map<String, Object> base, String version) {
         Long id = longValue(base.get("id"));
-        Map<String, Object> ext = queryOne(
-                "SELECT data_type, format, record_count, file_size, tags, service_detail_md FROM t_resource_dataset_ext WHERE resource_id = ? LIMIT 1",
-                id);
+        Map<String, Object> ext = queryOne("""
+                SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.data_type')) AS data_type,
+                       JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.format')) AS format,
+                       CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.record_count')) AS SIGNED) AS record_count,
+                       CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.file_size')) AS SIGNED) AS file_size,
+                       JSON_EXTRACT(detail_json, '$.tags') AS tags,
+                       service_detail_md
+                FROM t_resource_detail
+                WHERE resource_id = ? AND resource_type = 'dataset'
+                LIMIT 1
+                """, id);
         Map<String, Object> spec = new HashMap<>();
         spec.put("dataType", valueOf(ext == null ? null : ext.get("data_type")));
         spec.put("format", valueOf(ext == null ? null : ext.get("format")));
@@ -1509,10 +1559,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private void appendCatalogRequestedTypeClause(StringBuilder sql, String requestedType) {
         String type = requireType(requestedType);
         switch (type) {
-            case TYPE_AGENT -> sql.append(" AND (r.resource_type = 'agent' OR (r.resource_type = 'app' AND LOWER(COALESCE(app_ext.agent_exposure, '')) = '")
+            case TYPE_AGENT -> sql.append(" AND (r.resource_type = 'agent' OR (r.resource_type = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_exposure')), '')) = '")
                     .append(UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE)
                     .append("')) ");
-            case TYPE_APP -> sql.append(" AND r.resource_type = 'app' AND LOWER(COALESCE(app_ext.agent_exposure, '')) <> '")
+            case TYPE_APP -> sql.append(" AND r.resource_type = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_exposure')), '')) <> '")
                     .append(UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE)
                     .append("' ");
             default -> sql.append(" AND r.resource_type = '").append(type).append("' ");
@@ -2283,7 +2333,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         Object[] idArgs = skillIds.toArray();
         Map<Long, String> modeById = new HashMap<>();
         for (Map<String, Object> row : jdbcTemplate.queryForList(
-                "SELECT resource_id, COALESCE(NULLIF(TRIM(execution_mode), ''), 'context') AS em FROM t_resource_skill_ext WHERE resource_id IN ("
+                "SELECT resource_id, COALESCE(NULLIF(TRIM(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.execution_mode'))), ''), 'context') AS em FROM t_resource_detail WHERE resource_type = 'skill' AND resource_id IN ("
                         + placeholders
                         + ")",
                 idArgs)) {

@@ -165,7 +165,7 @@ class MonitoringServiceImplTest {
 
     @Test
     void performanceCompatibilityEndpointProjectsBucketPercentiles() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now().withMinute(30).withSecond(0).withNano(0);
         doReturn(List.of(
                 sample(now.minusMinutes(3), "agent", "42", "Agent Alpha", "POST /invoke", "success", 10),
                 sample(now.minusMinutes(2), "agent", "42", "Agent Alpha", "POST /invoke", "success", 1000),
