@@ -26,7 +26,7 @@ public class OwnerDeveloperStatsVO {
     private long gatewayInvokeSuccess;
 
     /**
-     * {@code t_usage_record}：{@code action=invoke} 且可归因到该 owner 资源的记录数（与 call_log 可能同源重复计数，仅供对照）
+     * {@code t_call_log}：{@code action=invoke} 且可归因到该 owner 资源的记录数。
      */
     private long usageRecordInvokeTotal;
 

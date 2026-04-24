@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Guardrail: validate raw string column names used in QueryWrapper against baseline schema.
  *
- * This catches mistakes like using target_type on t_usage_record.
+ * This catches mistakes like using target_type on a mapped table.
  */
 class SqlColumnGuardrailTest {
 

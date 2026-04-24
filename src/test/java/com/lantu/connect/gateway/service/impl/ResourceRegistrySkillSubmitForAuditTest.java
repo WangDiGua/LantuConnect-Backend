@@ -80,7 +80,7 @@ class ResourceRegistrySkillSubmitForAuditTest {
         when(jdbcTemplate.queryForList(anyString(), anyLong())).thenAnswer(inv -> {
             String sql = inv.getArgument(0);
             long idArg = ((Number) inv.getArgument(1)).longValue();
-            if (idArg == rid && sql.contains("t_resource_detail") && sql.contains("resource_type = 'skill'")) {
+            if (idArg == rid && sql.contains("hosted_system_prompt") && sql.contains("resource_type = 'skill'")) {
                 return List.of(Map.of(
                         "execution_mode", executionMode,
                         "hosted_system_prompt", hostedPrompt));

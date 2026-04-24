@@ -60,7 +60,7 @@ public class ResourceCatalogItemVO {
     @Schema(description = "网关统一调用次数（t_call_log.agent_id）")
     private Long callCount;
 
-    /** {@code t_usage_record}：type=app 且 action=invoke 的次数 */
+    /** {@code t_call_log}：resource_type=app 且 action=invoke 的次数 */
     @Schema(description = "应用使用量（usage_record，app invoke）")
     private Long usageCount;
 

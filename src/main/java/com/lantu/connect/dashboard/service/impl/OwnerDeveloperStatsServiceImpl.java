@@ -54,11 +54,11 @@ public class OwnerDeveloperStatsServiceImpl implements OwnerDeveloperStatsServic
                 Long.class, targetOwner, start, end);
 
         Long usageInvoke = jdbcTemplate.queryForObject("""
-                        SELECT COUNT(*) FROM t_usage_record ur
+                        SELECT COUNT(*) FROM t_call_log ur
                         INNER JOIN t_resource r ON r.created_by = ? AND r.deleted = 0
                           AND (
-                            ur.resource_id = r.id
-                            OR (ur.resource_id IS NULL AND ur.agent_name = r.resource_code AND ur.type = r.resource_type)
+                            CAST(ur.agent_id AS UNSIGNED) = r.id
+                            OR (ur.agent_id IS NULL AND ur.agent_name = r.resource_code AND ur.resource_type = r.resource_type)
                           )
                         WHERE ur.action = 'invoke'
                           AND ur.create_time >= ? AND ur.create_time <= ?

@@ -28,7 +28,6 @@ public class StartupDiagnosticsRunner {
 
     private static final List<String> REQUIRED_TABLES = List.of(
             "t_resource",
-            "t_resource_detail",
             "t_resource_runtime_policy",
             "t_system_config"
     );
@@ -136,35 +135,26 @@ public class StartupDiagnosticsRunner {
             int requiredCount = countObjects(REQUIRED_TABLES);
             int legacyCount = countObjects(LEGACY_OBJECTS);
             int legacyTriggerCount = countLegacyTriggers();
-            int invalidDetail = queryCount("""
+            int resourceDetailColumns = queryCount("""
                     SELECT COUNT(*)
-                    FROM t_resource_detail d
-                    LEFT JOIN t_resource r ON r.id = d.resource_id
-                    WHERE r.id IS NULL
+                    FROM information_schema.columns
+                    WHERE table_schema = DATABASE()
+                      AND table_name = 't_resource'
+                      AND column_name IN ('is_public', 'service_detail_md', 'detail_json')
                     """);
-            int duplicateDetail = queryCount("""
-                    SELECT COUNT(*)
-                    FROM (
-                        SELECT resource_id
-                        FROM t_resource_detail
-                        GROUP BY resource_id
-                        HAVING COUNT(*) > 1
-                    ) x
-                    """);
-            int badJson = queryCount("SELECT COUNT(*) FROM t_resource_detail WHERE JSON_VALID(detail_json) = 0");
+            int badJson = queryCount("SELECT COUNT(*) FROM t_resource WHERE detail_json IS NOT NULL AND JSON_VALID(detail_json) = 0");
 
             boolean ok = requiredCount == REQUIRED_TABLES.size()
                     && legacyCount == 0
                     && legacyTriggerCount == 0
-                    && invalidDetail == 0
-                    && duplicateDetail == 0
+                    && resourceDetailColumns == 3
                     && badJson == 0;
             if (ok) {
-                log.info("[startup-check] Schema    OK requiredTables={}, legacyObjects=0, legacyTriggers=0, resourceDetail=clean",
+                log.info("[startup-check] Schema    OK requiredTables={}, legacyObjects=0, legacyTriggers=0, resourceColumns=merged",
                         requiredCount);
             } else {
-                log.warn("[startup-check] Schema    WARN requiredTables={}/{}, legacyObjects={}, legacyTriggers={}, invalidDetail={}, duplicateDetail={}, badJson={}",
-                        requiredCount, REQUIRED_TABLES.size(), legacyCount, legacyTriggerCount, invalidDetail, duplicateDetail, badJson);
+                log.warn("[startup-check] Schema    WARN requiredTables={}/{}, legacyObjects={}, legacyTriggers={}, resourceDetailColumns={}/3, badJson={}",
+                        requiredCount, REQUIRED_TABLES.size(), legacyCount, legacyTriggerCount, resourceDetailColumns, badJson);
             }
             return ok;
         } catch (Exception ex) {

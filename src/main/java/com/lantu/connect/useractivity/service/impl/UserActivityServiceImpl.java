@@ -137,9 +137,9 @@ public class UserActivityServiceImpl implements UserActivityService {
         counters.put("favoriteCount", favCount != null ? favCount : 0L);
 
         QueryWrapper<UsageRecord> byType = new QueryWrapper<>();
-        byType.select("type AS targetType", "COUNT(*) AS cnt")
+        byType.select("resource_type AS targetType", "COUNT(*) AS cnt")
                 .eq("user_id", userId)
-                .groupBy("type");
+                .groupBy("resource_type");
         List<Map<String, Object>> byTargetType = usageRecordMapper.selectMaps(byType);
         counters.put("byTargetType", byTargetType != null ? byTargetType : List.of());
 
@@ -245,8 +245,8 @@ public class UserActivityServiceImpl implements UserActivityService {
                 userId);
         List<Map<String, Object>> publicRows = jdbcTemplate.queryForList(
                 "SELECT r.id, r.resource_code, r.display_name, r.description, r.status, r.update_time "
-                        + "FROM t_resource r LEFT JOIN t_resource_detail ext ON r.id = ext.resource_id AND ext.resource_type = 'skill' "
-                        + "WHERE r.deleted = 0 AND r.resource_type = 'skill' AND COALESCE(ext.is_public,0)=1 AND r.status='published' ORDER BY r.update_time DESC");
+                        + "FROM t_resource r "
+                        + "WHERE r.deleted = 0 AND r.resource_type = 'skill' AND COALESCE(r.is_public,0)=1 AND r.status='published' ORDER BY r.update_time DESC");
 
         Map<String, LocalDateTime> lastUsedAtByAgentName = new HashMap<>();
         List<UsageRecord> usageRows = usageRecordMapper.selectList(

@@ -147,15 +147,15 @@ public class GatewayGovernanceService {
         if ("agent".equals(type)) {
             limit = queryMaxConcurrency("""
                     SELECT CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.max_concurrency')) AS SIGNED) AS max_concurrency
-                    FROM t_resource_detail
-                    WHERE resource_id = ? AND resource_type = 'agent'
+                    FROM t_resource
+                    WHERE id = ? AND resource_type = 'agent' AND deleted = 0
                     LIMIT 1
                     """, resourceId);
         } else if ("skill".equals(type)) {
             limit = queryMaxConcurrency("""
                     SELECT CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.max_concurrency')) AS SIGNED) AS max_concurrency
-                    FROM t_resource_detail
-                    WHERE resource_id = ? AND resource_type = 'skill'
+                    FROM t_resource
+                    WHERE id = ? AND resource_type = 'skill' AND deleted = 0
                     LIMIT 1
                     """, resourceId);
         }

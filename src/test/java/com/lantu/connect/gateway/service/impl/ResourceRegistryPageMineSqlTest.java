@@ -68,7 +68,8 @@ class ResourceRegistryPageMineSqlTest {
         verify(jdbcTemplate).queryForObject(sqlCaptor.capture(), eq(Long.class), any(Object[].class));
         String countSql = sqlCaptor.getValue();
 
-        String marker = "NOT EXISTS (SELECT 1 FROM t_resource_detail app_detail";
+        assertFalse(countSql.contains("t_resource_detail"), countSql);
+        String marker = "JSON_EXTRACT(detail_json, '$.agent_exposure')";
         int occurrences = countSql.split(java.util.regex.Pattern.quote(marker), -1).length - 1;
         assertEquals(1, occurrences, countSql);
         assertFalse(countSql.contains(") )  AND resource_type = 'app'"), countSql);

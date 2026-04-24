@@ -72,7 +72,7 @@ class ResourceHealthServiceImplTest {
             if (sql.contains("FROM t_resource_runtime_policy")) {
                 return List.of(policy);
             }
-            if (sql.contains("FROM t_resource_detail")) {
+            if (sql.contains("JSON_EXTRACT(detail_json")) {
                 return List.of(detail);
             }
             if (sql.contains("FROM t_resource")) {

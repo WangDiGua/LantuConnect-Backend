@@ -33,7 +33,7 @@ DELETE FROM t_user_role_rel          WHERE user_id BETWEEN 90001 AND 90099;
 DELETE FROM t_login_history          WHERE user_id BETWEEN 90001 AND 90099;
 DELETE FROM t_favorite               WHERE user_id BETWEEN 90001 AND 90099;
 DELETE FROM t_notification           WHERE user_id BETWEEN 90001 AND 90099;
-DELETE FROM t_usage_record           WHERE user_id BETWEEN 90001 AND 90099;
+DELETE FROM t_call_log               WHERE user_id BETWEEN 90001 AND 90099;
 DELETE FROM t_review_helpful_rel     WHERE user_id BETWEEN 90001 AND 90099;
 DELETE FROM t_review                 WHERE user_id BETWEEN 90001 AND 90099;
 DELETE FROM t_sandbox_session        WHERE owner_user_id BETWEEN 90001 AND 90099;
@@ -55,7 +55,7 @@ DELETE FROM t_favorite             WHERE user_id = 6;
 DELETE FROM t_login_history        WHERE user_id = 6;
 DELETE FROM t_user_role_rel        WHERE user_id = 6;
 DELETE FROM t_developer_application WHERE user_id = 6;
-DELETE FROM t_usage_record         WHERE user_id = 6;
+DELETE FROM t_call_log             WHERE user_id = 6;
 DELETE FROM t_notification         WHERE user_id = 6;
 DELETE FROM t_sandbox_session      WHERE owner_user_id = 6;
 
@@ -143,7 +143,7 @@ DELETE FROM t_developer_application WHERE user_id = 5;
 DELETE FROM t_user_role_rel        WHERE user_id = 5;
 DELETE FROM t_favorite             WHERE user_id = 5;
 DELETE FROM t_login_history        WHERE user_id = 5;
-DELETE FROM t_usage_record         WHERE user_id = 5;
+DELETE FROM t_call_log             WHERE user_id = 5;
 DELETE FROM t_notification         WHERE user_id = 5;
 DELETE FROM t_user                 WHERE user_id = 5;
 

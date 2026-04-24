@@ -1,7 +1,7 @@
 /*
  Navicat Premium Data Transfer
 
- Source Server         : 王帝本地的MYSQL数据库
+ Source Server         : 鐜嬪笣鏈湴鐨凪YSQL鏁版嵁搴?
  Source Server Type    : MySQL
  Source Server Version : 80044 (8.0.44)
  Source Host           : localhost:3306
@@ -35,13 +35,13 @@ CREATE TABLE `t_alert_record`  (
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_alert_record_rule`(`rule_id` ASC) USING BTREE,
   CONSTRAINT `fk_alert_record_rule` FOREIGN KEY (`rule_id`) REFERENCES `t_alert_rule` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '告警记录表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '鍛婅璁板綍琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_alert_record
 -- ----------------------------
-INSERT INTO `t_alert_record` VALUES ('arec-001', 'ar-001', 'API延迟过高', 'warning', 'resolved', 'P95延迟达到3200ms，超过阈值3000ms', 'monitor-service', '{\"agent\": \"web-search\"}', '2026-03-21 07:50:00', '2026-03-21 08:10:00');
-INSERT INTO `t_alert_record` VALUES ('arec-002', 'ar-002', '错误率过高', 'critical', 'firing', '最近5分钟错误率6.2%，超过阈值5%', 'monitor-service', '{\"agent\": \"campus-qa\"}', '2026-03-21 14:00:00', NULL);
+INSERT INTO `t_alert_record` VALUES ('arec-001', 'ar-001', 'API寤惰繜杩囬珮', 'warning', 'resolved', 'P95寤惰繜杈惧埌3200ms锛岃秴杩囬槇鍊?000ms', 'monitor-service', '{\"agent\": \"web-search\"}', '2026-03-21 07:50:00', '2026-03-21 08:10:00');
+INSERT INTO `t_alert_record` VALUES ('arec-002', 'ar-002', '閿欒鐜囪繃楂?, 'critical', 'firing', '鏈€杩?鍒嗛挓閿欒鐜?.2%锛岃秴杩囬槇鍊?%', 'monitor-service', '{\"agent\": \"campus-qa\"}', '2026-03-21 14:00:00', NULL);
 
 -- ----------------------------
 -- Table structure for t_alert_record_action
@@ -80,13 +80,13 @@ CREATE TABLE `t_alert_rule`  (
   `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time` datetime NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '告警规则表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '鍛婅瑙勫垯琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_alert_rule
 -- ----------------------------
-INSERT INTO `t_alert_rule` VALUES ('ar-001', 'API延迟过高', 'P95延迟超过3秒时告警', 'api.latency.p95', 'gt', 3000.0000, '5m', 'warning', 1, '[]', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_alert_rule` VALUES ('ar-002', '错误率过高', '5分钟内错误率超过5%时告警', 'api.error_rate', 'gt', 5.0000, '5m', 'critical', 1, '[]', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_alert_rule` VALUES ('ar-001', 'API寤惰繜杩囬珮', 'P95寤惰繜瓒呰繃3绉掓椂鍛婅', 'api.latency.p95', 'gt', 3000.0000, '5m', 'warning', 1, '[]', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_alert_rule` VALUES ('ar-002', '閿欒鐜囪繃楂?, '5鍒嗛挓鍐呴敊璇巼瓒呰繃5%鏃跺憡璀?, 'api.error_rate', 'gt', 5.0000, '5m', 'critical', 1, '[]', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
 
 -- ----------------------------
 -- Table structure for t_announcement
@@ -94,20 +94,20 @@ INSERT INTO `t_alert_rule` VALUES ('ar-002', '错误率过高', '5分钟内错�
 DROP TABLE IF EXISTS `t_announcement`;
 CREATE TABLE `t_announcement`  (
   `id` bigint NOT NULL AUTO_INCREMENT,
-  `title` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '公告标题',
-  `summary` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '公告摘要',
-  `content` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL COMMENT '公告正文',
-  `type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'notice' COMMENT '类型：feature/maintenance/update/notice',
-  `pinned` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否置顶',
-  `enabled` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否对用户端展示',
-  `created_by` bigint NULL DEFAULT NULL COMMENT '创建者用户ID',
+  `title` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '鍏憡鏍囬',
+  `summary` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '鍏憡鎽樿',
+  `content` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL COMMENT '鍏憡姝ｆ枃',
+  `type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'notice' COMMENT '绫诲瀷锛歠eature/maintenance/update/notice',
+  `pinned` tinyint(1) NOT NULL DEFAULT 0 COMMENT '鏄惁缃《',
+  `enabled` tinyint(1) NOT NULL DEFAULT 1 COMMENT '鏄惁瀵圭敤鎴风灞曠ず',
+  `created_by` bigint NULL DEFAULT NULL COMMENT '鍒涘缓鑰呯敤鎴稩D',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `deleted` tinyint(1) NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+  `deleted` tinyint(1) NOT NULL DEFAULT 0 COMMENT '閫昏緫鍒犻櫎',
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_type`(`type` ASC) USING BTREE,
   INDEX `idx_pinned_create`(`pinned` DESC, `create_time` DESC) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '平台公告' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '骞冲彴鍏憡' ROW_FORMAT = Dynamic;
 
 -- ----------------------------
 -- Records of t_announcement
@@ -137,7 +137,7 @@ CREATE TABLE `t_api_key`  (
   INDEX `idx_api_key_owner`(`owner_type` ASC, `owner_id` ASC) USING BTREE,
   INDEX `idx_api_key_status`(`status` ASC) USING BTREE,
   INDEX `idx_api_key_prefix`(`prefix` ASC) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = 'API 密钥表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = 'API 瀵嗛挜琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_api_key
@@ -164,13 +164,13 @@ CREATE TABLE `t_audit_item`  (
   `review_time` datetime NULL DEFAULT NULL,
   `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 5 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '审核队列表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 5 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '瀹℃牳闃熷垪琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_audit_item
 -- ----------------------------
-INSERT INTO `t_audit_item` VALUES (1, 'agent', 5, '图像生成', 'image-gen', '根据文字描述生成高质量图像', 'http_api', 'cloud', '王开发', '2026-03-20 09:00:00', 'pending_review', NULL, NULL, NULL, '2026-03-22 10:58:54');
-INSERT INTO `t_audit_item` VALUES (2, 'mcp', 15, 'OCR 文字识别', 'ocr-recognize', '识别图片中的文字内容', 'http_api', 'cloud', '王开发', '2026-03-20 14:30:00', 'published', NULL, NULL, '2026-03-25 09:59:40', '2026-03-22 10:58:54');
+INSERT INTO `t_audit_item` VALUES (1, 'agent', 5, '鍥惧儚鐢熸垚', 'image-gen', '鏍规嵁鏂囧瓧鎻忚堪鐢熸垚楂樿川閲忓浘鍍?, 'http_api', 'cloud', '鐜嬪紑鍙?, '2026-03-20 09:00:00', 'pending_review', NULL, NULL, NULL, '2026-03-22 10:58:54');
+INSERT INTO `t_audit_item` VALUES (2, 'mcp', 15, 'OCR 鏂囧瓧璇嗗埆', 'ocr-recognize', '璇嗗埆鍥剧墖涓殑鏂囧瓧鍐呭', 'http_api', 'cloud', '鐜嬪紑鍙?, '2026-03-20 14:30:00', 'published', NULL, NULL, '2026-03-25 09:59:40', '2026-03-22 10:58:54');
 INSERT INTO `t_audit_item` VALUES (3, 'mcp', 29, 'Smoke MCP', 'smoke-mcp-1774368649', 'smoke test', 'mcp', 'internal', '1', '2026-03-25 00:10:49', 'published', NULL, NULL, '2026-03-25 00:10:50', '2026-03-25 00:10:49');
 INSERT INTO `t_audit_item` VALUES (4, 'mcp', 30, 'Smoke2 MCP', 'smoke2-mcp-1774368774', 'smoke test 2', 'mcp', 'internal', '1', '2026-03-25 00:12:54', 'published', NULL, NULL, '2026-03-25 00:12:55', '2026-03-25 00:12:54');
 
@@ -195,7 +195,7 @@ CREATE TABLE `t_audit_log`  (
   INDEX `idx_audit_log_action`(`action` ASC) USING BTREE,
   INDEX `idx_audit_log_resource`(`resource` ASC, `resource_id` ASC) USING BTREE,
   INDEX `idx_audit_log_time`(`create_time` ASC) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '审计日志表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '瀹¤鏃ュ織琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_audit_log
@@ -211,12 +211,12 @@ INSERT INTO `t_audit_log` VALUES ('5b47ed37-c525-4a13-99bf-26d5b348665d', '3', '
 INSERT INTO `t_audit_log` VALUES ('7731f037-da0d-4027-a073-848dd0324ec5', '1', 'user-1', 'resource_create', 'resource-center', NULL, 'elapsedMs=27', '0:0:0:0:0:0:0:1', NULL, 'success', '2026-03-25 00:12:55');
 INSERT INTO `t_audit_log` VALUES ('9594dce0-3963-4c65-90ed-4ad4d8c29a3f', '1', 'user-1', 'resource_submit', 'resource-center', NULL, 'elapsedMs=10', '0:0:0:0:0:0:0:1', NULL, 'success', '2026-03-25 00:10:50');
 INSERT INTO `t_audit_log` VALUES ('a5f50c5b-0a52-4095-bd33-aec7110ce0c2', '3', 'user-3', 'resource_deprecate', 'resource-center', NULL, 'elapsedMs=12', '0:0:0:0:0:0:0:1', NULL, 'success', '2026-03-25 09:28:39');
-INSERT INTO `t_audit_log` VALUES ('al-001', '1', 'admin', 'login', 'auth', NULL, '管理员登录', '10.0.0.1', NULL, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_audit_log` VALUES ('al-002', '1', 'admin', 'create_agent', 'agent', '1', '创建Agent：联网搜索', '10.0.0.1', NULL, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_audit_log` VALUES ('al-003', '1', 'admin', 'create_agent', 'agent', '2', '创建Agent：智能备课助手', '10.0.0.1', NULL, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_audit_log` VALUES ('al-004', '3', 'developer', 'create_agent', 'agent', '5', '创建Agent：图像生成', '10.0.0.2', NULL, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_audit_log` VALUES ('al-005', '1', 'admin', 'approve', 'audit', '1', '审核通过：联网搜索', '10.0.0.1', NULL, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_audit_log` VALUES ('al-006', '1', 'admin', 'update_system_param', 'system-config', 'session_timeout_minutes', '更新系统参数：会话超时（分钟）', '10.0.0.1', NULL, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_audit_log` VALUES ('al-001', '1', 'admin', 'login', 'auth', NULL, '绠＄悊鍛樼櫥褰?, '10.0.0.1', NULL, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_audit_log` VALUES ('al-002', '1', 'admin', 'create_agent', 'agent', '1', '鍒涘缓Agent锛氳仈缃戞悳绱?, '10.0.0.1', NULL, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_audit_log` VALUES ('al-003', '1', 'admin', 'create_agent', 'agent', '2', '鍒涘缓Agent锛氭櫤鑳藉璇惧姪鎵?, '10.0.0.1', NULL, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_audit_log` VALUES ('al-004', '3', 'developer', 'create_agent', 'agent', '5', '鍒涘缓Agent锛氬浘鍍忕敓鎴?, '10.0.0.2', NULL, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_audit_log` VALUES ('al-005', '1', 'admin', 'approve', 'audit', '1', '瀹℃牳閫氳繃锛氳仈缃戞悳绱?, '10.0.0.1', NULL, 'success', '2026-03-22 10:58:54');
+INSERT INTO `t_audit_log` VALUES ('al-006', '1', 'admin', 'update_system_param', 'system-config', 'session_timeout_minutes', '鏇存柊绯荤粺鍙傛暟锛氫細璇濊秴鏃讹紙鍒嗛挓锛?, '10.0.0.1', NULL, 'success', '2026-03-22 10:58:54');
 INSERT INTO `t_audit_log` VALUES ('b5767acb-d0bd-4c14-bea9-21a8c987505a', '1', 'user-1', 'resource_submit', 'resource-center', NULL, 'elapsedMs=10', '0:0:0:0:0:0:0:1', NULL, 'success', '2026-03-25 00:12:55');
 INSERT INTO `t_audit_log` VALUES ('be275927-affa-4f65-8818-558ce3e3d172', '1', 'user-1', 'resource_version_switch', 'resource-center', NULL, 'elapsedMs=8', '0:0:0:0:0:0:0:1', NULL, 'success', '2026-03-25 00:10:50');
 
@@ -225,13 +225,18 @@ INSERT INTO `t_audit_log` VALUES ('be275927-affa-4f65-8818-558ce3e3d172', '1', '
 -- ----------------------------
 DROP TABLE IF EXISTS `t_call_log`;
 CREATE TABLE `t_call_log`  (
+  `usage_id` bigint NOT NULL AUTO_INCREMENT COMMENT '浣跨敤璁板綍搴忓彿',
   `id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `trace_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `agent_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `agent_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `resource_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '网关调用目标资源类型',
+  `display_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '显示名称',
+  `resource_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '缃戝叧璋冪敤鐩爣璧勬簮绫诲瀷',
   `user_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `method` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `action` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT 'invoke' COMMENT '操作',
+  `input_preview` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL COMMENT '输入摘要',
+  `output_preview` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL COMMENT '输出摘要',
   `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `status_code` smallint NOT NULL,
   `latency_ms` int NOT NULL,
@@ -239,27 +244,28 @@ CREATE TABLE `t_call_log`  (
   `ip` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE INDEX `usage_id`(`usage_id` ASC) USING BTREE,
   INDEX `idx_call_log_trace`(`trace_id` ASC) USING BTREE,
   INDEX `idx_call_log_agent_time`(`agent_id` ASC, `create_time` ASC) USING BTREE,
   INDEX `idx_call_log_resource_agent_time`(`resource_type` ASC, `agent_id` ASC, `create_time` ASC) USING BTREE,
   INDEX `idx_call_log_user_time`(`user_id` ASC, `create_time` ASC) USING BTREE,
   INDEX `idx_call_log_status`(`status` ASC) USING BTREE,
   INDEX `idx_call_log_time`(`create_time` ASC) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '调用日志表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '璋冪敤鏃ュ織琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_call_log
 -- ----------------------------
-INSERT INTO `t_call_log` VALUES ('cl-001', 'trace-a001', '1', 'web-search', NULL, '4', 'POST /chat', 'success', 200, 1150, NULL, '10.0.0.1', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-002', 'trace-a002', '1', 'web-search', NULL, '4', 'POST /chat', 'success', 200, 980, NULL, '10.0.0.1', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-003', 'trace-a003', '2', 'smart-tutor', NULL, '3', 'POST /chat', 'success', 200, 2800, NULL, '10.0.0.2', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-004', 'trace-a004', '3', 'paper-polish', NULL, '3', 'POST /chat', 'success', 200, 3500, NULL, '10.0.0.2', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-005', 'trace-a005', '4', 'campus-qa', NULL, '4', 'POST /chat', 'success', 200, 650, NULL, '10.0.0.3', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-006', 'trace-a006', '6', 'code-assistant', NULL, '3', 'POST /chat', 'success', 200, 1900, NULL, '10.0.0.2', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-007', 'trace-a007', '1', 'web-search', NULL, '2', 'POST /chat', 'error', 500, 5200, NULL, '10.0.0.4', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-008', 'trace-a008', '6', 'code-assistant', NULL, '4', 'POST /chat', 'success', 200, 1600, NULL, '10.0.0.3', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-009', 'trace-a009', '2', 'smart-tutor', NULL, '2', 'POST /chat', 'success', 200, 2200, NULL, '10.0.0.4', '2026-03-22 10:58:54');
-INSERT INTO `t_call_log` VALUES ('cl-010', 'trace-a010', '4', 'campus-qa', NULL, '4', 'POST /chat', 'timeout', 504, 15000, NULL, '10.0.0.3', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` (`id`, `trace_id`, `agent_id`, `agent_name`, `resource_type`, `user_id`, `method`, `status`, `status_code`, `latency_ms`, `error_message`, `ip`, `create_time`) VALUES ('cl-001', 'trace-a001', '1', 'web-search', NULL, '4', 'POST /chat', 'success', 200, 1150, NULL, '10.0.0.1', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` (`id`, `trace_id`, `agent_id`, `agent_name`, `resource_type`, `user_id`, `method`, `status`, `status_code`, `latency_ms`, `error_message`, `ip`, `create_time`) VALUES ('cl-002', 'trace-a002', '1', 'web-search', NULL, '4', 'POST /chat', 'success', 200, 980, NULL, '10.0.0.1', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` (`id`, `trace_id`, `agent_id`, `agent_name`, `resource_type`, `user_id`, `method`, `status`, `status_code`, `latency_ms`, `error_message`, `ip`, `create_time`) VALUES ('cl-003', 'trace-a003', '2', 'smart-tutor', NULL, '3', 'POST /chat', 'success', 200, 2800, NULL, '10.0.0.2', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` (`id`, `trace_id`, `agent_id`, `agent_name`, `resource_type`, `user_id`, `method`, `status`, `status_code`, `latency_ms`, `error_message`, `ip`, `create_time`) VALUES ('cl-004', 'trace-a004', '3', 'paper-polish', NULL, '3', 'POST /chat', 'success', 200, 3500, NULL, '10.0.0.2', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` (`id`, `trace_id`, `agent_id`, `agent_name`, `resource_type`, `user_id`, `method`, `status`, `status_code`, `latency_ms`, `error_message`, `ip`, `create_time`) VALUES ('cl-005', 'trace-a005', '4', 'campus-qa', NULL, '4', 'POST /chat', 'success', 200, 650, NULL, '10.0.0.3', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` (`id`, `trace_id`, `agent_id`, `agent_name`, `resource_type`, `user_id`, `method`, `status`, `status_code`, `latency_ms`, `error_message`, `ip`, `create_time`) VALUES ('cl-006', 'trace-a006', '6', 'code-assistant', NULL, '3', 'POST /chat', 'success', 200, 1900, NULL, '10.0.0.2', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` (`id`, `trace_id`, `agent_id`, `agent_name`, `resource_type`, `user_id`, `method`, `status`, `status_code`, `latency_ms`, `error_message`, `ip`, `create_time`) VALUES ('cl-007', 'trace-a007', '1', 'web-search', NULL, '2', 'POST /chat', 'error', 500, 5200, NULL, '10.0.0.4', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` (`id`, `trace_id`, `agent_id`, `agent_name`, `resource_type`, `user_id`, `method`, `status`, `status_code`, `latency_ms`, `error_message`, `ip`, `create_time`) VALUES ('cl-008', 'trace-a008', '6', 'code-assistant', NULL, '4', 'POST /chat', 'success', 200, 1600, NULL, '10.0.0.3', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` (`id`, `trace_id`, `agent_id`, `agent_name`, `resource_type`, `user_id`, `method`, `status`, `status_code`, `latency_ms`, `error_message`, `ip`, `create_time`) VALUES ('cl-009', 'trace-a009', '2', 'smart-tutor', NULL, '2', 'POST /chat', 'success', 200, 2200, NULL, '10.0.0.4', '2026-03-22 10:58:54');
+INSERT INTO `t_call_log` (`id`, `trace_id`, `agent_id`, `agent_name`, `resource_type`, `user_id`, `method`, `status`, `status_code`, `latency_ms`, `error_message`, `ip`, `create_time`) VALUES ('cl-010', 'trace-a010', '4', 'campus-qa', NULL, '4', 'POST /chat', 'timeout', 504, 15000, NULL, '10.0.0.3', '2026-03-22 10:58:54');
 
 -- ----------------------------
 -- Table structure for t_developer_application
@@ -282,7 +288,7 @@ CREATE TABLE `t_developer_application`  (
   INDEX `idx_dev_apply_user`(`user_id` ASC) USING BTREE,
   INDEX `idx_dev_apply_status`(`status` ASC) USING BTREE,
   CONSTRAINT `fk_dev_apply_user` FOREIGN KEY (`user_id`) REFERENCES `t_user` (`user_id`) ON DELETE RESTRICT ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '开发者入驻申请表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '寮€鍙戣€呭叆椹荤敵璇疯〃' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_developer_application
@@ -301,7 +307,7 @@ CREATE TABLE `t_favorite`  (
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE INDEX `uk_favorite`(`user_id` ASC, `target_type` ASC, `target_id` ASC) USING BTREE,
   CONSTRAINT `fk_favorite_user` FOREIGN KEY (`user_id`) REFERENCES `t_user` (`user_id`) ON DELETE RESTRICT ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 10 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '收藏表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 10 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '鏀惰棌琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_favorite
@@ -327,14 +333,14 @@ CREATE TABLE `t_login_history`  (
   `login_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT 'password / cas / sms',
   `result` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT 'success / failure',
   `failure_reason` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
-  `location` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT 'IP归属地',
-  `device` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '设备信息',
-  `os` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '操作系统',
-  `browser` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '浏览器',
+  `location` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT 'IP褰掑睘鍦?,
+  `device` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '璁惧淇℃伅',
+  `os` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '鎿嶄綔绯荤粺',
+  `browser` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '娴忚鍣?,
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_login_history_user`(`user_id` ASC, `login_time` ASC) USING BTREE,
   INDEX `idx_login_history_time`(`login_time` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 76 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '登录历史表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 76 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '鐧诲綍鍘嗗彶琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_login_history
@@ -421,15 +427,15 @@ INSERT INTO `t_login_history` VALUES (75, 3, 'developer', '2026-03-25 17:47:15',
 DROP TABLE IF EXISTS `t_notification`;
 CREATE TABLE `t_notification`  (
   `id` bigint NOT NULL AUTO_INCREMENT,
-  `user_id` bigint NOT NULL COMMENT '接收用户ID, 0=广播',
-  `type` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT 'notice / alert / system / 业务事件码',
+  `user_id` bigint NOT NULL COMMENT '鎺ユ敹鐢ㄦ埛ID, 0=骞挎挱',
+  `type` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT 'notice / alert / system / 涓氬姟浜嬩欢鐮?,
   `category` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'notice' COMMENT 'workflow / notice / alert / system / security',
   `severity` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'info' COMMENT 'info / success / warning / error',
   `title` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `body` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
-  `source_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '来源类型: audit / alert / system_announce',
-  `source_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '来源资源ID',
-  `aggregate_key` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '同一用户内聚合流程主卡片的键',
+  `source_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '鏉ユ簮绫诲瀷: audit / alert / system_announce',
+  `source_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '鏉ユ簮璧勬簮ID',
+  `aggregate_key` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '鍚屼竴鐢ㄦ埛鍐呰仛鍚堟祦绋嬩富鍗＄墖鐨勯敭',
   `flow_status` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT 'running / success / failed / warning',
   `current_step` int NULL DEFAULT NULL,
   `total_steps` int NULL DEFAULT NULL,
@@ -447,14 +453,14 @@ CREATE TABLE `t_notification`  (
   INDEX `idx_notification_aggregate`(`user_id` ASC, `aggregate_key` ASC) USING BTREE,
   INDEX `idx_notification_category`(`user_id` ASC, `category` ASC, `is_read` ASC) USING BTREE,
   INDEX `idx_notification_last_event`(`user_id` ASC, `last_event_time` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 4 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '通知表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 4 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '閫氱煡琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_notification
 -- ----------------------------
-INSERT INTO `t_notification` (`id`, `user_id`, `type`, `category`, `severity`, `title`, `body`, `source_type`, `source_id`, `is_read`, `create_time`, `update_time`, `last_event_time`) VALUES (1, 0, 'system', 'system', 'info', '系统维护公告', '兰智通平台将于2026年3月25日凌晨2:00-4:00进行系统维护升级，届时服务将暂停。', 'system_announce', NULL, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_notification` (`id`, `user_id`, `type`, `category`, `severity`, `title`, `body`, `source_type`, `source_id`, `is_read`, `create_time`, `update_time`, `last_event_time`) VALUES (2, 3, 'notice', 'notice', 'info', '您的 Agent「图像生成」已提交审核', '您提交的 Agent「图像生成」正在等待管理员审核，预计1-2个工作日内完成。', 'audit', '5', 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_notification` (`id`, `user_id`, `type`, `category`, `severity`, `title`, `body`, `source_type`, `source_id`, `is_read`, `create_time`, `update_time`, `last_event_time`) VALUES (3, 3, 'notice', 'notice', 'info', '您的 Skill「OCR 文字识别」已提交审核', '您提交的 Skill「OCR 文字识别」正在等待审核。', 'audit', '8', 1, '2026-03-22 10:58:54', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_notification` (`id`, `user_id`, `type`, `category`, `severity`, `title`, `body`, `source_type`, `source_id`, `is_read`, `create_time`, `update_time`, `last_event_time`) VALUES (1, 0, 'system', 'system', 'info', '绯荤粺缁存姢鍏憡', '鍏版櫤閫氬钩鍙板皢浜?026骞?鏈?5鏃ュ噷鏅?:00-4:00杩涜绯荤粺缁存姢鍗囩骇锛屽眾鏃舵湇鍔″皢鏆傚仠銆?, 'system_announce', NULL, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_notification` (`id`, `user_id`, `type`, `category`, `severity`, `title`, `body`, `source_type`, `source_id`, `is_read`, `create_time`, `update_time`, `last_event_time`) VALUES (2, 3, 'notice', 'notice', 'info', '鎮ㄧ殑 Agent銆屽浘鍍忕敓鎴愩€嶅凡鎻愪氦瀹℃牳', '鎮ㄦ彁浜ょ殑 Agent銆屽浘鍍忕敓鎴愩€嶆鍦ㄧ瓑寰呯鐞嗗憳瀹℃牳锛岄璁?-2涓伐浣滄棩鍐呭畬鎴愩€?, 'audit', '5', 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_notification` (`id`, `user_id`, `type`, `category`, `severity`, `title`, `body`, `source_type`, `source_id`, `is_read`, `create_time`, `update_time`, `last_event_time`) VALUES (3, 3, 'notice', 'notice', 'info', '鎮ㄧ殑 Skill銆孫CR 鏂囧瓧璇嗗埆銆嶅凡鎻愪氦瀹℃牳', '鎮ㄦ彁浜ょ殑 Skill銆孫CR 鏂囧瓧璇嗗埆銆嶆鍦ㄧ瓑寰呭鏍搞€?, 'audit', '8', 1, '2026-03-22 10:58:54', '2026-03-22 10:58:54', '2026-03-22 10:58:54');
 
 -- ----------------------------
 -- Table structure for t_org_menu
@@ -472,17 +478,17 @@ CREATE TABLE `t_org_menu`  (
   `update_time` datetime NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`menu_id`) USING BTREE,
   INDEX `idx_org_menu_parent`(`menu_parent_id` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 7 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '组织架构表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 7 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '缁勭粐鏋舵瀯琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_org_menu
 -- ----------------------------
-INSERT INTO `t_org_menu` VALUES (1, '兰州大学', 0, 1, 0, 35000, 1, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_org_menu` VALUES (2, '计算机学院', 1, 2, 1, 2800, 1, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_org_menu` VALUES (3, '信息技术中心', 1, 2, 0, 120, 2, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_org_menu` VALUES (4, '教务处', 1, 2, 0, 80, 3, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_org_menu` VALUES (5, '数学与统计学院', 1, 2, 1, 1500, 4, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_org_menu` VALUES (6, '外国语学院', 1, 2, 1, 1200, 5, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_org_menu` VALUES (1, '鍏板窞澶у', 0, 1, 0, 35000, 1, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_org_menu` VALUES (2, '璁＄畻鏈哄闄?, 1, 2, 1, 2800, 1, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_org_menu` VALUES (3, '淇℃伅鎶€鏈腑蹇?, 1, 2, 0, 120, 2, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_org_menu` VALUES (4, '鏁欏姟澶?, 1, 2, 0, 80, 3, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_org_menu` VALUES (5, '鏁板涓庣粺璁″闄?, 1, 2, 1, 1500, 4, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_org_menu` VALUES (6, '澶栧浗璇闄?, 1, 2, 1, 1200, 5, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
 
 -- ----------------------------
 -- Table structure for t_platform_role
@@ -500,15 +506,15 @@ CREATE TABLE `t_platform_role`  (
   `update_time` datetime NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE INDEX `uk_role_code`(`role_code` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 6 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '平台角色表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 6 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '骞冲彴瑙掕壊琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_platform_role
 -- ----------------------------
-INSERT INTO `t_platform_role` VALUES (1, 'platform_admin', '平台管理员', '拥有所有操作权限', '[\"agent:read\", \"agent:create\", \"agent:update\", \"agent:delete\", \"agent:publish\", \"agent:audit\", \"skill:read\", \"skill:create\", \"skill:update\", \"skill:delete\", \"skill:publish\", \"skill:audit\", \"app:view\", \"app:create\", \"app:update\", \"app:delete\", \"dataset:read\", \"dataset:create\", \"dataset:update\", \"dataset:delete\", \"dataset:apply\", \"user:manage\", \"user:read\", \"user:create\", \"user:update\", \"user:delete\", \"role:read\", \"role:create\", \"role:update\", \"role:delete\", \"apikey:read\", \"apikey:create\", \"apikey:delete\", \"org:read\", \"org:create\", \"org:update\", \"org:delete\", \"system:config\", \"monitor:view\", \"audit:manage\"]', 1, 1, '2026-03-24 11:37:43', '2026-03-24 11:37:43');
-INSERT INTO `t_platform_role` VALUES (2, 'dept_admin', '部门管理员', '本部门资源管理与用户查看', '[\"agent:read\", \"agent:create\", \"agent:update\", \"agent:audit\", \"skill:read\", \"skill:create\", \"skill:update\", \"skill:audit\", \"app:view\", \"dataset:read\", \"dataset:create\", \"dataset:update\", \"dataset:apply\", \"user:manage\", \"user:read\", \"user:create\", \"user:update\", \"role:read\", \"org:read\", \"monitor:view\"]', 1, 1, '2026-03-24 11:37:43', '2026-03-24 11:37:43');
-INSERT INTO `t_platform_role` VALUES (3, 'developer', '开发者', 'Agent/Skill 创建与发布', '[\"agent:read\", \"agent:create\", \"agent:update\", \"agent:publish\", \"skill:read\", \"skill:create\", \"skill:update\", \"skill:publish\", \"app:view\", \"dataset:read\", \"dataset:apply\"]', 1, 1, '2026-03-24 11:37:43', '2026-03-24 11:37:43');
-INSERT INTO `t_platform_role` VALUES (4, 'consumer', '消费者', '目录与市场只读（五类资源浏览；mcp 与 skill 共用 skill:read）', '[\"agent:read\", \"skill:read\", \"app:view\", \"dataset:read\"]', 1, 0, '2026-04-03 00:00:00', '2026-04-03 00:00:00');
+INSERT INTO `t_platform_role` VALUES (1, 'platform_admin', '骞冲彴绠＄悊鍛?, '鎷ユ湁鎵€鏈夋搷浣滄潈闄?, '[\"agent:read\", \"agent:create\", \"agent:update\", \"agent:delete\", \"agent:publish\", \"agent:audit\", \"skill:read\", \"skill:create\", \"skill:update\", \"skill:delete\", \"skill:publish\", \"skill:audit\", \"app:view\", \"app:create\", \"app:update\", \"app:delete\", \"dataset:read\", \"dataset:create\", \"dataset:update\", \"dataset:delete\", \"dataset:apply\", \"user:manage\", \"user:read\", \"user:create\", \"user:update\", \"user:delete\", \"role:read\", \"role:create\", \"role:update\", \"role:delete\", \"apikey:read\", \"apikey:create\", \"apikey:delete\", \"org:read\", \"org:create\", \"org:update\", \"org:delete\", \"system:config\", \"monitor:view\", \"audit:manage\"]', 1, 1, '2026-03-24 11:37:43', '2026-03-24 11:37:43');
+INSERT INTO `t_platform_role` VALUES (2, 'dept_admin', '閮ㄩ棬绠＄悊鍛?, '鏈儴闂ㄨ祫婧愮鐞嗕笌鐢ㄦ埛鏌ョ湅', '[\"agent:read\", \"agent:create\", \"agent:update\", \"agent:audit\", \"skill:read\", \"skill:create\", \"skill:update\", \"skill:audit\", \"app:view\", \"dataset:read\", \"dataset:create\", \"dataset:update\", \"dataset:apply\", \"user:manage\", \"user:read\", \"user:create\", \"user:update\", \"role:read\", \"org:read\", \"monitor:view\"]', 1, 1, '2026-03-24 11:37:43', '2026-03-24 11:37:43');
+INSERT INTO `t_platform_role` VALUES (3, 'developer', '寮€鍙戣€?, 'Agent/Skill 鍒涘缓涓庡彂甯?, '[\"agent:read\", \"agent:create\", \"agent:update\", \"agent:publish\", \"skill:read\", \"skill:create\", \"skill:update\", \"skill:publish\", \"app:view\", \"dataset:read\", \"dataset:apply\"]', 1, 1, '2026-03-24 11:37:43', '2026-03-24 11:37:43');
+INSERT INTO `t_platform_role` VALUES (4, 'consumer', '娑堣垂鑰?, '鐩綍涓庡競鍦哄彧璇伙紙浜旂被璧勬簮娴忚锛沵cp 涓?skill 鍏辩敤 skill:read锛?, '[\"agent:read\", \"skill:read\", \"app:view\", \"dataset:read\"]', 1, 0, '2026-04-03 00:00:00', '2026-04-03 00:00:00');
 
 -- ----------------------------
 -- Table structure for t_rate_limit_rule
@@ -530,14 +536,14 @@ CREATE TABLE `t_rate_limit_rule`  (
   `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time` datetime NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '限流规则表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '闄愭祦瑙勫垯琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_rate_limit_rule
 -- ----------------------------
-INSERT INTO `t_rate_limit_rule` VALUES ('rl-001', '全局默认限流', 'global', NULL, NULL, 60000, 100, 50000, 20, 'throttle', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_rate_limit_rule` VALUES ('rl-002', '单用户限流', 'user', NULL, NULL, 60000, 30, 10000, 10, 'reject', 1, 10, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_rate_limit_rule` VALUES ('rl-003', '管理员豁免', 'role', 'platform_admin', NULL, 60000, 9999, 999999, 999, 'reject', 1, 20, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_rate_limit_rule` VALUES ('rl-001', '鍏ㄥ眬榛樿闄愭祦', 'global', NULL, NULL, 60000, 100, 50000, 20, 'throttle', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_rate_limit_rule` VALUES ('rl-002', '鍗曠敤鎴烽檺娴?, 'user', NULL, NULL, 60000, 30, 10000, 10, 'reject', 1, 10, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_rate_limit_rule` VALUES ('rl-003', '绠＄悊鍛樿眮鍏?, 'role', 'platform_admin', NULL, 60000, 9999, 999999, 999, 'reject', 1, 20, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
 
 -- ----------------------------
 -- Table structure for t_resource
@@ -552,6 +558,10 @@ CREATE TABLE `t_resource`  (
   `status` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'draft',
   `source_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
   `access_policy` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'open_platform',
+  `view_count` bigint NOT NULL DEFAULT '0' COMMENT '浏览次数',
+  `is_public` tinyint(1) NULL DEFAULT NULL COMMENT '是否公开',
+  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL COMMENT '服务详情',
+  `detail_json` json NULL COMMENT '扩展配置',
   `created_by` bigint NULL DEFAULT NULL,
   `deleted` smallint NULL DEFAULT 0,
   `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
@@ -560,32 +570,32 @@ CREATE TABLE `t_resource`  (
   UNIQUE INDEX `uk_resource_type_code`(`resource_type` ASC, `resource_code` ASC) USING BTREE,
   INDEX `idx_resource_type_status`(`resource_type` ASC, `status` ASC) USING BTREE,
   INDEX `idx_resource_update_time`(`update_time` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 32 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '统一资源主表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 32 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '缁熶竴璧勬簮涓昏〃' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_resource
 -- ----------------------------
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (1, 'agent', 'web-search', '联网搜索', '通过搜索引擎实时检索互联网信息并汇总回答', 'published', 'cloud', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (2, 'agent', 'smart-tutor', '智能备课助手', '辅助教师快速生成教案、课件大纲和教学活动设计', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (3, 'agent', 'paper-polish', '论文润色', '对学术论文进行语言润色、格式规范和学术表达优化', 'published', 'cloud', 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (4, 'agent', 'campus-qa', '校园问答', '回答校园生活、教务政策、办事流程等常见问题', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (5, 'agent', 'image-gen', '图像生成', '根据文字描述生成高质量图像', 'draft', 'cloud', 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (6, 'agent', 'code-assistant', '代码助手', '辅助编写、调试和解释代码，支持多种编程语言', 'published', 'cloud', 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (8, 'mcp', 'lantu-mcp-server', '兰智通 MCP Server', '兰智通平台内置 MCP 工具集合，提供知识库检索、文档生成等能力', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-25 09:59:40');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (9, 'mcp', 'local-kb-search', '本地知识库搜索', '在校内知识库中检索相关文档和信息', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (10, 'mcp', 'word-gen', 'Word文档生成', '根据输入内容自动生成规范的 Word 文档', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (11, 'mcp', 'ppt-gen', 'PPT生成', '根据主题和大纲自动生成演示文稿', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (12, 'mcp', 'schedule-query', '日程查询', '查询个人或部门的日程安排', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (13, 'mcp', 'data-analysis', '数据分析工具', '对上传的结构化数据进行统计分析和可视化', 'published', 'cloud', 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (14, 'mcp', 'translate', '多语言翻译', '支持中英日韩等多语言互译', 'published', 'cloud', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (15, 'mcp', 'ocr-recognize', 'OCR 文字识别', '识别图片中的文字内容', 'deprecated', 'cloud', 3, 0, '2026-03-22 10:58:54', '2026-03-25 09:28:55');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (23, 'app', 'campus-card', '校园一卡通查询', '查询校园卡余额、消费记录和充值', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (24, 'app', 'library-seat', '图书馆座位预约', '在线预约图书馆自习座位', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (25, 'app', 'course-table', '课表查询', '查看个人课程表和考试安排', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (26, 'dataset', 'cs-papers-2026', '计算机论文库2026', '2026年度计算机领域核心期刊论文集', 'deprecated', 'knowledge', 3, 0, '2026-03-22 10:58:54', '2026-03-25 09:28:38');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (27, 'dataset', 'student-scores', '学生成绩数据', '近三年全校本科生成绩统计数据（脱敏）', 'published', 'department', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (28, 'dataset', 'campus-news-corpus', '校园新闻语料', '兰州大学官网新闻语料库（用于NLP训练）', 'published', 'knowledge', 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (31, 'skill', 'demo-skill-pack', '示例 Anthropic 技能包', '演示用可下载技能包（非远程 MCP）', 'published', 'internal', 1, 0, '2026-03-31 12:00:00', '2026-03-31 12:00:00');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (1, 'agent', 'web-search', '鑱旂綉鎼滅储', '閫氳繃鎼滅储寮曟搸瀹炴椂妫€绱簰鑱旂綉淇℃伅骞舵眹鎬诲洖绛?, 'published', 'cloud', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (2, 'agent', 'smart-tutor', '鏅鸿兘澶囪鍔╂墜', '杈呭姪鏁欏笀蹇€熺敓鎴愭暀妗堛€佽浠跺ぇ绾插拰鏁欏娲诲姩璁捐', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (3, 'agent', 'paper-polish', '璁烘枃娑﹁壊', '瀵瑰鏈鏂囪繘琛岃瑷€娑﹁壊銆佹牸寮忚鑼冨拰瀛︽湳琛ㄨ揪浼樺寲', 'published', 'cloud', 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (4, 'agent', 'campus-qa', '鏍″洯闂瓟', '鍥炵瓟鏍″洯鐢熸椿銆佹暀鍔℃斂绛栥€佸姙浜嬫祦绋嬬瓑甯歌闂', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (5, 'agent', 'image-gen', '鍥惧儚鐢熸垚', '鏍规嵁鏂囧瓧鎻忚堪鐢熸垚楂樿川閲忓浘鍍?, 'draft', 'cloud', 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (6, 'agent', 'code-assistant', '浠ｇ爜鍔╂墜', '杈呭姪缂栧啓銆佽皟璇曞拰瑙ｉ噴浠ｇ爜锛屾敮鎸佸绉嶇紪绋嬭瑷€', 'published', 'cloud', 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (8, 'mcp', 'lantu-mcp-server', '鍏版櫤閫?MCP Server', '鍏版櫤閫氬钩鍙板唴缃?MCP 宸ュ叿闆嗗悎锛屾彁渚涚煡璇嗗簱妫€绱€佹枃妗ｇ敓鎴愮瓑鑳藉姏', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-25 09:59:40');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (9, 'mcp', 'local-kb-search', '鏈湴鐭ヨ瘑搴撴悳绱?, '鍦ㄦ牎鍐呯煡璇嗗簱涓绱㈢浉鍏虫枃妗ｅ拰淇℃伅', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (10, 'mcp', 'word-gen', 'Word鏂囨。鐢熸垚', '鏍规嵁杈撳叆鍐呭鑷姩鐢熸垚瑙勮寖鐨?Word 鏂囨。', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (11, 'mcp', 'ppt-gen', 'PPT鐢熸垚', '鏍规嵁涓婚鍜屽ぇ绾茶嚜鍔ㄧ敓鎴愭紨绀烘枃绋?, 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (12, 'mcp', 'schedule-query', '鏃ョ▼鏌ヨ', '鏌ヨ涓汉鎴栭儴闂ㄧ殑鏃ョ▼瀹夋帓', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (13, 'mcp', 'data-analysis', '鏁版嵁鍒嗘瀽宸ュ叿', '瀵逛笂浼犵殑缁撴瀯鍖栨暟鎹繘琛岀粺璁″垎鏋愬拰鍙鍖?, 'published', 'cloud', 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (14, 'mcp', 'translate', '澶氳瑷€缈昏瘧', '鏀寔涓嫳鏃ラ煩绛夊璇█浜掕瘧', 'published', 'cloud', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (15, 'mcp', 'ocr-recognize', 'OCR 鏂囧瓧璇嗗埆', '璇嗗埆鍥剧墖涓殑鏂囧瓧鍐呭', 'deprecated', 'cloud', 3, 0, '2026-03-22 10:58:54', '2026-03-25 09:28:55');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (23, 'app', 'campus-card', '鏍″洯涓€鍗￠€氭煡璇?, '鏌ヨ鏍″洯鍗′綑棰濄€佹秷璐硅褰曞拰鍏呭€?, 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (24, 'app', 'library-seat', '鍥句功棣嗗骇浣嶉绾?, '鍦ㄧ嚎棰勭害鍥句功棣嗚嚜涔犲骇浣?, 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (25, 'app', 'course-table', '璇捐〃鏌ヨ', '鏌ョ湅涓汉璇剧▼琛ㄥ拰鑰冭瘯瀹夋帓', 'published', 'internal', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (26, 'dataset', 'cs-papers-2026', '璁＄畻鏈鸿鏂囧簱2026', '2026骞村害璁＄畻鏈洪鍩熸牳蹇冩湡鍒婅鏂囬泦', 'deprecated', 'knowledge', 3, 0, '2026-03-22 10:58:54', '2026-03-25 09:28:38');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (27, 'dataset', 'student-scores', '瀛︾敓鎴愮哗鏁版嵁', '杩戜笁骞村叏鏍℃湰绉戠敓鎴愮哗缁熻鏁版嵁锛堣劚鏁忥級', 'published', 'department', 1, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (28, 'dataset', 'campus-news-corpus', '鏍″洯鏂伴椈璇枡', '鍏板窞澶у瀹樼綉鏂伴椈璇枡搴擄紙鐢ㄤ簬NLP璁粌锛?, 'published', 'knowledge', 3, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (31, 'skill', 'demo-skill-pack', '绀轰緥 Anthropic 鎶€鑳藉寘', '婕旂ず鐢ㄥ彲涓嬭浇鎶€鑳藉寘锛堥潪杩滅▼ MCP锛?, 'published', 'internal', 1, 0, '2026-03-31 12:00:00', '2026-03-31 12:00:00');
 INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (29, 'mcp', 'smoke-mcp-1774368649', 'Smoke MCP', 'smoke test', 'published', 'internal', 1, 0, '2026-03-25 00:10:50', '2026-03-25 00:10:50');
 INSERT INTO `t_resource` (`id`, `resource_type`, `resource_code`, `display_name`, `description`, `status`, `source_type`, `created_by`, `deleted`, `create_time`, `update_time`) VALUES (30, 'mcp', 'smoke2-mcp-1774368774', 'Smoke2 MCP', 'smoke test 2', 'published', 'internal', 1, 0, '2026-03-25 00:12:55', '2026-03-25 00:12:55');
 
@@ -604,23 +614,23 @@ CREATE TABLE `t_resource_agent_ext`  (
   `max_steps` int NULL DEFAULT NULL,
   `temperature` decimal(3, 2) NULL DEFAULT NULL,
   `system_prompt` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
-  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '介绍 Markdown（选填）',
+  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '浠嬬粛 Markdown锛堥€夊～锛?,
   `featured` tinyint(1) NULL DEFAULT 0,
   `rating_avg` decimal(3, 2) NULL DEFAULT 0.00,
   `rating_count` int NULL DEFAULT 0,
   PRIMARY KEY (`resource_id`) USING BTREE,
   CONSTRAINT `fk_resource_agent_ext_resource` FOREIGN KEY (`resource_id`) REFERENCES `t_resource` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源-Agent扩展表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '璧勬簮-Agent鎵╁睍琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_resource_agent_ext
 -- ----------------------------
-INSERT INTO `t_resource_agent_ext` VALUES (1, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.search.com/v1\", \"timeout\": 30}', 1, 0, 20, NULL, NULL, '你是一个联网搜索助手，请根据用户问题搜索最新信息并归纳回答。', NULL, 0, 0.00, 0);
-INSERT INTO `t_resource_agent_ext` VALUES (2, 'http_api', 'SUBAGENT', '{\"url\": \"http://ai.lzu.edu.cn/tutor\", \"timeout\": 60}', 1, 0, 10, NULL, NULL, '你是一个教学助手，请根据课程名称和教学目标生成详细教案。', NULL, 0, 0.00, 0);
-INSERT INTO `t_resource_agent_ext` VALUES (3, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.polish.com/v1\", \"timeout\": 90}', 1, 0, 15, NULL, NULL, '你是一个学术写作助手，请对输入的论文段落进行润色。', NULL, 0, 0.00, 0);
-INSERT INTO `t_resource_agent_ext` VALUES (4, 'builtin', 'SUBAGENT', '{\"url\": \"http://ai.lzu.edu.cn/qa\", \"timeout\": 15}', 1, 0, 30, NULL, NULL, '你是兰州大学的校园助手，请回答同学们的校园生活问题。', NULL, 0, 0.00, 0);
-INSERT INTO `t_resource_agent_ext` VALUES (5, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.image.com/v1\", \"timeout\": 120}', 0, 0, 5, NULL, NULL, '你是一个图像生成助手，请根据用户的描述生成对应的图片。', NULL, 0, 0.00, 0);
-INSERT INTO `t_resource_agent_ext` VALUES (6, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.code.com/v1\", \"timeout\": 60}', 1, 0, 20, NULL, NULL, '你是一个编程助手，请帮助用户编写和调试代码。', NULL, 0, 0.00, 0);
+INSERT INTO `t_resource_agent_ext` VALUES (1, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.search.com/v1\", \"timeout\": 30}', 1, 0, 20, NULL, NULL, '浣犳槸涓€涓仈缃戞悳绱㈠姪鎵嬶紝璇锋牴鎹敤鎴烽棶棰樻悳绱㈡渶鏂颁俊鎭苟褰掔撼鍥炵瓟銆?, NULL, 0, 0.00, 0);
+INSERT INTO `t_resource_agent_ext` VALUES (2, 'http_api', 'SUBAGENT', '{\"url\": \"http://ai.lzu.edu.cn/tutor\", \"timeout\": 60}', 1, 0, 10, NULL, NULL, '浣犳槸涓€涓暀瀛﹀姪鎵嬶紝璇锋牴鎹绋嬪悕绉板拰鏁欏鐩爣鐢熸垚璇︾粏鏁欐銆?, NULL, 0, 0.00, 0);
+INSERT INTO `t_resource_agent_ext` VALUES (3, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.polish.com/v1\", \"timeout\": 90}', 1, 0, 15, NULL, NULL, '浣犳槸涓€涓鏈啓浣滃姪鎵嬶紝璇峰杈撳叆鐨勮鏂囨钀借繘琛屾鼎鑹层€?, NULL, 0, 0.00, 0);
+INSERT INTO `t_resource_agent_ext` VALUES (4, 'builtin', 'SUBAGENT', '{\"url\": \"http://ai.lzu.edu.cn/qa\", \"timeout\": 15}', 1, 0, 30, NULL, NULL, '浣犳槸鍏板窞澶у鐨勬牎鍥姪鎵嬶紝璇峰洖绛斿悓瀛︿滑鐨勬牎鍥敓娲婚棶棰樸€?, NULL, 0, 0.00, 0);
+INSERT INTO `t_resource_agent_ext` VALUES (5, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.image.com/v1\", \"timeout\": 120}', 0, 0, 5, NULL, NULL, '浣犳槸涓€涓浘鍍忕敓鎴愬姪鎵嬶紝璇锋牴鎹敤鎴风殑鎻忚堪鐢熸垚瀵瑰簲鐨勫浘鐗囥€?, NULL, 0, 0.00, 0);
+INSERT INTO `t_resource_agent_ext` VALUES (6, 'http_api', 'SUBAGENT', '{\"url\": \"https://api.code.com/v1\", \"timeout\": 60}', 1, 0, 20, NULL, NULL, '浣犳槸涓€涓紪绋嬪姪鎵嬶紝璇峰府鍔╃敤鎴风紪鍐欏拰璋冭瘯浠ｇ爜銆?, NULL, 0, 0.00, 0);
 
 -- ----------------------------
 -- Table structure for t_resource_app_ext
@@ -633,12 +643,12 @@ CREATE TABLE `t_resource_app_ext`  (
   `icon` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
   `screenshots` json NULL,
   `is_public` tinyint(1) NULL DEFAULT 0,
-  `agent_exposure` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '椤甸潰鍨?Agent 鏆撮湶褰㈡€侊紱unified_agent 琛ㄧず绾冲叆 Agent 瑙嗗浘',
-  `agent_delivery_mode` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '椤甸潰鍨?Agent 浜ゅ粯妯″紡锛屽綋鍓嶄粎 page',
-  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '应用介绍 Markdown（选填）',
+  `agent_exposure` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '妞ょ敻娼伴崹?Agent 閺嗘挳婀惰ぐ銏♀偓渚婄幢unified_agent 鐞涖劎銇氱痪鍐插弳 Agent 鐟欏棗娴?,
+  `agent_delivery_mode` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '妞ょ敻娼伴崹?Agent 娴溿倕绮Ο鈥崇础閿涘苯缍嬮崜宥勭矌 page',
+  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '搴旂敤浠嬬粛 Markdown锛堥€夊～锛?,
   PRIMARY KEY (`resource_id`) USING BTREE,
   CONSTRAINT `fk_resource_app_ext_resource` FOREIGN KEY (`resource_id`) REFERENCES `t_resource` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源-App扩展表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '璧勬簮-App鎵╁睍琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_resource_app_ext
@@ -672,13 +682,13 @@ CREATE TABLE `t_resource_circuit_breaker`  (
   UNIQUE INDEX `uk_resource_cb_resource`(`resource_id` ASC) USING BTREE,
   INDEX `idx_resource_cb_state`(`current_state` ASC) USING BTREE,
   INDEX `idx_resource_cb_type_code`(`resource_type` ASC, `resource_code` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 4 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源熔断配置表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 4 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '璧勬簮鐔旀柇閰嶇疆琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_resource_circuit_breaker
 -- ----------------------------
-INSERT INTO `t_resource_circuit_breaker` VALUES (1, 4, 'agent', 'campus-qa', '校园问答', 'HALF_OPEN', 5, 60, 3, NULL, '校园问答服务暂时不可用，请稍后重试', NULL, 25000, 180, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
-INSERT INTO `t_resource_circuit_breaker` VALUES (2, 5, 'agent', 'image-gen', '图像生成', 'CLOSED', 5, 60, 3, NULL, '图像生成服务暂时不可用，请稍后重试', NULL, 0, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource_circuit_breaker` VALUES (1, 4, 'agent', 'campus-qa', '鏍″洯闂瓟', 'HALF_OPEN', 5, 60, 3, NULL, '鏍″洯闂瓟鏈嶅姟鏆傛椂涓嶅彲鐢紝璇风◢鍚庨噸璇?, NULL, 25000, 180, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
+INSERT INTO `t_resource_circuit_breaker` VALUES (2, 5, 'agent', 'image-gen', '鍥惧儚鐢熸垚', 'CLOSED', 5, 60, 3, NULL, '鍥惧儚鐢熸垚鏈嶅姟鏆傛椂涓嶅彲鐢紝璇风◢鍚庨噸璇?, NULL, 0, 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54');
 
 -- ----------------------------
 -- Table structure for t_resource_dataset_ext
@@ -692,17 +702,17 @@ CREATE TABLE `t_resource_dataset_ext`  (
   `file_size` bigint NULL DEFAULT 0,
   `tags` json NULL,
   `is_public` tinyint(1) NULL DEFAULT 0,
-  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '数据集介绍 Markdown（选填）',
+  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '鏁版嵁闆嗕粙缁?Markdown锛堥€夊～锛?,
   PRIMARY KEY (`resource_id`) USING BTREE,
   CONSTRAINT `fk_resource_dataset_ext_resource` FOREIGN KEY (`resource_id`) REFERENCES `t_resource` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源-Dataset扩展表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '璧勬簮-Dataset鎵╁睍琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_resource_dataset_ext
 -- ----------------------------
-INSERT INTO `t_resource_dataset_ext` VALUES (26, 'document', 'pdf', 12500, 5368709120, '[\"论文\", \"计算机\", \"学术\"]', 0, NULL);
-INSERT INTO `t_resource_dataset_ext` VALUES (27, 'structured', 'csv', 856000, 134217728, '[\"成绩\", \"统计\", \"教务\"]', 0, NULL);
-INSERT INTO `t_resource_dataset_ext` VALUES (28, 'document', 'json', 45000, 268435456, '[\"新闻\", \"NLP\", \"语料\"]', 1, NULL);
+INSERT INTO `t_resource_dataset_ext` VALUES (26, 'document', 'pdf', 12500, 5368709120, '[\"璁烘枃\", \"璁＄畻鏈篭", \"瀛︽湳\"]', 0, NULL);
+INSERT INTO `t_resource_dataset_ext` VALUES (27, 'structured', 'csv', 856000, 134217728, '[\"鎴愮哗\", \"缁熻\", \"鏁欏姟\"]', 0, NULL);
+INSERT INTO `t_resource_dataset_ext` VALUES (28, 'document', 'json', 45000, 268435456, '[\"鏂伴椈\", \"NLP\", \"璇枡\"]', 1, NULL);
 
 -- ----------------------------
 -- Table structure for t_resource_health_config
@@ -726,14 +736,14 @@ CREATE TABLE `t_resource_health_config`  (
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE INDEX `uk_resource_health_resource`(`resource_id` ASC) USING BTREE,
   INDEX `idx_resource_health_type_status`(`resource_type` ASC, `health_status` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 4 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源健康检查配置表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 4 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '璧勬簮鍋ュ悍妫€鏌ラ厤缃〃' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_resource_health_config
 -- ----------------------------
-INSERT INTO `t_resource_health_config` VALUES (1, 1, 'agent', 'web-search', '联网搜索', 'http', 'https://api.search.com/health', 30, 3, 10, 'degraded', '2026-03-25 17:48:10', '2026-03-22 10:58:54', '2026-03-25 17:48:10');
-INSERT INTO `t_resource_health_config` VALUES (2, 2, 'agent', 'smart-tutor', '智能备课助手', 'http', 'http://ai.lzu.edu.cn/tutor/health', 30, 3, 10, 'degraded', '2026-03-25 17:48:15', '2026-03-22 10:58:54', '2026-03-25 17:48:14');
-INSERT INTO `t_resource_health_config` VALUES (3, 4, 'agent', 'campus-qa', '校园问答', 'http', 'http://ai.lzu.edu.cn/qa/health', 30, 3, 10, 'degraded', '2026-03-25 17:48:20', '2026-03-22 10:58:54', '2026-03-25 17:48:19');
+INSERT INTO `t_resource_health_config` VALUES (1, 1, 'agent', 'web-search', '鑱旂綉鎼滅储', 'http', 'https://api.search.com/health', 30, 3, 10, 'degraded', '2026-03-25 17:48:10', '2026-03-22 10:58:54', '2026-03-25 17:48:10');
+INSERT INTO `t_resource_health_config` VALUES (2, 2, 'agent', 'smart-tutor', '鏅鸿兘澶囪鍔╂墜', 'http', 'http://ai.lzu.edu.cn/tutor/health', 30, 3, 10, 'degraded', '2026-03-25 17:48:15', '2026-03-22 10:58:54', '2026-03-25 17:48:14');
+INSERT INTO `t_resource_health_config` VALUES (3, 4, 'agent', 'campus-qa', '鏍″洯闂瓟', 'http', 'http://ai.lzu.edu.cn/qa/health', 30, 3, 10, 'degraded', '2026-03-25 17:48:20', '2026-03-22 10:58:54', '2026-03-25 17:48:19');
 
 -- ----------------------------
 -- Table structure for t_resource_mcp_ext
@@ -745,10 +755,10 @@ CREATE TABLE `t_resource_mcp_ext`  (
   `protocol` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT 'http',
   `auth_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT 'none',
   `auth_config` json NULL,
-  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '服务详情 Markdown（选填）',
+  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '鏈嶅姟璇︽儏 Markdown锛堥€夊～锛?,
   PRIMARY KEY (`resource_id`) USING BTREE,
   CONSTRAINT `fk_resource_mcp_ext_resource` FOREIGN KEY (`resource_id`) REFERENCES `t_resource` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源-MCP扩展表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '璧勬簮-MCP鎵╁睍琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_resource_mcp_ext
@@ -764,7 +774,6 @@ INSERT INTO `t_resource_mcp_ext` VALUES (15, 'https://api.ocr.com/v1', 'http', '
 INSERT INTO `t_resource_mcp_ext` VALUES (29, 'http://localhost:9000/mcp', 'mcp', 'none', '{\"method\": \"tools/call\"}', NULL);
 INSERT INTO `t_resource_mcp_ext` VALUES (30, 'http://localhost:9000/mcp', 'mcp', 'none', '{\"method\": \"tools/call\"}', NULL);
 
--- ----------------------------
 -- Table structure for t_resource_relation
 -- ----------------------------
 DROP TABLE IF EXISTS `t_resource_relation`;
@@ -778,14 +787,14 @@ CREATE TABLE `t_resource_relation`  (
   INDEX `idx_relation_from`(`from_resource_id` ASC) USING BTREE,
   INDEX `idx_relation_to`(`to_resource_id` ASC) USING BTREE,
   INDEX `idx_relation_type`(`relation_type` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 11 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源关系表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 11 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '璧勬簮鍏崇郴琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_resource_relation
 -- ----------------------------
 INSERT INTO `t_resource_relation` VALUES (1, 26, 3, 'dataset_binds_agent', '2026-03-24 12:13:38');
 INSERT INTO `t_resource_relation` VALUES (2, 28, 1, 'dataset_binds_agent', '2026-03-24 12:13:38');
--- skill_child_of 已废弃（技能包不与 MCP 建立子关系）；见 incremental V26
+-- skill_child_of 宸插簾寮冿紙鎶€鑳藉寘涓嶄笌 MCP 寤虹珛瀛愬叧绯伙級锛涜 incremental V26
 
 -- ----------------------------
 -- Table structure for t_resource_skill_ext
@@ -793,28 +802,28 @@ INSERT INTO `t_resource_relation` VALUES (2, 28, 1, 'dataset_binds_agent', '2026
 DROP TABLE IF EXISTS `t_resource_skill_ext`;
 CREATE TABLE `t_resource_skill_ext`  (
   `resource_id` bigint NOT NULL,
-  `skill_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '技能包格式 anthropic_v1 / folder_v1',
-  `artifact_uri` varchar(1024) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '技能包 URI',
-  `artifact_sha256` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '包 SHA-256 hex',
+  `skill_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '鎶€鑳藉寘鏍煎紡 anthropic_v1 / folder_v1',
+  `artifact_uri` varchar(1024) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '鎶€鑳藉寘 URI',
+  `artifact_sha256` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '鍖?SHA-256 hex',
   `manifest_json` json NULL COMMENT 'manifest JSON',
-  `entry_doc` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '入口文档相对路径如 SKILL.md',
+  `entry_doc` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '鍏ュ彛鏂囨。鐩稿璺緞濡?SKILL.md',
   `mode` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT 'TOOL',
   `parent_resource_id` bigint NULL DEFAULT NULL,
   `display_template` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
-  `spec_json` json NULL COMMENT '可选附加元数据，非远程调用配置',
+  `spec_json` json NULL COMMENT '鍙€夐檮鍔犲厓鏁版嵁锛岄潪杩滅▼璋冪敤閰嶇疆',
   `parameters_schema` json NULL,
   `is_public` tinyint(1) NULL DEFAULT 0,
   `max_concurrency` int NULL DEFAULT 10,
   `pack_validation_status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'none' COMMENT 'none/pending/valid/invalid',
   `pack_validated_at` datetime NULL DEFAULT NULL,
   `pack_validation_message` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
-  `skill_root_path` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT 'zip内技能根子目录，语义校验作用域',
-  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '技能介绍 Markdown（选填）',
+  `skill_root_path` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT 'zip鍐呮妧鑳芥牴瀛愮洰褰曪紝璇箟鏍￠獙浣滅敤鍩?,
+  `service_detail_md` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '鎶€鑳戒粙缁?Markdown锛堥€夊～锛?,
   PRIMARY KEY (`resource_id`) USING BTREE,
   INDEX `idx_skill_ext_parent`(`parent_resource_id` ASC) USING BTREE,
   INDEX `idx_skill_pack_validation`(`pack_validation_status` ASC) USING BTREE,
   CONSTRAINT `fk_resource_skill_ext_resource` FOREIGN KEY (`resource_id`) REFERENCES `t_resource` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源-Skill扩展表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '璧勬簮-Skill鎵╁睍琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_resource_skill_ext
@@ -835,7 +844,7 @@ CREATE TABLE `t_resource_tag_rel`  (
   UNIQUE INDEX `uk_resource_tag`(`resource_type` ASC, `resource_id` ASC, `tag_id` ASC) USING BTREE,
   INDEX `idx_tag_id`(`tag_id` ASC) USING BTREE,
   CONSTRAINT `fk_resource_tag_tag` FOREIGN KEY (`tag_id`) REFERENCES `t_tag` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 11 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源标签关联表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 11 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '璧勬簮鏍囩鍏宠仈琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_resource_tag_rel
@@ -867,36 +876,36 @@ CREATE TABLE `t_resource_version`  (
   UNIQUE INDEX `uk_resource_version`(`resource_id` ASC, `version` ASC) USING BTREE,
   INDEX `idx_resource_current`(`resource_id` ASC, `is_current` ASC, `create_time` ASC) USING BTREE,
   CONSTRAINT `fk_resource_version_resource` FOREIGN KEY (`resource_id`) REFERENCES `t_resource` (`id`) ON DELETE CASCADE ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 37 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源版本表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 37 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '璧勬簮鐗堟湰琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_resource_version
 -- ----------------------------
-INSERT INTO `t_resource_version` VALUES (1, 1, 'v1', 'active', 1, '{\"spec\": {\"url\": \"https://api.search.com/v1\", \"timeout\": 30}, \"status\": \"published\", \"endpoint\": \"https://api.search.com/v1\", \"invokeType\": \"rest\", \"displayName\": \"联网搜索\", \"resourceCode\": \"web-search\"}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (2, 2, 'v1', 'active', 1, '{\"spec\": {\"url\": \"http://ai.lzu.edu.cn/tutor\", \"timeout\": 60}, \"status\": \"published\", \"endpoint\": \"http://ai.lzu.edu.cn/tutor\", \"invokeType\": \"rest\", \"displayName\": \"智能备课助手\", \"resourceCode\": \"smart-tutor\"}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (3, 3, 'v1', 'active', 1, '{\"spec\": {\"url\": \"https://api.polish.com/v1\", \"timeout\": 90}, \"status\": \"published\", \"endpoint\": \"https://api.polish.com/v1\", \"invokeType\": \"rest\", \"displayName\": \"论文润色\", \"resourceCode\": \"paper-polish\"}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (4, 4, 'v1', 'active', 1, '{\"spec\": {\"url\": \"http://ai.lzu.edu.cn/qa\", \"timeout\": 15}, \"status\": \"published\", \"endpoint\": \"http://ai.lzu.edu.cn/qa\", \"invokeType\": \"rest\", \"displayName\": \"校园问答\", \"resourceCode\": \"campus-qa\"}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (5, 5, 'v1', 'active', 1, '{\"spec\": {\"url\": \"https://api.image.com/v1\", \"timeout\": 120}, \"status\": \"draft\", \"endpoint\": \"https://api.image.com/v1\", \"invokeType\": \"rest\", \"displayName\": \"图像生成\", \"resourceCode\": \"image-gen\"}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (6, 6, 'v1', 'active', 1, '{\"spec\": {\"url\": \"https://api.code.com/v1\", \"timeout\": 60}, \"status\": \"published\", \"endpoint\": \"https://api.code.com/v1\", \"invokeType\": \"rest\", \"displayName\": \"代码助手\", \"resourceCode\": \"code-assistant\"}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (7, 8, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"lantu-mcp-server\", \"displayName\": \"兰智通 MCP Server\", \"status\": \"published\", \"invokeType\": \"mcp\", \"endpoint\": \"http://ai.lzu.edu.cn/mcp\", \"spec\": {\"url\": \"http://ai.lzu.edu.cn/mcp\", \"timeout\": 30}}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (8, 9, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"local-kb-search\", \"displayName\": \"本地知识库搜索\", \"status\": \"published\", \"invokeType\": \"mcp\", \"endpoint\": \"http://ai.lzu.edu.cn/mcp/kb\", \"spec\": {\"url\": \"http://ai.lzu.edu.cn/mcp/kb\", \"timeout\": 10}}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (9, 10, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"word-gen\", \"displayName\": \"Word文档生成\", \"status\": \"published\", \"invokeType\": \"mcp\", \"endpoint\": \"http://ai.lzu.edu.cn/mcp/word\", \"spec\": {\"url\": \"http://ai.lzu.edu.cn/mcp/word\", \"timeout\": 30}}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (10, 11, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"ppt-gen\", \"displayName\": \"PPT生成\", \"status\": \"published\", \"invokeType\": \"mcp\", \"endpoint\": \"http://ai.lzu.edu.cn/mcp/ppt\", \"spec\": {\"url\": \"http://ai.lzu.edu.cn/mcp/ppt\", \"timeout\": 60}}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (11, 12, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"schedule-query\", \"displayName\": \"日程查询\", \"status\": \"published\", \"invokeType\": \"mcp\", \"endpoint\": \"http://ai.lzu.edu.cn/mcp/schedule\", \"spec\": {\"url\": \"http://ai.lzu.edu.cn/mcp/schedule\", \"timeout\": 5}}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (12, 13, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"data-analysis\", \"displayName\": \"数据分析工具\", \"status\": \"published\", \"invokeType\": \"mcp\", \"endpoint\": \"https://api.analysis.com/v1\", \"spec\": {\"url\": \"https://api.analysis.com/v1\", \"timeout\": 30}}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (13, 14, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"translate\", \"displayName\": \"多语言翻译\", \"status\": \"published\", \"invokeType\": \"http\", \"endpoint\": \"https://api.translate.com/v1\", \"spec\": {\"url\": \"https://api.translate.com/v1\", \"timeout\": 10}}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (14, 15, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"ocr-recognize\", \"displayName\": \"OCR 文字识别\", \"status\": \"deprecated\", \"invokeType\": \"http\", \"endpoint\": \"https://api.ocr.com/v1\", \"spec\": {\"url\": \"https://api.ocr.com/v1\", \"timeout\": 15}}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (15, 23, 'v1', 'active', 1, '{\"spec\": {\"embedType\": \"iframe\"}, \"status\": \"published\", \"endpoint\": \"https://card.lzu.edu.cn\", \"invokeType\": \"redirect\", \"displayName\": \"校园一卡通查询\", \"resourceCode\": \"campus-card\"}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (16, 24, 'v1', 'active', 1, '{\"spec\": {\"embedType\": \"iframe\"}, \"status\": \"published\", \"endpoint\": \"https://lib.lzu.edu.cn/seat\", \"invokeType\": \"redirect\", \"displayName\": \"图书馆座位预约\", \"resourceCode\": \"library-seat\"}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (17, 25, 'v1', 'active', 1, '{\"spec\": {\"embedType\": \"micro_frontend\"}, \"status\": \"published\", \"endpoint\": \"https://jwc.lzu.edu.cn/course\", \"invokeType\": \"redirect\", \"displayName\": \"课表查询\", \"resourceCode\": \"course-table\"}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (18, 26, 'v1', 'active', 1, '{\"spec\": {\"tags\": [\"论文\", \"计算机\", \"学术\"], \"format\": \"pdf\", \"dataType\": \"document\", \"fileSize\": 5368709120, \"recordCount\": 12500}, \"status\": \"published\", \"invokeType\": \"metadata\", \"displayName\": \"计算机论文库2026\", \"resourceCode\": \"cs-papers-2026\"}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (19, 27, 'v1', 'active', 1, '{\"spec\": {\"tags\": [\"成绩\", \"统计\", \"教务\"], \"format\": \"csv\", \"dataType\": \"structured\", \"fileSize\": 134217728, \"recordCount\": 856000}, \"status\": \"published\", \"invokeType\": \"metadata\", \"displayName\": \"学生成绩数据\", \"resourceCode\": \"student-scores\"}', '2026-03-24 21:23:03');
-INSERT INTO `t_resource_version` VALUES (20, 28, 'v1', 'active', 1, '{\"spec\": {\"tags\": [\"新闻\", \"NLP\", \"语料\"], \"format\": \"json\", \"dataType\": \"document\", \"fileSize\": 268435456, \"recordCount\": 45000}, \"status\": \"published\", \"invokeType\": \"metadata\", \"displayName\": \"校园新闻语料\", \"resourceCode\": \"campus-news-corpus\"}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (1, 1, 'v1', 'active', 1, '{\"spec\": {\"url\": \"https://api.search.com/v1\", \"timeout\": 30}, \"status\": \"published\", \"endpoint\": \"https://api.search.com/v1\", \"invokeType\": \"rest\", \"displayName\": \"鑱旂綉鎼滅储\", \"resourceCode\": \"web-search\"}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (2, 2, 'v1', 'active', 1, '{\"spec\": {\"url\": \"http://ai.lzu.edu.cn/tutor\", \"timeout\": 60}, \"status\": \"published\", \"endpoint\": \"http://ai.lzu.edu.cn/tutor\", \"invokeType\": \"rest\", \"displayName\": \"鏅鸿兘澶囪鍔╂墜\", \"resourceCode\": \"smart-tutor\"}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (3, 3, 'v1', 'active', 1, '{\"spec\": {\"url\": \"https://api.polish.com/v1\", \"timeout\": 90}, \"status\": \"published\", \"endpoint\": \"https://api.polish.com/v1\", \"invokeType\": \"rest\", \"displayName\": \"璁烘枃娑﹁壊\", \"resourceCode\": \"paper-polish\"}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (4, 4, 'v1', 'active', 1, '{\"spec\": {\"url\": \"http://ai.lzu.edu.cn/qa\", \"timeout\": 15}, \"status\": \"published\", \"endpoint\": \"http://ai.lzu.edu.cn/qa\", \"invokeType\": \"rest\", \"displayName\": \"鏍″洯闂瓟\", \"resourceCode\": \"campus-qa\"}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (5, 5, 'v1', 'active', 1, '{\"spec\": {\"url\": \"https://api.image.com/v1\", \"timeout\": 120}, \"status\": \"draft\", \"endpoint\": \"https://api.image.com/v1\", \"invokeType\": \"rest\", \"displayName\": \"鍥惧儚鐢熸垚\", \"resourceCode\": \"image-gen\"}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (6, 6, 'v1', 'active', 1, '{\"spec\": {\"url\": \"https://api.code.com/v1\", \"timeout\": 60}, \"status\": \"published\", \"endpoint\": \"https://api.code.com/v1\", \"invokeType\": \"rest\", \"displayName\": \"浠ｇ爜鍔╂墜\", \"resourceCode\": \"code-assistant\"}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (7, 8, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"lantu-mcp-server\", \"displayName\": \"鍏版櫤閫?MCP Server\", \"status\": \"published\", \"invokeType\": \"mcp\", \"endpoint\": \"http://ai.lzu.edu.cn/mcp\", \"spec\": {\"url\": \"http://ai.lzu.edu.cn/mcp\", \"timeout\": 30}}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (8, 9, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"local-kb-search\", \"displayName\": \"鏈湴鐭ヨ瘑搴撴悳绱", \"status\": \"published\", \"invokeType\": \"mcp\", \"endpoint\": \"http://ai.lzu.edu.cn/mcp/kb\", \"spec\": {\"url\": \"http://ai.lzu.edu.cn/mcp/kb\", \"timeout\": 10}}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (9, 10, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"word-gen\", \"displayName\": \"Word鏂囨。鐢熸垚\", \"status\": \"published\", \"invokeType\": \"mcp\", \"endpoint\": \"http://ai.lzu.edu.cn/mcp/word\", \"spec\": {\"url\": \"http://ai.lzu.edu.cn/mcp/word\", \"timeout\": 30}}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (10, 11, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"ppt-gen\", \"displayName\": \"PPT鐢熸垚\", \"status\": \"published\", \"invokeType\": \"mcp\", \"endpoint\": \"http://ai.lzu.edu.cn/mcp/ppt\", \"spec\": {\"url\": \"http://ai.lzu.edu.cn/mcp/ppt\", \"timeout\": 60}}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (11, 12, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"schedule-query\", \"displayName\": \"鏃ョ▼鏌ヨ\", \"status\": \"published\", \"invokeType\": \"mcp\", \"endpoint\": \"http://ai.lzu.edu.cn/mcp/schedule\", \"spec\": {\"url\": \"http://ai.lzu.edu.cn/mcp/schedule\", \"timeout\": 5}}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (12, 13, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"data-analysis\", \"displayName\": \"鏁版嵁鍒嗘瀽宸ュ叿\", \"status\": \"published\", \"invokeType\": \"mcp\", \"endpoint\": \"https://api.analysis.com/v1\", \"spec\": {\"url\": \"https://api.analysis.com/v1\", \"timeout\": 30}}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (13, 14, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"translate\", \"displayName\": \"澶氳瑷€缈昏瘧\", \"status\": \"published\", \"invokeType\": \"http\", \"endpoint\": \"https://api.translate.com/v1\", \"spec\": {\"url\": \"https://api.translate.com/v1\", \"timeout\": 10}}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (14, 15, 'v1', 'active', 1, '{\"resourceType\": \"mcp\", \"resourceCode\": \"ocr-recognize\", \"displayName\": \"OCR 鏂囧瓧璇嗗埆\", \"status\": \"deprecated\", \"invokeType\": \"http\", \"endpoint\": \"https://api.ocr.com/v1\", \"spec\": {\"url\": \"https://api.ocr.com/v1\", \"timeout\": 15}}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (15, 23, 'v1', 'active', 1, '{\"spec\": {\"embedType\": \"iframe\"}, \"status\": \"published\", \"endpoint\": \"https://card.lzu.edu.cn\", \"invokeType\": \"redirect\", \"displayName\": \"鏍″洯涓€鍗￠€氭煡璇", \"resourceCode\": \"campus-card\"}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (16, 24, 'v1', 'active', 1, '{\"spec\": {\"embedType\": \"iframe\"}, \"status\": \"published\", \"endpoint\": \"https://lib.lzu.edu.cn/seat\", \"invokeType\": \"redirect\", \"displayName\": \"鍥句功棣嗗骇浣嶉绾", \"resourceCode\": \"library-seat\"}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (17, 25, 'v1', 'active', 1, '{\"spec\": {\"embedType\": \"micro_frontend\"}, \"status\": \"published\", \"endpoint\": \"https://jwc.lzu.edu.cn/course\", \"invokeType\": \"redirect\", \"displayName\": \"璇捐〃鏌ヨ\", \"resourceCode\": \"course-table\"}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (18, 26, 'v1', 'active', 1, '{\"spec\": {\"tags\": [\"璁烘枃\", \"璁＄畻鏈篭", \"瀛︽湳\"], \"format\": \"pdf\", \"dataType\": \"document\", \"fileSize\": 5368709120, \"recordCount\": 12500}, \"status\": \"published\", \"invokeType\": \"metadata\", \"displayName\": \"璁＄畻鏈鸿鏂囧簱2026\", \"resourceCode\": \"cs-papers-2026\"}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (19, 27, 'v1', 'active', 1, '{\"spec\": {\"tags\": [\"鎴愮哗\", \"缁熻\", \"鏁欏姟\"], \"format\": \"csv\", \"dataType\": \"structured\", \"fileSize\": 134217728, \"recordCount\": 856000}, \"status\": \"published\", \"invokeType\": \"metadata\", \"displayName\": \"瀛︾敓鎴愮哗鏁版嵁\", \"resourceCode\": \"student-scores\"}', '2026-03-24 21:23:03');
+INSERT INTO `t_resource_version` VALUES (20, 28, 'v1', 'active', 1, '{\"spec\": {\"tags\": [\"鏂伴椈\", \"NLP\", \"璇枡\"], \"format\": \"json\", \"dataType\": \"document\", \"fileSize\": 268435456, \"recordCount\": 45000}, \"status\": \"published\", \"invokeType\": \"metadata\", \"displayName\": \"鏍″洯鏂伴椈璇枡\", \"resourceCode\": \"campus-news-corpus\"}', '2026-03-24 21:23:03');
 INSERT INTO `t_resource_version` VALUES (32, 29, 'v1', 'active', 1, '{\"spec\": {\"method\": \"tools/call\"}, \"status\": \"draft\", \"endpoint\": \"http://localhost:9000/mcp\", \"invokeType\": \"mcp\", \"description\": \"smoke test\", \"displayName\": \"Smoke MCP\", \"resourceCode\": \"smoke-mcp-1774368649\", \"resourceType\": \"mcp\"}', '2026-03-25 00:10:49');
 INSERT INTO `t_resource_version` VALUES (33, 29, 'v2', 'active', 0, '{\"spec\": {\"method\": \"tools/call\"}, \"status\": \"published\", \"endpoint\": \"http://localhost:9000/mcp\", \"invokeType\": \"mcp\", \"description\": \"smoke test\", \"displayName\": \"Smoke MCP\", \"resourceCode\": \"smoke-mcp-1774368649\", \"resourceType\": \"mcp\"}', '2026-03-25 00:10:50');
 INSERT INTO `t_resource_version` VALUES (34, 30, 'v1', 'active', 1, '{\"spec\": {\"method\": \"tools/call\"}, \"status\": \"draft\", \"endpoint\": \"http://localhost:9000/mcp\", \"invokeType\": \"mcp\", \"description\": \"smoke test 2\", \"displayName\": \"Smoke2 MCP\", \"resourceCode\": \"smoke2-mcp-1774368774\", \"resourceType\": \"mcp\"}', '2026-03-25 00:12:54');
 INSERT INTO `t_resource_version` VALUES (35, 30, 'v2', 'active', 0, '{\"spec\": {\"method\": \"tools/call\"}, \"status\": \"published\", \"endpoint\": \"http://localhost:9000/mcp\", \"invokeType\": \"mcp\", \"description\": \"smoke test 2\", \"displayName\": \"Smoke2 MCP\", \"resourceCode\": \"smoke2-mcp-1774368774\", \"resourceType\": \"mcp\"}', '2026-03-25 00:12:55');
-INSERT INTO `t_resource_version` VALUES (36, 31, 'v1', 'active', 1, '{\"resourceType\": \"skill\", \"packFormat\": \"anthropic_v1\", \"resourceCode\": \"demo-skill-pack\", \"displayName\": \"示例 Anthropic 技能包\", \"status\": \"published\", \"invokeType\": \"artifact\", \"endpoint\": \"https://example.com/skills/demo-skill-pack.zip\", \"spec\": {\"manifest\": {\"name\": \"demo-skill-pack\", \"version\": \"1.0.0\"}, \"entryDoc\": \"SKILL.md\"}}', '2026-03-31 12:00:00');
+INSERT INTO `t_resource_version` VALUES (36, 31, 'v1', 'active', 1, '{\"resourceType\": \"skill\", \"packFormat\": \"anthropic_v1\", \"resourceCode\": \"demo-skill-pack\", \"displayName\": \"绀轰緥 Anthropic 鎶€鑳藉寘\", \"status\": \"published\", \"invokeType\": \"artifact\", \"endpoint\": \"https://example.com/skills/demo-skill-pack.zip\", \"spec\": {\"manifest\": {\"name\": \"demo-skill-pack\", \"version\": \"1.0.0\"}, \"entryDoc\": \"SKILL.md\"}}', '2026-03-31 12:00:00');
 
 -- ----------------------------
 -- Table structure for t_review
@@ -906,7 +915,7 @@ CREATE TABLE `t_review`  (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `target_type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `target_id` bigint NOT NULL,
-  `parent_id` bigint NULL DEFAULT NULL COMMENT '父评论 id，顶级为 NULL',
+  `parent_id` bigint NULL DEFAULT NULL COMMENT '鐖惰瘎璁?id锛岄《绾т负 NULL',
   `user_id` bigint NOT NULL,
   `user_name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   `avatar` varchar(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
@@ -921,14 +930,14 @@ CREATE TABLE `t_review`  (
   INDEX `idx_review_user`(`user_id` ASC) USING BTREE,
   CONSTRAINT `fk_review_parent` FOREIGN KEY (`parent_id`) REFERENCES `t_review` (`id`) ON DELETE SET NULL ON UPDATE RESTRICT,
   CONSTRAINT `fk_review_user` FOREIGN KEY (`user_id`) REFERENCES `t_user` (`user_id`) ON DELETE RESTRICT ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 5 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '评论评分表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 5 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '璇勮璇勫垎琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_review
 -- ----------------------------
-INSERT INTO `t_review` VALUES (1, 'agent', 1, NULL, 4, '赵同学', NULL, 5, '联网搜索非常好用，回答准确且实时性强！', 3, 0, '2026-03-22 10:58:54');
-INSERT INTO `t_review` VALUES (2, 'agent', 2, NULL, 4, '赵同学', NULL, 4, '备课助手生成的教案质量不错，但偶尔格式需要微调。', 1, 0, '2026-03-22 10:58:54');
-INSERT INTO `t_review` VALUES (3, 'agent', 6, NULL, 3, '王开发', NULL, 5, '代码助手很强大，支持多种语言，调试建议也很专业。', 5, 0, '2026-03-22 10:58:54');
+INSERT INTO `t_review` VALUES (1, 'agent', 1, NULL, 4, '璧靛悓瀛?, NULL, 5, '鑱旂綉鎼滅储闈炲父濂界敤锛屽洖绛斿噯纭笖瀹炴椂鎬у己锛?, 3, 0, '2026-03-22 10:58:54');
+INSERT INTO `t_review` VALUES (2, 'agent', 2, NULL, 4, '璧靛悓瀛?, NULL, 4, '澶囪鍔╂墜鐢熸垚鐨勬暀妗堣川閲忎笉閿欙紝浣嗗伓灏旀牸寮忛渶瑕佸井璋冦€?, 1, 0, '2026-03-22 10:58:54');
+INSERT INTO `t_review` VALUES (3, 'agent', 6, NULL, 3, '鐜嬪紑鍙?, NULL, 5, '浠ｇ爜鍔╂墜寰堝己澶э紝鏀寔澶氱璇█锛岃皟璇曞缓璁篃寰堜笓涓氥€?, 5, 0, '2026-03-22 10:58:54');
 INSERT INTO `t_review` VALUES (4, 'agent', 6, NULL, 2, 'dept_admin', '', 4, '1111', 0, 0, '2026-03-24 23:22:15');
 
 -- ----------------------------
@@ -945,7 +954,7 @@ CREATE TABLE `t_review_helpful_rel`  (
   INDEX `fk_helpful_user`(`user_id` ASC) USING BTREE,
   CONSTRAINT `fk_helpful_review` FOREIGN KEY (`review_id`) REFERENCES `t_review` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT `fk_helpful_user` FOREIGN KEY (`user_id`) REFERENCES `t_user` (`user_id`) ON DELETE RESTRICT ON UPDATE RESTRICT
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '评论有用标记关联' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '璇勮鏈夌敤鏍囪鍏宠仈' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_review_helpful_rel
@@ -974,7 +983,7 @@ CREATE TABLE `t_sandbox_session`  (
   UNIQUE INDEX `uk_sandbox_token`(`session_token` ASC) USING BTREE,
   INDEX `idx_sandbox_owner_status`(`owner_user_id` ASC, `status` ASC) USING BTREE,
   INDEX `idx_sandbox_expire`(`expires_at` ASC) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '沙箱会话表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '娌欑浼氳瘽琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_sandbox_session
@@ -993,15 +1002,15 @@ CREATE TABLE `t_security_setting`  (
   `options` json NULL,
   `category` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
   PRIMARY KEY (`key`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '安全设置表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '瀹夊叏璁剧疆琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_security_setting
 -- ----------------------------
-INSERT INTO `t_security_setting` VALUES ('audit_log_retention', '90', '审计日志保留', '审计日志保留天数', 'number', NULL, '数据安全');
-INSERT INTO `t_security_setting` VALUES ('data_encryption', 'true', '数据加密', '是否启用敏感数据加密存储', 'toggle', NULL, '数据安全');
-INSERT INTO `t_security_setting` VALUES ('password_complexity', 'medium', '密码复杂度', '密码复杂度要求', 'select', '[\"low\", \"medium\", \"high\"]', '认证');
-INSERT INTO `t_security_setting` VALUES ('session_binding', 'none', '会话绑定', '会话绑定方式', 'select', '[\"none\", \"ip\", \"device\"]', '认证');
+INSERT INTO `t_security_setting` VALUES ('audit_log_retention', '90', '瀹¤鏃ュ織淇濈暀', '瀹¤鏃ュ織淇濈暀澶╂暟', 'number', NULL, '鏁版嵁瀹夊叏');
+INSERT INTO `t_security_setting` VALUES ('data_encryption', 'true', '鏁版嵁鍔犲瘑', '鏄惁鍚敤鏁忔劅鏁版嵁鍔犲瘑瀛樺偍', 'toggle', NULL, '鏁版嵁瀹夊叏');
+INSERT INTO `t_security_setting` VALUES ('password_complexity', 'medium', '瀵嗙爜澶嶆潅搴?, '瀵嗙爜澶嶆潅搴﹁姹?, 'select', '[\"low\", \"medium\", \"high\"]', '璁よ瘉');
+INSERT INTO `t_security_setting` VALUES ('session_binding', 'none', '浼氳瘽缁戝畾', '浼氳瘽缁戝畾鏂瑰紡', 'select', '[\"none\", \"ip\", \"device\"]', '璁よ瘉');
 
 -- ----------------------------
 -- Table structure for t_sensitive_word
@@ -1022,7 +1031,7 @@ CREATE TABLE `t_sensitive_word`  (
   INDEX `idx_sensitive_enabled`(`enabled` ASC) USING BTREE,
   INDEX `idx_sensitive_category`(`category` ASC) USING BTREE,
   INDEX `idx_sensitive_severity`(`severity` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '敏感词表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '鏁忔劅璇嶈〃' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_sensitive_word
@@ -1041,17 +1050,17 @@ CREATE TABLE `t_system_param`  (
   `editable` tinyint(1) NULL DEFAULT 1,
   `update_time` datetime NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`key`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '系统参数表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '绯荤粺鍙傛暟琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_system_param
 -- ----------------------------
-INSERT INTO `t_system_param` VALUES ('auto_lock_attempts', '5', 'number', '连续登录失败锁定次数', '安全', 1, '2026-03-22 00:32:55');
-INSERT INTO `t_system_param` VALUES ('enable_registration', 'true', 'boolean', '是否开放注册', '系统', 1, '2026-03-22 00:32:55');
-INSERT INTO `t_system_param` VALUES ('max_concurrent_sessions', '5', 'number', '最大同时在线会话数', '用户', 1, '2026-03-22 00:32:55');
-INSERT INTO `t_system_param` VALUES ('max_upload_size_mb', '50', 'number', '单文件上传大小上限（MB）', '存储', 1, '2026-03-22 00:32:55');
-INSERT INTO `t_system_param` VALUES ('password_min_length', '8', 'number', '密码最小长度', '安全', 1, '2026-03-22 00:32:55');
-INSERT INTO `t_system_param` VALUES ('session_timeout_minutes', '120', 'number', '会话超时时间（分钟）', '安全', 1, '2026-03-22 00:32:55');
+INSERT INTO `t_system_param` VALUES ('auto_lock_attempts', '5', 'number', '杩炵画鐧诲綍澶辫触閿佸畾娆℃暟', '瀹夊叏', 1, '2026-03-22 00:32:55');
+INSERT INTO `t_system_param` VALUES ('enable_registration', 'true', 'boolean', '鏄惁寮€鏀炬敞鍐?, '绯荤粺', 1, '2026-03-22 00:32:55');
+INSERT INTO `t_system_param` VALUES ('max_concurrent_sessions', '5', 'number', '鏈€澶у悓鏃跺湪绾夸細璇濇暟', '鐢ㄦ埛', 1, '2026-03-22 00:32:55');
+INSERT INTO `t_system_param` VALUES ('max_upload_size_mb', '50', 'number', '鍗曟枃浠朵笂浼犲ぇ灏忎笂闄愶紙MB锛?, '瀛樺偍', 1, '2026-03-22 00:32:55');
+INSERT INTO `t_system_param` VALUES ('password_min_length', '8', 'number', '瀵嗙爜鏈€灏忛暱搴?, '瀹夊叏', 1, '2026-03-22 00:32:55');
+INSERT INTO `t_system_param` VALUES ('session_timeout_minutes', '120', 'number', '浼氳瘽瓒呮椂鏃堕棿锛堝垎閽燂級', '瀹夊叏', 1, '2026-03-22 00:32:55');
 
 -- ----------------------------
 -- Table structure for t_tag
@@ -1065,21 +1074,21 @@ CREATE TABLE `t_tag`  (
   `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE INDEX `uk_tag_name_cat`(`name` ASC, `category` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 11 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '标签表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 11 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '鏍囩琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_tag
 -- ----------------------------
-INSERT INTO `t_tag` VALUES (1, '教务', 'agent', 15, '2026-03-22 10:58:54');
-INSERT INTO `t_tag` VALUES (2, '科研', 'agent', 12, '2026-03-22 10:58:54');
-INSERT INTO `t_tag` VALUES (3, '办公', 'skill', 20, '2026-03-22 10:58:54');
-INSERT INTO `t_tag` VALUES (4, '搜索', 'agent', 25, '2026-03-22 10:58:54');
-INSERT INTO `t_tag` VALUES (5, '生成', 'skill', 18, '2026-03-22 10:58:54');
-INSERT INTO `t_tag` VALUES (6, '翻译', 'skill', 8, '2026-03-22 10:58:54');
-INSERT INTO `t_tag` VALUES (7, '数据', 'dataset', 10, '2026-03-22 10:58:54');
-INSERT INTO `t_tag` VALUES (8, '校园', 'agent', 22, '2026-03-22 10:58:54');
+INSERT INTO `t_tag` VALUES (1, '鏁欏姟', 'agent', 15, '2026-03-22 10:58:54');
+INSERT INTO `t_tag` VALUES (2, '绉戠爺', 'agent', 12, '2026-03-22 10:58:54');
+INSERT INTO `t_tag` VALUES (3, '鍔炲叕', 'skill', 20, '2026-03-22 10:58:54');
+INSERT INTO `t_tag` VALUES (4, '鎼滅储', 'agent', 25, '2026-03-22 10:58:54');
+INSERT INTO `t_tag` VALUES (5, '鐢熸垚', 'skill', 18, '2026-03-22 10:58:54');
+INSERT INTO `t_tag` VALUES (6, '缈昏瘧', 'skill', 8, '2026-03-22 10:58:54');
+INSERT INTO `t_tag` VALUES (7, '鏁版嵁', 'dataset', 10, '2026-03-22 10:58:54');
+INSERT INTO `t_tag` VALUES (8, '鏍″洯', 'agent', 22, '2026-03-22 10:58:54');
 INSERT INTO `t_tag` VALUES (9, 'AI', 'general', 30, '2026-03-22 10:58:54');
-INSERT INTO `t_tag` VALUES (10, '效率', 'general', 16, '2026-03-22 10:58:54');
+INSERT INTO `t_tag` VALUES (10, '鏁堢巼', 'general', 16, '2026-03-22 10:58:54');
 
 -- ----------------------------
 -- Table structure for t_trace_span
@@ -1099,61 +1108,11 @@ CREATE TABLE `t_trace_span`  (
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_trace_span_trace`(`trace_id` ASC) USING BTREE,
   INDEX `idx_trace_span_service_time`(`service_name` ASC, `start_time` ASC) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '链路追踪表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '閾捐矾杩借釜琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_trace_span
 -- ----------------------------
-
--- ----------------------------
--- Table structure for t_usage_record
--- ----------------------------
-DROP TABLE IF EXISTS `t_usage_record`;
-CREATE TABLE `t_usage_record`  (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `user_id` bigint NOT NULL,
-  `agent_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `display_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `type` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `resource_id` bigint NULL DEFAULT NULL,
-  `action` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `input_preview` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
-  `output_preview` text CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL,
-  `latency_ms` int NULL DEFAULT 0,
-  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
-  `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`) USING BTREE,
-  INDEX `idx_usage_record_user_time`(`user_id` ASC, `create_time` ASC) USING BTREE,
-  INDEX `idx_usage_record_type`(`type` ASC) USING BTREE,
-  INDEX `idx_usage_record_owner_lookup`(`resource_id` ASC, `create_time` ASC) USING BTREE,
-  CONSTRAINT `fk_usage_record_user` FOREIGN KEY (`user_id`) REFERENCES `t_user` (`user_id`) ON DELETE RESTRICT ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 6 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '使用记录表' ROW_FORMAT = DYNAMIC;
-
--- ----------------------------
--- Records of t_usage_record
--- ----------------------------
-INSERT INTO `t_usage_record` VALUES (1, 4, 'web-search', '联网搜索', 'agent', NULL, '对话', '兰州大学2026年招生政策', '根据最新公布的招生简章...', 1150, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_usage_record` VALUES (2, 4, 'campus-qa', '校园问答', 'agent', NULL, '对话', '图书馆几点关门', '兰州大学图书馆开放时间为...', 650, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_usage_record` VALUES (3, 3, 'smart-tutor', '智能备课助手', 'agent', NULL, '对话', '生成高等数学第一章教案', '教案：高等数学 - 函数与极限...', 2800, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_usage_record` VALUES (4, 3, 'code-assistant', '代码助手', 'agent', NULL, '对话', '用Python写一个快速排序', 'def quick_sort(arr):...', 1900, 'success', '2026-03-22 10:58:54');
-INSERT INTO `t_usage_record` VALUES (5, 4, 'local-kb-search', '本地知识库搜索', 'skill', NULL, '调用', '机器学习期末考试重点', '根据知识库检索到3篇相关文档...', 650, 'success', '2026-03-22 10:58:54');
-
--- ----------------------------
--- Table structure for t_skill_pack_download_event
--- ----------------------------
-DROP TABLE IF EXISTS `t_skill_pack_download_event`;
-CREATE TABLE `t_skill_pack_download_event`  (
-  `id` bigint NOT NULL AUTO_INCREMENT,
-  `resource_id` bigint NOT NULL,
-  `resource_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'skill',
-  `owner_user_id` bigint NOT NULL,
-  `downloader_user_id` bigint NULL DEFAULT NULL,
-  `downloader_api_key_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
-  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`) USING BTREE,
-  INDEX `idx_spd_owner_time`(`owner_user_id` ASC, `create_time` ASC) USING BTREE,
-  INDEX `idx_spd_resource`(`resource_id` ASC) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '技能包下载埋点' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Table structure for t_user
@@ -1181,13 +1140,13 @@ CREATE TABLE `t_user`  (
   `deleted` smallint NULL DEFAULT 0,
   `create_time` datetime NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time` datetime NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `language` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT 'zh-CN' COMMENT '语言偏好',
+  `language` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT 'zh-CN' COMMENT '璇█鍋忓ソ',
   PRIMARY KEY (`user_id`) USING BTREE,
   UNIQUE INDEX `uk_user_username`(`username` ASC) USING BTREE,
   INDEX `idx_user_school_id`(`school_id` ASC) USING BTREE,
   INDEX `idx_user_menu_id`(`menu_id` ASC) USING BTREE,
   INDEX `idx_user_mobile`(`mobile` ASC) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 7 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '用户表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 7 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '鐢ㄦ埛琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_user
@@ -1195,7 +1154,7 @@ CREATE TABLE `t_user`  (
 INSERT INTO `t_user` VALUES (1, 'admin', '$2a$12$e0tp9aC1xUXoDf7XNCID7OQ5vYfQDLyUAWVJ9aWhxVz7mypmfNX0i', 'admin', 1, 1, 3, NULL, NULL, 99, '13800138000', 'admin@lzu.edu.cn', 'blob:http://localhost:3000/b0006b20-3952-4e9c-88bf-c7259daa68a0', NULL, NULL, NULL, 'active', '2026-03-25 16:30:46', 0, '2026-03-22 10:58:54', '2026-03-25 16:29:51', 'zh-CN');
 INSERT INTO `t_user` VALUES (2, 'dept_admin', '$2a$12$e0tp9aC1xUXoDf7XNCID7OQ5vYfQDLyUAWVJ9aWhxVz7mypmfNX0i', 'dept_admin', 1, 1, 2, NULL, NULL, 10, '13800138001', 'dept@lzu.edu.cn', NULL, NULL, NULL, NULL, 'active', '2026-03-25 16:48:30', 0, '2026-03-22 10:58:54', '2026-03-25 16:47:45', 'zh-CN');
 INSERT INTO `t_user` VALUES (3, 'developer', '$2a$12$e0tp9aC1xUXoDf7XNCID7OQ5vYfQDLyUAWVJ9aWhxVz7mypmfNX0i', 'developer', 1, 1, 2, NULL, NULL, 5, '13800138002', 'dev@lzu.edu.cn', 'blob:http://localhost:3000/2c4fd1ae-cc6b-457b-b651-a30670fd68e0', NULL, NULL, NULL, 'active', '2026-03-25 17:47:15', 0, '2026-03-22 10:58:54', '2026-03-25 16:47:48', 'zh-CN');
-INSERT INTO `t_user` VALUES (4, 'testuser', '$2a$12$e0tp9aC1xUXoDf7XNCID7OQ5vYfQDLyUAWVJ9aWhxVz7mypmfNX0i', '赵同学', 0, 1, 2, NULL, NULL, 1, '13800138003', 'student@lzu.edu.cn', NULL, NULL, NULL, NULL, 'active', '2026-03-23 15:38:48', 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54', 'zh-CN');
+INSERT INTO `t_user` VALUES (4, 'testuser', '$2a$12$e0tp9aC1xUXoDf7XNCID7OQ5vYfQDLyUAWVJ9aWhxVz7mypmfNX0i', '璧靛悓瀛?, 0, 1, 2, NULL, NULL, 1, '13800138003', 'student@lzu.edu.cn', NULL, NULL, NULL, NULL, 'active', '2026-03-23 15:38:48', 0, '2026-03-22 10:58:54', '2026-03-22 10:58:54', 'zh-CN');
 INSERT INTO `t_user` VALUES (6, 'test002', '$2a$12$zv0RlQBht/9oFR0bshU1kuYuWfciFcqSyIcSMRqa5jpwB7l0lXovK', 'test002', 0, 1, NULL, NULL, NULL, 0, NULL, 'test002@test.com', NULL, NULL, NULL, NULL, 'active', '2026-03-25 16:16:54', 0, '2026-03-22 11:05:20', '2026-03-22 11:05:20', 'zh-CN');
 
 -- ----------------------------
@@ -1212,7 +1171,7 @@ CREATE TABLE `t_user_role_rel`  (
   INDEX `idx_role_id`(`role_id` ASC) USING BTREE,
   CONSTRAINT `fk_user_role_role` FOREIGN KEY (`role_id`) REFERENCES `t_platform_role` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT `fk_user_role_user` FOREIGN KEY (`user_id`) REFERENCES `t_user` (`user_id`) ON DELETE RESTRICT ON UPDATE RESTRICT
-) ENGINE = InnoDB AUTO_INCREMENT = 6 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '用户角色关联表' ROW_FORMAT = DYNAMIC;
+) ENGINE = InnoDB AUTO_INCREMENT = 6 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '鐢ㄦ埛瑙掕壊鍏宠仈琛? ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of t_user_role_rel

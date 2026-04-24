@@ -60,7 +60,7 @@ class GatewayGovernanceServiceTest {
             if (sql.contains("t_rate_limit_rule")) {
                 return Collections.emptyList();
             }
-            if (sql.contains("t_resource_detail") && sql.contains("resource_type = 'agent'")) {
+            if (sql.contains("t_resource") && sql.contains("resource_type = 'agent'") && sql.contains("max_concurrency")) {
                 return List.of(Map.of("max_concurrency", 2));
             }
             return Collections.emptyList();
@@ -84,7 +84,7 @@ class GatewayGovernanceServiceTest {
             if (sql.contains("t_rate_limit_rule")) {
                 return Collections.emptyList();
             }
-            if (sql.contains("t_resource_detail") && sql.contains("resource_type = 'agent'")) {
+            if (sql.contains("t_resource") && sql.contains("resource_type = 'agent'") && sql.contains("max_concurrency")) {
                 return List.of(Map.of("max_concurrency", 1));
             }
             return Collections.emptyList();

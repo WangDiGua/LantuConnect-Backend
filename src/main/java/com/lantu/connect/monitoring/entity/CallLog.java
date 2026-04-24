@@ -45,6 +45,10 @@ public class CallLog {
     private String errorMessage;
 
     private String ip;
+    private String displayName;
+    private String action;
+    private String inputPreview;
+    private String outputPreview;
 
     private LocalDateTime createTime;
 }

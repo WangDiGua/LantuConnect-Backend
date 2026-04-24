@@ -61,27 +61,23 @@ public class OpenAiCompatService {
         List<Map<String, Object>> rows;
         if (OWNER_TYPE_AGENT.equalsIgnoreCase(apiKey.getOwnerType())) {
             rows = jdbcTemplate.queryForList("""
-                    SELECT JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.model_alias')) AS model_alias
-                    FROM t_resource_detail rd
-                    JOIN t_resource r ON r.id = rd.resource_id
+                    SELECT JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.model_alias')) AS model_alias
+                    FROM t_resource r
                     WHERE r.deleted = 0
-                      AND rd.resource_type = 'agent'
                       AND r.resource_type = 'agent'
                       AND r.id = ?
                       AND r.status = 'published'
-                      AND IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.enabled')) AS UNSIGNED), 1) = 1
+                      AND IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.enabled')) AS UNSIGNED), 1) = 1
                     """, apiKey.getOwnerId());
         } else {
             rows = jdbcTemplate.queryForList("""
-                    SELECT JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.model_alias')) AS model_alias
-                    FROM t_resource_detail rd
-                    JOIN t_resource r ON r.id = rd.resource_id
+                    SELECT JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.model_alias')) AS model_alias
+                    FROM t_resource r
                     WHERE r.deleted = 0
-                      AND rd.resource_type = 'agent'
                       AND r.resource_type = 'agent'
                       AND r.status = 'published'
-                      AND IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.enabled')) AS UNSIGNED), 1) = 1
-                    ORDER BY JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.model_alias'))
+                      AND IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.enabled')) AS UNSIGNED), 1) = 1
+                    ORDER BY JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.model_alias'))
                     """);
         }
         List<Map<String, Object>> data = new ArrayList<>();
@@ -168,8 +164,8 @@ public class OpenAiCompatService {
         String name = strOrDefault(body.get("name"), "Nexus Assistant");
         String instructions = strOrDefault(body.get("instructions"), "");
         jdbcTemplate.update("""
-                INSERT INTO t_openai_assistant_state(id, owner_type, owner_id, model_alias, name, instructions, created_at, updated_at)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO t_openai_compat_state(id, object_type, owner_type, owner_id, model_alias, name, instructions, created_at, updated_at)
+                VALUES(?, 'assistant', ?, ?, ?, ?, ?, ?, ?)
                 """,
                 id, ownerType, ownerId, model, name, instructions, now, now);
         Map<String, Object> assistant = new LinkedHashMap<>();
@@ -186,8 +182,8 @@ public class OpenAiCompatService {
         String id = "thread_" + UUID.randomUUID().toString().replace("-", "");
         long now = Instant.now().getEpochSecond();
         jdbcTemplate.update("""
-                INSERT INTO t_openai_thread_state(id, owner_type, owner_id, created_at, updated_at)
-                VALUES(?, ?, ?, ?, ?)
+                INSERT INTO t_openai_compat_state(id, object_type, owner_type, owner_id, created_at, updated_at)
+                VALUES(?, 'thread', ?, ?, ?, ?)
                 """,
                 id, normalizeOwnerType(apiKey), normalizeOwnerId(apiKey), now, now);
         return Map.of("id", id, "object", "thread", "created_at", now);
@@ -200,11 +196,12 @@ public class OpenAiCompatService {
         String messageId = "msg_" + UUID.randomUUID().toString().replace("-", "");
         long now = Instant.now().getEpochSecond();
         jdbcTemplate.update("""
-                INSERT INTO t_openai_thread_message_state(id, thread_id, role, content_text, content_json, created_at)
-                VALUES(?, ?, ?, ?, ?, ?)
+                INSERT INTO t_openai_compat_state(id, object_type, owner_type, owner_id, parent_id, role, content_text, content_json, created_at, updated_at)
+                VALUES(?, 'message', ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                messageId, threadId, role, messageContent.text(), toJson(messageContent.contentNodes()), now);
-        jdbcTemplate.update("UPDATE t_openai_thread_state SET updated_at = ? WHERE id = ?", now, threadId);
+                messageId, normalizeOwnerType(apiKey), normalizeOwnerId(apiKey), threadId, role,
+                messageContent.text(), toJson(messageContent.contentNodes()), now, now);
+        jdbcTemplate.update("UPDATE t_openai_compat_state SET updated_at = ? WHERE id = ? AND object_type = 'thread'", now, threadId);
         return Map.of(
                 "id", messageId,
                 "object", "thread.message",
@@ -225,8 +222,8 @@ public class OpenAiCompatService {
 
         List<Map<String, Object>> userMessages = jdbcTemplate.queryForList("""
                 SELECT content_text
-                FROM t_openai_thread_message_state
-                WHERE thread_id = ? AND role = 'user'
+                FROM t_openai_compat_state
+                WHERE object_type = 'message' AND parent_id = ? AND role = 'user'
                 ORDER BY created_at ASC, id ASC
                 """, threadId);
         StringBuilder sb = new StringBuilder();
@@ -243,26 +240,27 @@ public class OpenAiCompatService {
         long now = Instant.now().getEpochSecond();
         List<Map<String, Object>> answerNodes = List.of(Map.of("type", "text", "text", Map.of("value", answer)));
         jdbcTemplate.update("""
-                INSERT INTO t_openai_thread_message_state(id, thread_id, role, content_text, content_json, created_at)
-                VALUES(?, ?, 'assistant', ?, ?, ?)
+                INSERT INTO t_openai_compat_state(id, object_type, owner_type, owner_id, parent_id, role, content_text, content_json, created_at, updated_at)
+                VALUES(?, 'message', ?, ?, ?, 'assistant', ?, ?, ?, ?)
                 """,
-                assistantMsgId, threadId, answer, toJson(answerNodes), now);
+                assistantMsgId, normalizeOwnerType(apiKey), normalizeOwnerId(apiKey), threadId,
+                answer, toJson(answerNodes), now, now);
 
         String runId = "run_" + UUID.randomUUID().toString().replace("-", "");
         jdbcTemplate.update("""
-                INSERT INTO t_openai_thread_run_state(id, thread_id, assistant_id, owner_type, owner_id, model_alias, status, output_text, created_at, updated_at)
-                VALUES(?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?)
+                INSERT INTO t_openai_compat_state(id, object_type, owner_type, owner_id, parent_id, assistant_id, model_alias, status, output_text, created_at, updated_at)
+                VALUES(?, 'run', ?, ?, ?, ?, ?, 'completed', ?, ?, ?)
                 """,
                 runId,
-                threadId,
-                assistantId,
                 normalizeOwnerType(apiKey),
                 normalizeOwnerId(apiKey),
+                threadId,
+                assistantId,
                 model,
                 answer,
                 now,
                 now);
-        jdbcTemplate.update("UPDATE t_openai_thread_state SET updated_at = ? WHERE id = ?", now, threadId);
+        jdbcTemplate.update("UPDATE t_openai_compat_state SET updated_at = ? WHERE id = ? AND object_type = 'thread'", now, threadId);
 
         Map<String, Object> run = new LinkedHashMap<>();
         run.put("id", runId);
@@ -276,9 +274,9 @@ public class OpenAiCompatService {
 
     public Map<String, Object> getThreadRun(ApiKey apiKey, String threadId, String runId) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT id, thread_id, assistant_id, status, created_at
-                FROM t_openai_thread_run_state
-                WHERE id = ? AND thread_id = ? AND owner_type = ? AND owner_id = ?
+                SELECT id, parent_id, assistant_id, status, created_at
+                FROM t_openai_compat_state
+                WHERE id = ? AND object_type = 'run' AND parent_id = ? AND owner_type = ? AND owner_id = ?
                 LIMIT 1
                 """,
                 runId, threadId, normalizeOwnerType(apiKey), normalizeOwnerId(apiKey));
@@ -289,7 +287,7 @@ public class OpenAiCompatService {
         Map<String, Object> run = new LinkedHashMap<>();
         run.put("id", str(row.get("id")));
         run.put("object", "thread.run");
-        run.put("thread_id", str(row.get("thread_id")));
+        run.put("thread_id", str(row.get("parent_id")));
         run.put("assistant_id", str(row.get("assistant_id")));
         run.put("status", strOrDefault(row.get("status"), "completed"));
         run.put("created_at", longValue(row.get("created_at")));
@@ -315,8 +313,8 @@ public class OpenAiCompatService {
     private void requireThreadOwnedByApiKey(ApiKey apiKey, String threadId) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT id
-                FROM t_openai_thread_state
-                WHERE id = ? AND owner_type = ? AND owner_id = ?
+                FROM t_openai_compat_state
+                WHERE id = ? AND object_type = 'thread' AND owner_type = ? AND owner_id = ?
                 LIMIT 1
                 """,
                 threadId, normalizeOwnerType(apiKey), normalizeOwnerId(apiKey));
@@ -328,8 +326,8 @@ public class OpenAiCompatService {
     private Map<String, Object> loadAssistantOwnedByApiKey(ApiKey apiKey, String assistantId) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT id, model_alias, name, instructions, created_at
-                FROM t_openai_assistant_state
-                WHERE id = ? AND owner_type = ? AND owner_id = ?
+                FROM t_openai_compat_state
+                WHERE id = ? AND object_type = 'assistant' AND owner_type = ? AND owner_id = ?
                 LIMIT 1
                 """,
                 assistantId, normalizeOwnerType(apiKey), normalizeOwnerId(apiKey));
@@ -450,12 +448,11 @@ public class OpenAiCompatService {
             rows = jdbcTemplate.queryForList("""
                     SELECT r.id
                     FROM t_resource r
-                    JOIN t_resource_detail rd ON rd.resource_id = r.id AND rd.resource_type = 'agent'
                     WHERE r.deleted = 0
                       AND r.resource_type = 'agent'
                       AND r.status = 'published'
-                      AND IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.enabled')) AS UNSIGNED), 1) = 1
-                      AND JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.model_alias')) = ?
+                      AND IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.enabled')) AS UNSIGNED), 1) = 1
+                      AND JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.model_alias')) = ?
                       AND r.id = ?
                     LIMIT 1
                     """, modelAlias, apiKey.getOwnerId());
@@ -463,12 +460,11 @@ public class OpenAiCompatService {
             rows = jdbcTemplate.queryForList("""
                     SELECT r.id
                     FROM t_resource r
-                    JOIN t_resource_detail rd ON rd.resource_id = r.id AND rd.resource_type = 'agent'
                     WHERE r.deleted = 0
                       AND r.resource_type = 'agent'
                       AND r.status = 'published'
-                      AND IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.enabled')) AS UNSIGNED), 1) = 1
-                      AND JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.model_alias')) = ?
+                      AND IFNULL(CAST(JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.enabled')) AS UNSIGNED), 1) = 1
+                      AND JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.model_alias')) = ?
                     LIMIT 1
                     """, modelAlias);
         }

@@ -112,15 +112,7 @@ class ResourceRegistrySkillSnapshotCompatibilityTest {
         when(jdbcTemplate.queryForList(anyString(), anyLong())).thenAnswer(invocation -> {
             String sql = invocation.getArgument(0);
             long idArg = ((Number) invocation.getArgument(1)).longValue();
-            if (idArg == resourceId && sql.contains("FROM t_resource") && !sql.contains("t_resource_detail")) {
-                return List.of(Map.of(
-                        "resource_code", "ctx-skill",
-                        "display_name", "Context Skill",
-                        "description", "desc",
-                        "status", "draft",
-                        "access_policy", "open_platform"));
-            }
-            if (idArg == resourceId && sql.contains("t_resource_detail") && sql.contains("resource_type = 'skill'")) {
+            if (idArg == resourceId && sql.contains("hosted_system_prompt") && sql.contains("resource_type = 'skill'")) {
                 return List.of(Map.of(
                         "skill_type", "context_v1",
                         "execution_mode", "context",
@@ -130,6 +122,14 @@ class ResourceRegistrySkillSnapshotCompatibilityTest {
                         "service_detail_md", "detail",
                         "hosted_system_prompt", "legacy prompt",
                         "parameters_schema", Map.of("type", "object")));
+            }
+            if (idArg == resourceId && sql.contains("FROM t_resource")) {
+                return List.of(Map.of(
+                        "resource_code", "ctx-skill",
+                        "display_name", "Context Skill",
+                        "description", "desc",
+                        "status", "draft",
+                        "access_policy", "open_platform"));
             }
             return List.of();
         });

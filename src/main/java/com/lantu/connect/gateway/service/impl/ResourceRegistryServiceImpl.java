@@ -297,8 +297,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             List<Map<String, Object>> se = jdbcTemplate.queryForList("""
                     SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.execution_mode')) AS execution_mode,
                            JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.hosted_system_prompt')) AS hosted_system_prompt
-                    FROM t_resource_detail
-                    WHERE resource_id = ? AND resource_type = 'skill'
+                    FROM t_resource
+                    WHERE id = ? AND resource_type = 'skill' AND deleted = 0
                     LIMIT 1
                     """, resourceId);
             if (se.isEmpty()) {
@@ -728,8 +728,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 """
                         SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.agent_exposure')) AS agent_exposure
-                        FROM t_resource_detail
-                        WHERE resource_id = ? AND resource_type = 'app'
+                        FROM t_resource
+                        WHERE id = ? AND resource_type = 'app' AND deleted = 0
                         LIMIT 1
                         """,
                 resourceId);
@@ -1797,7 +1797,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
             return t;
         }
         var prev = jdbcTemplate.queryForList(
-                "SELECT service_detail_md FROM t_resource_detail WHERE resource_id = ? LIMIT 1", resourceId);
+                "SELECT service_detail_md FROM t_resource WHERE id = ? LIMIT 1", resourceId);
         if (prev.isEmpty()) {
             return null;
         }
@@ -1850,27 +1850,25 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
     private void upsertResourceDetail(Long resourceId, String resourceType, Integer isPublic,
                                       String serviceMd, Map<String, Object> detail) {
         jdbcTemplate.update("""
-                        INSERT INTO t_resource_detail(resource_id, resource_type, is_public, service_detail_md, detail_json, source_table, update_time)
-                        VALUES(?, ?, ?, ?, CAST(? AS JSON), 'resource_detail', NOW())
-                        ON DUPLICATE KEY UPDATE
-                            resource_type = VALUES(resource_type),
-                            is_public = VALUES(is_public),
-                            service_detail_md = VALUES(service_detail_md),
-                            detail_json = VALUES(detail_json),
-                            source_table = VALUES(source_table),
+                        UPDATE t_resource
+                        SET resource_type = ?,
+                            is_public = ?,
+                            service_detail_md = ?,
+                            detail_json = CAST(? AS JSON),
                             update_time = NOW()
+                        WHERE id = ?
                         """,
-                resourceId,
                 resourceType,
                 isPublic,
                 serviceMd,
-                writeJson(detail == null ? Map.of() : detail));
+                writeJson(detail == null ? Map.of() : detail),
+                resourceId);
     }
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> loadResourceDetailJson(Long resourceId) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT detail_json FROM t_resource_detail WHERE resource_id = ? LIMIT 1", resourceId);
+                "SELECT detail_json FROM t_resource WHERE id = ? LIMIT 1", resourceId);
         if (rows.isEmpty() || rows.get(0).get("detail_json") == null) {
             return new LinkedHashMap<>();
         }
@@ -2109,11 +2107,10 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         Integer count = jdbcTemplate.queryForObject("""
                         SELECT COUNT(1)
                         FROM t_resource r
-                        JOIN t_resource_detail rd ON rd.resource_id = r.id AND rd.resource_type = 'agent'
                         WHERE r.deleted = 0
                           AND r.resource_type = 'agent'
                           AND r.created_by = ?
-                          AND JSON_UNQUOTE(JSON_EXTRACT(rd.detail_json, '$.model_alias')) = ?
+                          AND JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.model_alias')) = ?
                           AND (? IS NULL OR r.id <> ?)
                         """,
                 Integer.class,
@@ -2205,22 +2202,21 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         String requested = normalizeType(requestedType);
         String prefix = StringUtils.hasText(alias) ? alias.trim() + "." : "";
         String typeColumn = prefix + "resource_type";
-        String idColumn = prefix + "id";
         switch (requested) {
             case "agent" -> where.append(" AND (")
                     .append(typeColumn)
                     .append(" = 'agent' OR (")
                     .append(typeColumn)
-                    .append(" = 'app' AND EXISTS (SELECT 1 FROM t_resource_detail app_detail WHERE app_detail.resource_id = ")
-                    .append(idColumn)
-                    .append(" AND app_detail.resource_type = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_exposure')), '')) = '")
+                    .append(" = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(")
+                    .append(prefix)
+                    .append("detail_json, '$.agent_exposure')), '')) = '")
                     .append(UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE)
-                    .append("'))) ");
+                    .append("')) ");
             case "app" -> where.append(" AND ")
                     .append(typeColumn)
-                    .append(" = 'app' AND NOT EXISTS (SELECT 1 FROM t_resource_detail app_detail WHERE app_detail.resource_id = ")
-                    .append(idColumn)
-                    .append(" AND app_detail.resource_type = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_exposure')), '')) = '")
+                    .append(" = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(")
+                    .append(prefix)
+                    .append("detail_json, '$.agent_exposure')), '')) <> '")
                     .append(UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE)
                     .append("') ");
             default -> where.append(" AND ").append(typeColumn).append(" = '").append(requested).append("' ");
@@ -2399,8 +2395,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                                                JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.transform_profile')) AS transform_profile,
                                                JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.model_alias')) AS model_alias,
                                                CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.enabled')) AS UNSIGNED) AS enabled
-                                        FROM t_resource_detail
-                                        WHERE resource_id = ? AND resource_type = 'agent'
+                                        FROM t_resource
+                                        WHERE id = ? AND resource_type = 'agent' AND deleted = 0
                                         LIMIT 1
                                         """, resourceId)
                         .stream().findFirst().orElse(Map.of());
@@ -2432,8 +2428,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                                            service_detail_md,
                                            JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.hosted_system_prompt')) AS hosted_system_prompt,
                                            JSON_EXTRACT(detail_json, '$.parameters_schema') AS parameters_schema
-                                    FROM t_resource_detail
-                                    WHERE resource_id = ? AND resource_type = 'skill'
+                                    FROM t_resource
+                                    WHERE id = ? AND resource_type = 'skill' AND deleted = 0
                                     LIMIT 1
                                 ) x
                                 """, resourceId)
@@ -2468,8 +2464,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                                                JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.auth_type')) AS auth_type,
                                                JSON_EXTRACT(detail_json, '$.auth_config') AS auth_config,
                                                service_detail_md
-                                        FROM t_resource_detail
-                                        WHERE resource_id = ? AND resource_type = 'mcp'
+                                        FROM t_resource
+                                        WHERE id = ? AND resource_type = 'mcp' AND deleted = 0
                                         LIMIT 1
                                         """, resourceId)
                         .stream().findFirst().orElse(Map.of());
@@ -2496,8 +2492,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                                                service_detail_md,
                                                JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.agent_exposure')) AS agent_exposure,
                                                JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.agent_delivery_mode')) AS agent_delivery_mode
-                                        FROM t_resource_detail
-                                        WHERE resource_id = ? AND resource_type = 'app'
+                                        FROM t_resource
+                                        WHERE id = ? AND resource_type = 'app' AND deleted = 0
                                         LIMIT 1
                                         """, resourceId)
                         .stream().findFirst().orElse(Map.of());
@@ -2531,8 +2527,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                                                CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.file_size')) AS SIGNED) AS file_size,
                                                JSON_EXTRACT(detail_json, '$.tags') AS tags,
                                                service_detail_md
-                                        FROM t_resource_detail
-                                        WHERE resource_id = ? AND resource_type = 'dataset'
+                                        FROM t_resource
+                                        WHERE id = ? AND resource_type = 'dataset' AND deleted = 0
                                         LIMIT 1
                                         """, resourceId)
                         .stream().findFirst().orElse(Map.of());
@@ -2671,7 +2667,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                                JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.transform_profile')) AS transform_profile,
                                JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.model_alias')) AS model_alias,
                                CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.enabled')) AS UNSIGNED) AS enabled
-                        FROM t_resource_detail WHERE resource_id = ? AND resource_type = 'agent' LIMIT 1
+                        FROM t_resource WHERE id = ? AND resource_type = 'agent' AND deleted = 0 LIMIT 1
                         """,
                 resourceId);
         if (rows.isEmpty()) {
@@ -2712,7 +2708,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                                CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.max_concurrency')) AS SIGNED) AS max_concurrency,
                                service_detail_md,
                                JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.hosted_system_prompt')) AS hosted_system_prompt
-                        FROM t_resource_detail WHERE resource_id = ? AND resource_type = 'skill' LIMIT 1
+                        FROM t_resource WHERE id = ? AND resource_type = 'skill' AND deleted = 0 LIMIT 1
                         """,
                 resourceId);
         if (rows.isEmpty()) {
@@ -2743,7 +2739,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                                JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.auth_type')) AS auth_type,
                                JSON_EXTRACT(detail_json, '$.auth_config') AS auth_config,
                                service_detail_md
-                        FROM t_resource_detail WHERE resource_id = ? AND resource_type = 'mcp' LIMIT 1
+                        FROM t_resource WHERE id = ? AND resource_type = 'mcp' AND deleted = 0 LIMIT 1
                         """,
                 resourceId);
         if (rows.isEmpty()) {
@@ -2768,7 +2764,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                                service_detail_md,
                                JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.agent_exposure')) AS agent_exposure,
                                JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.agent_delivery_mode')) AS agent_delivery_mode
-                        FROM t_resource_detail WHERE resource_id = ? AND resource_type = 'app' LIMIT 1
+                        FROM t_resource WHERE id = ? AND resource_type = 'app' AND deleted = 0 LIMIT 1
                         """,
                 resourceId);
         if (rows.isEmpty()) {
@@ -2796,7 +2792,7 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
                                JSON_EXTRACT(detail_json, '$.tags') AS tags,
                                is_public,
                                service_detail_md
-                        FROM t_resource_detail WHERE resource_id = ? AND resource_type = 'dataset' LIMIT 1
+                        FROM t_resource WHERE id = ? AND resource_type = 'dataset' AND deleted = 0 LIMIT 1
                         """,
                 resourceId);
         if (rows.isEmpty()) {
@@ -2827,8 +2823,8 @@ public class ResourceRegistryServiceImpl implements ResourceRegistryService {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 """
                         SELECT JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.credential_ref')) AS credential_ref
-                        FROM t_resource_detail
-                        WHERE resource_id = ? AND resource_type = 'agent'
+                        FROM t_resource
+                        WHERE id = ? AND resource_type = 'agent' AND deleted = 0
                         LIMIT 1
                         """,
                 resourceId);

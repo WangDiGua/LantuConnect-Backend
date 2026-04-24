@@ -748,8 +748,8 @@ public class DashboardServiceImpl implements DashboardService {
             return null;
         }
         List<String> rows = jdbcTemplate.query(
-                "SELECT type FROM t_usage_record WHERE user_id = ? ORDER BY create_time DESC LIMIT 1",
-                (rs, i) -> rs.getString("type"),
+                "SELECT resource_type FROM t_call_log WHERE user_id = ? ORDER BY create_time DESC LIMIT 1",
+                (rs, i) -> rs.getString("resource_type"),
                 userId);
         return rows.isEmpty() ? null : rows.get(0);
     }

@@ -3,8 +3,6 @@ package com.lantu.connect.usersettings.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lantu.connect.audit.entity.SensitiveActionAudit;
-import com.lantu.connect.audit.mapper.SensitiveActionAuditMapper;
 import com.lantu.connect.auth.entity.User;
 import com.lantu.connect.auth.mapper.UserMapper;
 import com.lantu.connect.common.exception.BusinessException;
@@ -74,7 +72,6 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     private final SystemNotificationFacade systemNotificationFacade;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
-    private final SensitiveActionAuditMapper sensitiveActionAuditMapper;
     private final RedisAuthRateLimiter redisAuthRateLimiter;
     private final IntegrationPackageMapper integrationPackageMapper;
     private final IntegrationPackageMembershipService integrationPackageMembershipService;
@@ -290,7 +287,7 @@ public class UserSettingsServiceImpl implements UserSettingsService {
         long usage = usageRecordMapper.selectCount(
                 new LambdaQueryWrapper<UsageRecord>().eq(UsageRecord::getUserId, userId));
         Long bytes = jdbcTemplate.queryForObject(
-                "SELECT COALESCE(SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(ext.detail_json, '$.file_size')) AS SIGNED)),0) FROM t_resource r JOIN t_resource_detail ext ON r.id = ext.resource_id AND ext.resource_type = 'dataset' "
+                "SELECT COALESCE(SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.file_size')) AS SIGNED)),0) FROM t_resource r "
                         + "WHERE r.deleted = 0 AND r.resource_type = 'dataset' AND r.created_by = ?",
                 Long.class,
                 userId);
@@ -347,19 +344,37 @@ public class UserSettingsServiceImpl implements UserSettingsService {
     }
 
     private void insertAudit(Long userId, String actionType, String targetId, boolean success, String failReason, String clientIp) {
-        SensitiveActionAudit row = new SensitiveActionAudit();
-        row.setUserId(userId);
-        row.setActionType(actionType);
-        row.setTargetId(targetId);
-        row.setSuccess(success ? 1 : 0);
-        if (StringUtils.hasText(failReason) && failReason.length() > 512) {
-            row.setFailReason(failReason.substring(0, 512));
-        } else {
-            row.setFailReason(failReason);
+        String normalizedReason = StringUtils.hasText(failReason) && failReason.length() > 512
+                ? failReason.substring(0, 512)
+                : failReason;
+        String details = auditDetails(actionType, normalizedReason);
+        jdbcTemplate.update("""
+                        INSERT INTO t_audit_log(id, user_id, username, action, resource, resource_id, details, ip, user_agent, result, create_time)
+                        VALUES(?, ?, ?, ?, 'api_key', ?, ?, ?, NULL, ?, ?)
+                        """,
+                UUID.randomUUID().toString(),
+                String.valueOf(userId),
+                String.valueOf(userId),
+                actionType,
+                targetId,
+                details,
+                StringUtils.hasText(clientIp) ? clientIp : "0.0.0.0",
+                success ? "success" : "failure",
+                LocalDateTime.now());
+    }
+
+    private String auditDetails(String actionType, String failReason) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("sensitive", true);
+        details.put("actionType", actionType);
+        if (StringUtils.hasText(failReason)) {
+            details.put("failReason", failReason);
         }
-        row.setClientIp(clientIp);
-        row.setCreatedAt(LocalDateTime.now());
-        sensitiveActionAuditMapper.insert(row);
+        try {
+            return objectMapper.writeValueAsString(details);
+        } catch (JsonProcessingException e) {
+            return StringUtils.hasText(failReason) ? failReason : actionType;
+        }
     }
 
     private long countResourceByTypeAndCreator(String type, Long userId) {

@@ -552,8 +552,8 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
                            JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.transform_profile')) AS transform_profile,
                            JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.model_alias')) AS model_alias,
                            JSON_EXTRACT(detail_json, '$.spec_json') AS spec_json
-                    FROM t_resource_detail
-                    WHERE resource_id = ? AND resource_type = 'agent'
+                    FROM t_resource
+                    WHERE id = ? AND resource_type = 'agent' AND deleted = 0
                     LIMIT 1
                     """, resourceId);
             case TYPE_SKILL -> jdbcTemplate.queryForList("""
@@ -563,8 +563,8 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
                            JSON_EXTRACT(detail_json, '$.manifest_json') AS manifest_json,
                            JSON_EXTRACT(detail_json, '$.spec_json') AS spec_json,
                            JSON_EXTRACT(detail_json, '$.parameters_schema') AS parameters_schema
-                    FROM t_resource_detail
-                    WHERE resource_id = ? AND resource_type = 'skill'
+                    FROM t_resource
+                    WHERE id = ? AND resource_type = 'skill' AND deleted = 0
                     LIMIT 1
                     """, resourceId);
             case TYPE_MCP -> jdbcTemplate.queryForList("""
@@ -573,8 +573,8 @@ public class ResourceHealthServiceImpl implements ResourceHealthService {
                            JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.protocol')) AS protocol,
                            JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.auth_type')) AS auth_type,
                            JSON_EXTRACT(detail_json, '$.auth_config') AS auth_config
-                    FROM t_resource_detail
-                    WHERE resource_id = ? AND resource_type = 'mcp'
+                    FROM t_resource
+                    WHERE id = ? AND resource_type = 'mcp' AND deleted = 0
                     LIMIT 1
                     """, resourceId);
             default -> List.of();

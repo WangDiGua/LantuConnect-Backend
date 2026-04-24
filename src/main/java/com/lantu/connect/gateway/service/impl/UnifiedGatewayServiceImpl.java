@@ -40,8 +40,6 @@ import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
 import com.lantu.connect.monitoring.entity.CallLog;
 import com.lantu.connect.monitoring.mapper.CallLogMapper;
 import com.lantu.connect.monitoring.trace.TraceRecorder;
-import com.lantu.connect.useractivity.entity.UsageRecord;
-import com.lantu.connect.useractivity.mapper.UsageRecordMapper;
 import com.lantu.connect.usermgmt.entity.ApiKey;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -88,7 +86,6 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
     private final CallLogMapper callLogMapper;
-    private final UsageRecordMapper usageRecordMapper;
     private final ObjectMapper objectMapper;
     private final ApiKeyScopeService apiKeyScopeService;
     private final GatewayUserPermissionService gatewayUserPermissionService;
@@ -127,10 +124,9 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         StringBuilder sql = new StringBuilder("""
                 SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.source_type, r.update_time, r.created_by, r.access_policy,
                        COALESCE(r.view_count, 0) AS view_count,
-                       JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_exposure')) AS app_agent_exposure,
-                       JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_delivery_mode')) AS app_agent_delivery_mode
+                       JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.agent_exposure')) AS app_agent_exposure,
+                       JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.agent_delivery_mode')) AS app_agent_delivery_mode
                 FROM t_resource r
-                LEFT JOIN t_resource_detail app_detail ON app_detail.resource_id = r.id AND app_detail.resource_type = 'app'
                 WHERE r.deleted = 0
                 """);
         if (StringUtils.hasText(type)) {
@@ -300,9 +296,9 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
 
         Map<Long, Long> usageById = new HashMap<>();
         for (Map<String, Object> row : jdbcTemplate.queryForList(
-                "SELECT resource_id, COUNT(*) AS c FROM t_usage_record WHERE type = 'app' AND action = 'invoke' AND resource_id IN ("
+                "SELECT CAST(agent_id AS UNSIGNED) AS resource_id, COUNT(*) AS c FROM t_call_log WHERE resource_type = 'app' AND action = 'invoke' AND agent_id IN ("
                         + placeholders
-                        + ") GROUP BY resource_id",
+                        + ") GROUP BY CAST(agent_id AS UNSIGNED)",
                 idArgs)) {
             Long rid = longOrNull(row.get("resource_id"));
             if (rid != null) {
@@ -685,13 +681,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         log.setCreateTime(LocalDateTime.now());
         final String finalStatus = status;
         final long finalLatencyMs = latencyMs;
+        populateUsageFields(log, userId, type, resolved, request, finalStatus, finalLatencyMs);
         transactionTemplate.executeWithoutResult(tx -> {
             recordCircuitResult(type, resolved.getResourceCode(), circuitOutcome);
             callLogMapper.insert(log);
-            UsageRecord usageRecord = buildUsageRecord(userId, type, resolved, request, finalStatus, finalLatencyMs);
-            if (usageRecord != null) {
-                usageRecordMapper.insert(usageRecord);
-            }
             apiKeyScopeService.markUsed(apiKey);
         });
 
@@ -852,13 +845,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         log.setCreateTime(LocalDateTime.now());
         String finalStatus = status[0];
         long finalLatencyMs = latencyMs;
+        populateUsageFields(log, userId, type, resolved, request, finalStatus, finalLatencyMs);
         transactionTemplate.executeWithoutResult(tx -> {
             recordCircuitResult(type, resolved.getResourceCode(), circuitOutcome);
             callLogMapper.insert(log);
-            UsageRecord usageRecord = buildUsageRecord(userId, type, resolved, request, finalStatus, finalLatencyMs);
-            if (usageRecord != null) {
-                usageRecordMapper.insert(usageRecord);
-            }
             apiKeyScopeService.markUsed(apiKey);
         });
 
@@ -882,31 +872,24 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         }
     }
 
-    private UsageRecord buildUsageRecord(Long userId,
-                                         String resourceType,
-                                         ResourceResolveVO resolved,
-                                         InvokeRequest request,
-                                         String status,
-                                         long latencyMs) {
+    private void populateUsageFields(CallLog log,
+                                     Long userId,
+                                     String resourceType,
+                                     ResourceResolveVO resolved,
+                                     InvokeRequest request,
+                                     String status,
+                                     long latencyMs) {
         if (userId == null || resolved == null) {
-            return null;
+            return;
         }
-        UsageRecord usage = new UsageRecord();
-        usage.setUserId(userId);
-        usage.setType(resourceType);
-        try {
-            usage.setResourceId(Long.valueOf(resolved.getResourceId()));
-        } catch (NumberFormatException ignored) {
-            usage.setResourceId(null);
-        }
-        usage.setAction("invoke");
-        usage.setAgentName(resolved.getResourceCode());
-        usage.setDisplayName(StringUtils.hasText(resolved.getDisplayName()) ? resolved.getDisplayName() : resolved.getResourceCode());
-        usage.setInputPreview(safePreview(request == null ? null : request.getPayload(), 300));
-        usage.setOutputPreview(null);
-        usage.setLatencyMs((int) Math.max(0L, latencyMs));
-        usage.setStatus(status);
-        return usage;
+        log.setResourceType(resourceType);
+        log.setAction("invoke");
+        log.setAgentName(resolved.getResourceCode());
+        log.setDisplayName(StringUtils.hasText(resolved.getDisplayName()) ? resolved.getDisplayName() : resolved.getResourceCode());
+        log.setInputPreview(safePreview(request == null ? null : request.getPayload(), 300));
+        log.setOutputPreview(null);
+        log.setLatencyMs((int) Math.max(0L, latencyMs));
+        log.setStatus(status);
     }
 
     private String safePreview(Object value, int maxLen) {
@@ -935,15 +918,14 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         if (TYPE_AGENT.equals(requestedType)) {
             list = jdbcTemplate.queryForList("""
                             SELECT r.id, r.resource_type, r.resource_code, r.display_name, r.description, r.status, r.created_by,
-                                   JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_exposure')) AS agent_exposure,
-                                   JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_delivery_mode')) AS agent_delivery_mode
+                                   JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.agent_exposure')) AS agent_exposure,
+                                   JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.agent_delivery_mode')) AS agent_delivery_mode
                             FROM t_resource r
-                            LEFT JOIN t_resource_detail app_detail ON app_detail.resource_id = r.id AND app_detail.resource_type = 'app'
                             WHERE r.deleted = 0
                               AND r.id = ?
                               AND (
                                 r.resource_type = 'agent'
-                                OR (r.resource_type = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_exposure')), '')) = ?)
+                                OR (r.resource_type = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.agent_exposure')), '')) = ?)
                               )
                             LIMIT 1
                             """,
@@ -972,8 +954,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                        JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.transform_profile')) AS transform_profile,
                        JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.model_alias')) AS model_alias,
                        CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.enabled')) AS UNSIGNED) AS enabled
-                FROM t_resource_detail
-                WHERE resource_id = ? AND resource_type = 'agent'
+                FROM t_resource
+                WHERE id = ? AND resource_type = 'agent' AND deleted = 0
                 LIMIT 1
                 """, id);
         Map<String, Object> spec = parseJsonMap(ext == null ? null : ext.get("spec_json"));
@@ -1041,8 +1023,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                                    is_public,
                                    service_detail_md,
                                    JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.hosted_system_prompt')) AS hosted_system_prompt
-                            FROM t_resource_detail
-                            WHERE resource_id = ? AND resource_type = 'skill'
+                            FROM t_resource
+                            WHERE id = ? AND resource_type = 'skill' AND deleted = 0
                             LIMIT 1
                         ) x
                         """,
@@ -1095,8 +1077,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                        JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.auth_type')) AS auth_type,
                        JSON_EXTRACT(detail_json, '$.auth_config') AS auth_config,
                        service_detail_md
-                FROM t_resource_detail
-                WHERE resource_id = ? AND resource_type = 'mcp'
+                FROM t_resource
+                WHERE id = ? AND resource_type = 'mcp' AND deleted = 0
                 LIMIT 1
                 """, id);
         Map<String, Object> spec;
@@ -1139,8 +1121,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                        service_detail_md,
                        JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.agent_exposure')) AS agent_exposure,
                        JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.agent_delivery_mode')) AS agent_delivery_mode
-                FROM t_resource_detail
-                WHERE resource_id = ? AND resource_type = 'app'
+                FROM t_resource
+                WHERE id = ? AND resource_type = 'app' AND deleted = 0
                 LIMIT 1
                 """, id);
         Map<String, Object> spec = new HashMap<>();
@@ -1226,8 +1208,8 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                        CAST(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.file_size')) AS SIGNED) AS file_size,
                        JSON_EXTRACT(detail_json, '$.tags') AS tags,
                        service_detail_md
-                FROM t_resource_detail
-                WHERE resource_id = ? AND resource_type = 'dataset'
+                FROM t_resource
+                WHERE id = ? AND resource_type = 'dataset' AND deleted = 0
                 LIMIT 1
                 """, id);
         Map<String, Object> spec = new HashMap<>();
@@ -1511,11 +1493,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         jdbcTemplate.update("""
                         UPDATE t_resource_runtime_policy p
                         JOIN t_resource r ON r.id = p.resource_id AND r.deleted = 0
-                        LEFT JOIN t_resource_detail d ON d.resource_id = p.resource_id
                         SET p.callability_state = CASE
                                 WHEN LOWER(COALESCE(r.status, '')) <> 'published' THEN 'not_published'
                                 WHEN p.resource_type = 'agent'
-                                    AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(d.detail_json, '$.enabled')), 'true')) IN ('0', 'false', 'no', 'off') THEN 'disabled'
+                                    AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.enabled')), 'true')) IN ('0', 'false', 'no', 'off') THEN 'disabled'
                                 WHEN LOWER(COALESCE(p.health_status, '')) = 'disabled' THEN 'disabled'
                                 WHEN UPPER(COALESCE(p.current_state, '')) IN ('OPEN', 'FORCED_OPEN') THEN 'circuit_open'
                                 WHEN UPPER(COALESCE(p.current_state, '')) = 'HALF_OPEN' THEN 'circuit_half_open'
@@ -1526,7 +1507,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
                             p.callability_reason = CASE
                                 WHEN LOWER(COALESCE(r.status, '')) <> 'published' THEN 'resource is not published'
                                 WHEN p.resource_type = 'agent'
-                                    AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(d.detail_json, '$.enabled')), 'true')) IN ('0', 'false', 'no', 'off') THEN 'resource is disabled'
+                                    AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.enabled')), 'true')) IN ('0', 'false', 'no', 'off') THEN 'resource is disabled'
                                 WHEN LOWER(COALESCE(p.health_status, '')) = 'disabled' THEN 'resource is disabled'
                                 WHEN UPPER(COALESCE(p.current_state, '')) IN ('OPEN', 'FORCED_OPEN') THEN 'circuit breaker is open'
                                 WHEN UPPER(COALESCE(p.current_state, '')) = 'HALF_OPEN' THEN 'circuit breaker is half open'
@@ -1603,10 +1584,10 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
     private void appendCatalogRequestedTypeClause(StringBuilder sql, String requestedType) {
         String type = requireType(requestedType);
         switch (type) {
-            case TYPE_AGENT -> sql.append(" AND (r.resource_type = 'agent' OR (r.resource_type = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_exposure')), '')) = '")
+            case TYPE_AGENT -> sql.append(" AND (r.resource_type = 'agent' OR (r.resource_type = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.agent_exposure')), '')) = '")
                     .append(UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE)
                     .append("')) ");
-            case TYPE_APP -> sql.append(" AND r.resource_type = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(app_detail.detail_json, '$.agent_exposure')), '')) <> '")
+            case TYPE_APP -> sql.append(" AND r.resource_type = 'app' AND LOWER(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(r.detail_json, '$.agent_exposure')), '')) <> '")
                     .append(UnifiedAgentSupport.UNIFIED_AGENT_EXPOSURE)
                     .append("' ");
             default -> sql.append(" AND r.resource_type = '").append(type).append("' ");
@@ -2377,7 +2358,7 @@ public class UnifiedGatewayServiceImpl implements UnifiedGatewayService {
         Object[] idArgs = skillIds.toArray();
         Map<Long, String> modeById = new HashMap<>();
         for (Map<String, Object> row : jdbcTemplate.queryForList(
-                "SELECT resource_id, COALESCE(NULLIF(TRIM(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.execution_mode'))), ''), 'context') AS em FROM t_resource_detail WHERE resource_type = 'skill' AND resource_id IN ("
+                "SELECT id AS resource_id, COALESCE(NULLIF(TRIM(JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.execution_mode'))), ''), 'context') AS em FROM t_resource WHERE deleted = 0 AND resource_type = 'skill' AND id IN ("
                         + placeholders
                         + ")",
                 idArgs)) {

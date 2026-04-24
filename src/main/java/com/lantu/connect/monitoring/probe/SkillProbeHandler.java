@@ -79,8 +79,8 @@ public class SkillProbeHandler implements ResourceProbeHandler {
                        JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.credential_ref')) AS credential_ref,
                        JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.transform_profile')) AS transform_profile,
                        JSON_UNQUOTE(JSON_EXTRACT(detail_json, '$.model_alias')) AS model_alias
-                FROM t_resource_detail
-                WHERE resource_id = ? AND resource_type = 'agent'
+                FROM t_resource
+                WHERE id = ? AND resource_type = 'agent' AND deleted = 0
                 LIMIT 1
                 """, delegateId);
         String endpoint = mapText(ext.get("upstream_endpoint"));

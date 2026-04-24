@@ -15,7 +15,6 @@ import com.lantu.connect.gateway.service.ResourceBindingClosureService;
 import com.lantu.connect.monitoring.mapper.CallLogMapper;
 import com.lantu.connect.monitoring.trace.TraceRecorder;
 import com.lantu.connect.sysconfig.runtime.RuntimeAppConfigService;
-import com.lantu.connect.useractivity.mapper.UsageRecordMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -38,7 +37,6 @@ class UnifiedGatewayRuntimePolicyTest {
     @Mock JdbcTemplate jdbcTemplate;
     @Mock TransactionTemplate transactionTemplate;
     @Mock CallLogMapper callLogMapper;
-    @Mock UsageRecordMapper usageRecordMapper;
     @Mock ApiKeyScopeService apiKeyScopeService;
     @Mock GatewayUserPermissionService gatewayUserPermissionService;
     @Mock ResourceInvokeGrantService resourceInvokeGrantService;
@@ -59,7 +57,6 @@ class UnifiedGatewayRuntimePolicyTest {
                 jdbcTemplate,
                 transactionTemplate,
                 callLogMapper,
-                usageRecordMapper,
                 new ObjectMapper(),
                 apiKeyScopeService,
                 gatewayUserPermissionService,
