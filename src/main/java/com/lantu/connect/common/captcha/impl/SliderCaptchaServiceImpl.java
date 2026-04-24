@@ -35,8 +35,8 @@ public class SliderCaptchaServiceImpl implements CaptchaService {
     private static final int EXPIRE_MINUTES = 5;
     private static final int CAPTCHA_WIDTH = 150;
     private static final int CAPTCHA_HEIGHT = 48;
-    private static final int CAPTCHA_CODE_LENGTH = 5;
-    private static final String CAPTCHA_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    private static final int CAPTCHA_CODE_LENGTH = 4;
+    private static final String CAPTCHA_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
     private static final int NOISE_LINE_COUNT = 8;
     private static final int NOISE_DOT_COUNT = 80;
 

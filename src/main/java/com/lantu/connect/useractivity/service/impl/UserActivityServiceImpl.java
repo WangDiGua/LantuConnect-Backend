@@ -109,11 +109,32 @@ public class UserActivityServiceImpl implements UserActivityService {
 
     @Override
     public UserStatsVO usageStats(Long userId) {
+        LocalDate today = LocalDate.now();
         Map<String, Object> counters = new LinkedHashMap<>();
         counters.put("userId", userId);
         Long total = usageRecordMapper.selectCount(
                 new LambdaQueryWrapper<UsageRecord>().eq(UsageRecord::getUserId, userId));
         counters.put("totalUsageRecords", total != null ? total : 0L);
+        Long todayCalls = usageRecordMapper.selectCount(new LambdaQueryWrapper<UsageRecord>()
+                .eq(UsageRecord::getUserId, userId)
+                .ge(UsageRecord::getCreateTime, today.atStartOfDay())
+                .lt(UsageRecord::getCreateTime, today.plusDays(1).atStartOfDay()));
+        counters.put("todayCalls", todayCalls != null ? todayCalls : 0L);
+        LocalDate weekStart = today.minusDays(today.getDayOfWeek().getValue() - 1L);
+        Long weekCalls = usageRecordMapper.selectCount(new LambdaQueryWrapper<UsageRecord>()
+                .eq(UsageRecord::getUserId, userId)
+                .ge(UsageRecord::getCreateTime, weekStart.atStartOfDay())
+                .lt(UsageRecord::getCreateTime, today.plusDays(1).atStartOfDay()));
+        counters.put("weekCalls", weekCalls != null ? weekCalls : 0L);
+        LocalDate monthStart = today.withDayOfMonth(1);
+        Long monthCalls = usageRecordMapper.selectCount(new LambdaQueryWrapper<UsageRecord>()
+                .eq(UsageRecord::getUserId, userId)
+                .ge(UsageRecord::getCreateTime, monthStart.atStartOfDay())
+                .lt(UsageRecord::getCreateTime, today.plusDays(1).atStartOfDay()));
+        counters.put("monthCalls", monthCalls != null ? monthCalls : 0L);
+        Long favCount = favoriteMapper.selectCount(
+                new LambdaQueryWrapper<Favorite>().eq(Favorite::getUserId, userId));
+        counters.put("favoriteCount", favCount != null ? favCount : 0L);
 
         QueryWrapper<UsageRecord> byType = new QueryWrapper<>();
         byType.select("type AS targetType", "COUNT(*) AS cnt")
@@ -123,14 +144,38 @@ public class UserActivityServiceImpl implements UserActivityService {
         counters.put("byTargetType", byTargetType != null ? byTargetType : List.of());
 
         Map<String, Object> trends = new LinkedHashMap<>();
-        LocalDate from = LocalDate.now().minusDays(7);
+        LocalDate from = today.minusDays(6);
         QueryWrapper<UsageRecord> byDay = new QueryWrapper<>();
         byDay.select("DATE(create_time) AS day", "COUNT(*) AS cnt")
                 .eq("user_id", userId)
                 .ge("create_time", from.atStartOfDay())
                 .groupBy("DATE(create_time)")
                 .orderByAsc("DATE(create_time)");
-        trends.put("last7Days", usageRecordMapper.selectMaps(byDay));
+        List<Map<String, Object>> rawDays = usageRecordMapper.selectMaps(byDay);
+        Map<String, Long> dailyCounts = new HashMap<>();
+        if (rawDays != null) {
+            for (Map<String, Object> row : rawDays) {
+                Object day = row.get("day");
+                if (day == null) {
+                    continue;
+                }
+                String dayKey = String.valueOf(day);
+                if (dayKey.length() > 10) {
+                    dayKey = dayKey.substring(0, 10);
+                }
+                Object cnt = row.get("cnt");
+                dailyCounts.put(dayKey, cnt instanceof Number ? ((Number) cnt).longValue() : 0L);
+            }
+        }
+        List<Map<String, Object>> last7Days = new ArrayList<>();
+        for (int i = 0; i < 7; i++) {
+            LocalDate day = from.plusDays(i);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("day", day.toString());
+            row.put("cnt", dailyCounts.getOrDefault(day.toString(), 0L));
+            last7Days.add(row);
+        }
+        trends.put("last7Days", last7Days);
 
         return UserStatsVO.builder()
                 .counters(counters)
